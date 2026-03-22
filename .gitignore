@@ -1,0 +1,27 @@
+# Build artifacts
+build/
+*.o
+*.air
+*.metallib
+*.dSYM/
+
+# Dev tools & test data (not for distribution)
+_dev_tools/
+
+# Exports (user data)
+exports/*.csv
+
+# macOS
+.DS_Store
+*.swp
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# vcpkg (installed separately)
+vcpkg_installed/
+_release/
+*.zip
