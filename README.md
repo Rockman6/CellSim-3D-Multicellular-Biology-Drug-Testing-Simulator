@@ -112,6 +112,20 @@ Hill(C, EC50, n) = C^n / (EC50^n + C^n)
 | Paclitaxel | 0.01 | 2.5 | M-phase arrest | PMC2751448 |
 | 5-Fluorouracil | 5.0 | 1.2 | S-phase block + DNA damage | BioModels |
 
+
+
+
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Rockman6%2FCellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## References
 
 1. Novak B & Tyson JJ (2008). "Design principles of biochemical oscillators." *Nat Rev Mol Cell Biol* 9:981-991.
@@ -128,3 +142,5 @@ Hill(C, EC50, n) = C^n / (EC50^n + C^n)
 MIT License. See [LICENSE](LICENSE) for details.
 
 Portions adapted from PhysiPKPD (BSD-3), PhysiCell (BSD-3), and BioModels Database (CC0).
+
+
