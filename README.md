@@ -41,10 +41,6 @@ CellSim models individual cells as autonomous agents with full intracellular bio
 - **ImPlot Time-Series** — live plots of population dynamics, ATP, stress, phase distribution
 - **CSV Data Export** — population time-series + per-cell snapshots with native Save dialog
 
-## Screenshots
-
-*(Run the simulator to see: translucent cells with glowing organelles, ImGui panels with real-time ODE data, drug dose-response curves)*
-
 ## Build
 
 ### Prerequisites (macOS)
