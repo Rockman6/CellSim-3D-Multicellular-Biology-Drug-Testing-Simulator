@@ -7,6 +7,12 @@ A high-performance, real-time 3D cell biology simulator with integrated pharmaco
 ![GPU](https://img.shields.io/badge/GPU-Apple%20Metal-silver)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Screenshots
+
+| Early Colony — Organelle Detail | Dense Colony — Drug Treatment |
+|:---:|:---:|
+| ![Early Colony](docs/cellsim-early-colony.png) | ![Dense Colony with Drug Test](docs/cellsim-dense-colony-drug-test.png) |
+
 ## Overview
 
 CellSim models individual cells as autonomous agents with full intracellular biology — CDK/Cyclin cell cycle ODE, dual-pathway metabolism, Warburg effect, nutrient diffusion, contact inhibition, telomere erosion, and apoptosis. Users can apply chemotherapy drugs (Cisplatin, Doxorubicin, Paclitaxel, 5-FU) and observe dose-dependent cell kill, phase arrest, and resistance emergence in real time.
