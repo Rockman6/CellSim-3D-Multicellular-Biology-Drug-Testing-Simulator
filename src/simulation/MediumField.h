@@ -241,6 +241,26 @@ struct MediumField {
         }
     }
 
+    // ── Incubator gas exchange ──────────────────────────────────────────
+    // Real tissue-culture incubators are VENTED: cells sit in a gas-
+    // permeable dish / flask exposed to 5 % CO2 / 18 % O2. Without this
+    // exchange term, a closed 13-species dish accumulates metabolic CO2
+    // indefinitely, pH crashes, and cells go quiescent within ~24 bio-h
+    // — not how real HeLa culture works. These first-order relaxation
+    // rates pull CO2 and O2 back toward their atmospheric equilibria.
+    // Rate ~0.5 /bio-h = full re-equilibration in ~2 bio-h.
+    void gasExchange(float dt_bio) {
+        const float K_EXCHANGE = 0.5f / 3600.0f;   // per bio-second
+        const float co2_eq = MediumComposition::DMEM_CO2_MM;
+        const float o2_eq  = MediumComposition::DMEM_O2_MM;
+        float decay_co2 = fminf(1.0f, K_EXCHANGE * dt_bio);
+        float decay_o2  = fminf(1.0f, K_EXCHANGE * dt_bio);
+        for (int i = 0; i < CELLS; i++) {
+            c[MS_CO2][i] += (co2_eq - c[MS_CO2][i]) * decay_co2;
+            c[MS_O2][i]  += (o2_eq  - c[MS_O2][i])  * decay_o2;
+        }
+    }
+
     // ── Bicarbonate-buffered pH update ──────────────────────────────────
     // Henderson-Hasselbalch with bicarbonate (HCO3- pool implicit in
     // total CO2 ↔ H+ + HCO3-): pH = 7.4 - 0.6 * (CO2 - 1.2) / 1.2,
@@ -285,6 +305,7 @@ struct MediumField {
     // Legacy diffuse(dt, envO2, envGlu) — env params ignored.
     void diffuse(float dt_bio, float /*envO2_unused*/, float /*envGlu_unused*/) {
         diffuse(dt_bio);
+        gasExchange(dt_bio);   // simulates vented incubator
         updatePH();
     }
     // Legacy consume — translates the old (o2Rate, gluRate, glycolytic)

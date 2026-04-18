@@ -255,23 +255,25 @@ struct CDKState {
         float gs = growthSignal;
         float p21e = fminf(1.0f, p21*1.5f);
 
-        // CycD synthesis boosted for faster G1 transit (target: G1=46% of cycle)
-        float dCycD = (gs*0.45f - CycD*(0.20f+(1-gs)*0.10f)) * dt_bio;
+        // CDK rates tuned for a 24 bio-h HeLa cycle. All rate constants
+        // below are ~3× the pre-calibration values so CycD / CycE / CycA /
+        // CycB accumulate fast enough to hit their respective thresholds
+        // on the real HeLa cycle schedule (G1≈11h, S≈8h, G2≈4h, M≈1h).
+        float dCycD = (gs*1.30f - CycD*(0.60f+(1-gs)*0.30f)) * dt_bio;
         float CDK4act = CycD*(1-p21e*0.5f);
         float CDK2Eact = CycE*(1-p21e);
-        float dRb = (0.08f*(1-Rb) - (CDK4act*0.60f+CDK2Eact*0.40f)*Rb) * dt_bio;
+        float dRb = (0.25f*(1-Rb) - (CDK4act*1.80f+CDK2Eact*1.20f)*Rb) * dt_bio;
         float RbP = 1-Rb;
-        float dE2F = (RbP*0.50f*(1+E2F*1.2f) - (Rb*0.40f+0.10f)*E2F) * dt_bio;
-        float dCycE = (E2F*0.45f*(1-CycA) - CycE*(0.15f+CycA*0.55f)) * dt_bio * (1-p21e*0.8f);
+        float dE2F = (RbP*1.50f*(1+E2F*1.2f) - (Rb*1.20f+0.30f)*E2F) * dt_bio;
+        float dCycE = (E2F*1.35f*(1-CycA) - CycE*(0.45f+CycA*1.65f)) * dt_bio * (1-p21e*0.8f);
         float APC_Cdh1 = fmaxf(0, 1-(CDK2Eact+CycA)*1.2f);
-        float APC_Cdc20 = fmaxf(0, CycB-0.25f)*2.0f; // lower APC threshold
-        float dCycA = (E2F*0.40f*fmaxf(0,CycE-0.12f) - CycA*(0.05f+APC_Cdh1*0.35f+APC_Cdc20)) * dt_bio * (1-p21e*0.6f);
+        float APC_Cdc20 = fmaxf(0, CycB-0.25f)*2.0f;
+        float dCycA = (E2F*1.20f*fmaxf(0,CycE-0.12f) - CycA*(0.15f+APC_Cdh1*1.05f+APC_Cdc20)) * dt_bio * (1-p21e*0.6f);
         // Cdc25 + CycB synthesis tuned so CycB rises past 0.25 in ~4 bio-h
-        // of G2 (matches HeLa G2 duration). Rates were 4× too slow vs the
-        // sdt scale change so CycB never crossed the M-entry threshold.
+        // of G2 (matches HeLa G2 duration).
         float Cdc25 = fmaxf(0, CycA-0.20f)*2.0f;
-        float dCycB = (0.55f*Cdc25*(1+CycB*0.8f) - CycB*(0.04f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
-        float dp21 = -p21*0.04f*dt_bio;
+        float dCycB = (1.65f*Cdc25*(1+CycB*0.8f) - CycB*(0.12f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
+        float dp21 = -p21*0.12f*dt_bio;
 
         CycD=clampf(CycD+dCycD,0,1.5f); Rb=clampf(Rb+dRb,0,1);
         E2F=clampf(E2F+dE2F,0,1); CycE=clampf(CycE+dCycE,0,1.5f);
@@ -606,10 +608,18 @@ static CheckpointResult evalG2M(const SimCell& c, const CentralDogmaState& cdogm
     if (cdogma.escapedErrors >= 5)
         return {false, "too many uncorrected errors"};
     if (c.cdk.CycB <= 0.25f)      return {false, "CycB below activation"};
-    if (c.cdk.p21 >= 0.35f)       return {false, "p21 high (p53 / DDR)"};
+    // p21 threshold raised 0.35 → 0.70. HeLa cells have non-zero basal
+    // p21 that fluctuates; only strong p53-induced p21 (~0.7+) genuinely
+    // stalls mitosis entry. The old 0.35 threshold blocked routine
+    // cycling once p21 accumulated even slightly above baseline.
+    if (c.cdk.p21 >= 0.70f)       return {false, "p21 high (p53 / DDR)"};
     if (c.damageLevel >= 0.40f)   return {false, "DSBs above threshold"};
-    if (c.ATP <= 30.0f)           return {false, "ATP insufficient for mitosis"};
-    if (c.biomass <= 1.70f)       return {false, "biomass < 1.70"};
+    if (c.ATP <= 20.0f)           return {false, "ATP insufficient for mitosis"};
+    // biomass gate relaxed from 1.70 → 1.20. Real HeLa doubles protein
+    // mass over the cycle but daughter biomass at mitosis entry need
+    // only be ~60 % of parent M-entry biomass for clean division; the
+    // strict 1.70 threshold prevented daughters from ever re-entering M.
+    if (c.biomass <= 1.20f)       return {false, "biomass < 1.20"};
     return {true, "G2M_OK"};
 }
 
@@ -1472,11 +1482,15 @@ private:
 
         // ── Stress homeostasis ──────────────────────────────────────
         // Quiescent cells have lower stress because they consume less
-        float pHS=fmaxf(0,(0.68f-localPH)/0.06f)*4.0f*mdt;
+        // pH stress only fires below pH 6.7 (normalized 0.60) — HeLa
+        // tolerates 6.8–7.8 without stress response. Rate reduced 4× so
+        // brief fluctuations don't pin stress at 100.
+        float pHS=fmaxf(0,(0.60f-localPH)/0.06f)*1.0f*mdt;
         float atpS=fmaxf(0,(15-c.ATP)*0.03f)*mdt;
-        // Recovery scales with metabolic rest — quiescent cells recover faster
-        float recovery = (isQuiescent ? 3.0f : 1.8f) * mdt;
-        c.stress=clampf(c.stress + atpS + pHS + (1-localO2)*0.3f*mdt - recovery, 0, 100);
+        // Recovery rate increased so cells exit stress when conditions
+        // improve. Bumped from 1.8→4.0 for PROLIF cells.
+        float recovery = (isQuiescent ? 4.0f : 4.0f) * mdt;
+        c.stress=clampf(c.stress + atpS + pHS + (1-localO2)*0.10f*mdt - recovery, 0, 100);
 
         // ── ROS ─────────────────────────────────────────────────────
         // Quiescent cells produce much less ROS (reduced metabolic activity)
@@ -1517,8 +1531,10 @@ private:
 
         // ── Mechanical quorum → p27/p21 induction ───────────────────
         // Ref: Delarue 2018 — pressure induces CDK inhibitors → G1 arrest
-        // This is the PRIMARY mechanism for contact inhibition at confluence
-        if(c.localPressure>0.8f) {
+        // only at true confluence. Threshold raised 0.8 → 1.5 so sub-
+        // confluent cells (30–70 % density) don't get their cycle blocked
+        // by the low-pressure jostling that happens in any crowded dish.
+        if(c.localPressure>1.5f) {
             float p21Induction = c.localPressure * MECH_P21_COUPLING * mdt;
             c.cdk.p21 = fminf(1.0f, c.cdk.p21 + p21Induction);
         }
@@ -1670,12 +1686,15 @@ private:
             if (&o == &c || !o.alive) continue;
             float dx = c.position.x - o.position.x;
             float dz = c.position.z - o.position.z;
-            if (sqrtf(dx*dx + dz*dz) < c.radius * 2.5f) neighborCount++;
+            if (sqrtf(dx*dx + dz*dz) < c.radius * 1.6f) neighborCount++;
         }
 
-        // Confluence arrest: if surrounded by >= 5 neighbors, cell cycle STOPS
-        // This mimics the Hippo pathway: mechanical compression → YAP nuclear exclusion → G1 arrest
-        bool contactArrested = (neighborCount >= 5) || (c.localPressure > 1.0f);
+        // Confluence arrest: contact inhibition fires only at true confluence
+        // (~8 neighbors in hex-packed monolayer), not at 30 % density. Real
+        // HeLa Hippo arrest kicks in above ~80 % monolayer coverage, so
+        // require 7+ close neighbors AND elevated pressure to trigger.
+        bool contactArrested = (neighborCount >= 7 && c.localPressure > 0.4f)
+                            || (c.localPressure > 1.5f);
 
         // Growth signal (Michaelis-Menten)
         float o2mm=localO2/(localO2+0.10f);
@@ -1694,6 +1713,15 @@ private:
         if(c.damageLevel>0.2f) c.cdk.p21=fminf(1.0f,c.cdk.p21+c.damageLevel*0.35f*0.05f);
 
         c.phase=c.cdk.getPhase();
+        // Hold cells with CycB > 0.25 in G2 UNTIL the G2/M gate has
+        // actually passed. Once checkpointG2Passed (and dnaCheckpoint)
+        // are true, let phase stay at 3 so updateMitosisProgram can fire
+        // startMitosisProgram. Without this, cells oscillate between the
+        // "strict" downgrade and the M branch forever.
+        if (c.phase == 3 && !c.program.mitosis.active
+            && !c.checkpointG2Passed) {
+            c.phase = 2;
+        }
         float g1end=CYCLE_G1_DUR, se=g1end+CYCLE_S_DUR, g2end=se+CYCLE_G2_DUR;
 
         // Timer only advances if NOT contact-arrested
@@ -1806,7 +1834,12 @@ private:
             // Refused licenses with reasons that are NOT covered by
             // evalG2M (space, dish full, fate, senescence, tetraploid)
             // are logged inline.
-            bool hasSpace = neighborCount < 4 && c.localPressure < 1.5f;
+            // hasSpace matches the new contact-inhibition rule — a cell
+            // only stops dividing when truly confluent (7+ close neighbours
+            // AND elevated pressure). Old threshold (<4 neighbours) was
+            // blocking division at 30 % density.
+            bool hasSpace = !(neighborCount >= 7 && c.localPressure > 0.4f)
+                         && c.localPressure < 1.5f;
             bool canDiv = (c.fate==SIM_FATE_PROLIF || c.fate==SIM_FATE_UNDETERMINED);
             bool notTetraploid = !c.program.tetraploid;
             c.program.ensureCDogmaInitialized();
@@ -1819,6 +1852,12 @@ private:
                     c.fate = SIM_FATE_PROLIF; c.fateLocked = true;
                 }
                 c.cycleTimer = fmaxf(c.cycleTimer, g2end);
+                // CRITICAL: mark G2M as passed so updateMitosisProgram
+                // can actually call startMitosisProgram on the next tick.
+                // Without this the cell sits in fake-M licensed state
+                // forever — logs "M_LICENSED" every tick but mitosis
+                // never runs.
+                c.checkpointG2Passed = true;
                 c.program.logEvent(bioTime, 3, "M_LICENSED", m_entry.reason);
                 return;
             }
@@ -1886,7 +1925,10 @@ private:
 
         // Quiescence: crowding is the DOMINANT signal (contact inhibition)
         // Also triggered by moderate stress where cell can survive by resting
-        bool quiesceSignal = crowded || (c.localPressure > 0.5f) || (c.stress > 40 && c.ATP > 15);
+        // Quiesce signal requires real crowding / pressure / severe stress.
+        // stress > 80 (was 40) — transient stress shouldn't force quiesce
+        // since real HeLa cells are resilient to short metabolic fluctuations.
+        bool quiesceSignal = crowded || (c.localPressure > 0.8f) || (c.stress > 80 && c.ATP > 15);
         float quiesceRate = crowded ? 1.5f : (c.localPressure > 0.5f ? 0.8f : 0.3f);
         if(quiesceSignal) c.fateScores[1] += fdt * quiesceRate;
         else c.fateScores[1] *= powf(0.990f, fdt*60);
