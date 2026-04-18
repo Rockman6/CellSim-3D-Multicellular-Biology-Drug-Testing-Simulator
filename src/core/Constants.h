@@ -259,7 +259,10 @@ namespace Adhesion {
 // cycle; Alberts Ch 17). With the comprehensive M-entry checkpoint now
 // gating on biomass ≥ 1.70, the old rate left cells stuck at ~1.5 and
 // failing the gate forever.
-constexpr float BIOMASS_SYNTH_K       = 0.014f;
+// Biomass synth rate tuned so G1 biomass accumulation (1.0 → 1.30) takes
+// ~8 bio-h at full nutrients, giving a 24-bio-h total cycle that matches
+// HeLa doubling time. Prior value 0.014 produced a ~60 bio-h G1.
+constexpr float BIOMASS_SYNTH_K       = 0.055f;
 constexpr float BIOMASS_DEGRADE_K     = 0.0015f;
 constexpr float BIOMASS_DIVIDE_THRESH = 1.85f;  // soft gate (only for quality check)
 constexpr float ROS_MUTATION_SCALE    = 0.03f;

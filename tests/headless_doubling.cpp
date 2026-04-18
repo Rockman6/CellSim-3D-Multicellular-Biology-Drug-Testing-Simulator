@@ -149,11 +149,28 @@ int main(int argc, char** argv) {
             fflush(csv);
 
             if (step % (sample_every * 10) == 0 || alive != prevAlive) {
+                // Mitosis-substage breakdown: where are stuck M-cells?
+                int mProp=0, mProMeta=0, mMeta=0, mAna=0, mTelo=0, mCyto=0, mComp=0, mInactive=0;
+                for (auto& c : sim.cells) {
+                    if (!c.alive || c.phase != 3) continue;
+                    if (!c.program.mitosis.active) { mInactive++; continue; }
+                    switch (c.program.mitosis.phase) {
+                        case MITO_PROPHASE: mProp++; break;
+                        case MITO_PROMETAPHASE: mProMeta++; break;
+                        case MITO_METAPHASE: mMeta++; break;
+                        case MITO_ANAPHASE: mAna++; break;
+                        case MITO_TELOPHASE: mTelo++; break;
+                        case MITO_CYTOKINESIS: mCyto++; break;
+                        case MITO_COMPLETE: mComp++; break;
+                        default: mInactive++;
+                    }
+                }
                 printf("[headless] bioh=%5.2f cells=%4d  G1=%d S=%d G2=%d M=%d  "
-                       "div+%d  death+%d  (wall %.1fs)\n",
+                       "[inact=%d prop=%d prometa=%d meta=%d ana=%d telo=%d cyto=%d comp=%d]  "
+                       "div+%d  (wall %.1fs)\n",
                        bio_hours, alive, g1, s, g2, m,
+                       mInactive, mProp, mProMeta, mMeta, mAna, mTelo, mCyto, mComp,
                        sim.statDivisions - prevDivisions,
-                       sim.statDeaths    - prevDeaths,
                        wall);
                 prevDivisions = sim.statDivisions;
                 prevDeaths    = sim.statDeaths;
@@ -167,6 +184,23 @@ int main(int argc, char** argv) {
 
     fclose(csv);
     tlog.close();
+
+    // End-of-run diagnostic: what's blocking G2 cells from entering M?
+    int diagCount = 0;
+    printf("\n[headless] G2-stall diagnostic (first 5 G2 cells):\n");
+    for (auto& c : sim.cells) {
+        if (!c.alive || c.phase != 2) continue;
+        if (diagCount++ >= 5) break;
+        printf("  cell uid=%d biomass=%.3f ATP=%.1f damage=%.3f p21=%.3f "
+               "CycA=%.3f CycB=%.3f replProg=%.3f forks=%d chk1=%.3f "
+               "escErr=%d stress=%.1f\n",
+               c.cellUid, c.biomass, c.ATP, c.damageLevel, c.cdk.p21,
+               c.cdk.CycA, c.cdk.CycB,
+               (double)c.program.cdogma.replicationProgress,
+               c.program.cdogma.countActiveReplicationForks(),
+               (double)c.program.cdogma.chk1Signal,
+               c.program.cdogma.escapedErrors, c.stress);
+    }
     double wall_total = secondsSince(wall0);
     printf("\n[headless] DONE. %.1f bio-h in %.1f wall-s → CSV at "
            "logs/headless_doubling.csv\n",

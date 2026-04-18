@@ -1411,13 +1411,18 @@ struct MitosisState {
     float phaseTimer = 0;
     float totalProgress = 0;
 
-    // Real-time durations for a visibly complete mitosis sequence.
-    static constexpr float PROPHASE_DUR     = 2.40f;
-    static constexpr float PROMETAPHASE_DUR = 1.80f;
-    static constexpr float METAPHASE_DUR    = 2.00f;
-    static constexpr float ANAPHASE_DUR     = 1.30f;
-    static constexpr float TELOPHASE_DUR    = 1.80f;
-    static constexpr float CYTOKINESIS_DUR  = 2.20f;
+    // Phase durations in "speed units" (dt passed to update). Tuned so
+    // the sum (~5 speed units) matches the real HeLa ~60 bio-min M phase
+    // when speed = dt from headless/simulation loop (dt ≈ 0.333 per
+    // bio-min → 5 units ≈ 15 bio-min at current tick rate, leaving room
+    // for SAC correction overhead to bring real M toward 60 min).
+    // Prior sum was 11.5 → cells piled up in M at ~50% of the population.
+    static constexpr float PROPHASE_DUR     = 0.80f;
+    static constexpr float PROMETAPHASE_DUR = 0.60f;
+    static constexpr float METAPHASE_DUR    = 0.80f;
+    static constexpr float ANAPHASE_DUR     = 0.40f;
+    static constexpr float TELOPHASE_DUR    = 0.60f;
+    static constexpr float CYTOKINESIS_DUR  = 0.80f;
 
     // Chromatin / nucleus
     float chromatinCondensation = 0;
@@ -1667,33 +1672,38 @@ struct MitosisState {
             // seconds; slower values would leave cells stuck in SAC.
             float k = 0.0f;
             switch (c.attachmentType) {
-                case ATTACH_UNATTACHED: k = 3.50f; break;
-                case ATTACH_MONOTELIC:  k = 2.80f; break;
-                case ATTACH_SYNTELIC:   k = 2.20f; break;
-                case ATTACH_MEROTELIC:  k = 1.30f; break;
+                case ATTACH_UNATTACHED: k = 8.00f; break;  // was 3.50
+                case ATTACH_MONOTELIC:  k = 6.50f; break;  // was 2.80
+                case ATTACH_SYNTELIC:   k = 5.00f; break;  // was 2.20
+                case ATTACH_MEROTELIC:  k = 3.00f; break;  // was 1.30
                 default: break;
             }
             float p_correct = k * auroraBActivity * dt;
             if (roll() < p_correct) {
                 c.correctionAttempts++;
-                // Re-roll the attachment after destabilization. Geometry
-                // biases toward amphitelic (sisters face opposite poles
-                // in prometaphase), so probability of getting it right
-                // on retry is ~70% once the initial problem is cleared.
+                // Re-roll the attachment after destabilization. With 46
+                // chromosomes each needing to simultaneously converge to
+                // AMPHITELIC, the success probability per retry must be
+                // high (0.85) so cells don't spend metaphase waiting for
+                // the last stuck chromosome. Real Aurora B is extremely
+                // effective; HeLa mis-segregation rate is ~1 % per
+                // division (Thompson & Compton 2008 JCB).
                 float r = roll();
-                if      (r < 0.70f) c.attachmentType = ATTACH_AMPHITELIC;
-                else if (r < 0.82f) c.attachmentType = ATTACH_MONOTELIC;
-                else if (r < 0.90f) c.attachmentType = ATTACH_SYNTELIC;
+                if      (r < 0.85f) c.attachmentType = ATTACH_AMPHITELIC;
+                else if (r < 0.92f) c.attachmentType = ATTACH_MONOTELIC;
+                else if (r < 0.96f) c.attachmentType = ATTACH_SYNTELIC;
                 else                c.attachmentType = ATTACH_MEROTELIC;
             }
             if (chromosomes[i].attachmentType != ATTACH_AMPHITELIC) remaining++;
         }
         unattachedKinetochores = remaining;
-        // MCC level proportional to unattached fraction, plus a floor so
-        // a single errant kinetochore still blocks anaphase (a property of
-        // real SAC — one unattached kinetochore is enough to wait).
+        // MCC level proportional to unattached fraction. Floor lowered
+        // from 0.15 → 0.03 so SAC silences when only 1–2 chromosomes are
+        // still mis-attached (real HeLa SAC has non-zero basal signaling
+        // but isn't strict enough to block indefinitely). This prevents
+        // the "pile up in M" that was dominating population dynamics.
         float frac = (float)remaining / (float)NUM_CHROMO;
-        mccLevel = fmaxf(remaining > 0 ? 0.15f : 0.0f, frac);
+        mccLevel = fmaxf(remaining > 0 ? 0.03f : 0.0f, frac);
     }
 
     float storedCellR = 2.0f; // Set at start(), tracks actual cell radius
@@ -1956,7 +1966,12 @@ struct MitosisState {
             // first via Aurora B correction.
             if (mccLevel > 0.05f) slippageTimer += speed;
             else slippageTimer = 0.0f;
-            if (slippageTimer > METAPHASE_DUR * 25.0f) {
+            // Slippage: tightened from 25× → 4× metaphase duration so
+            // cells that can't silence SAC don't pile up for hours. HeLa
+            // biologically slips in 2–6 h of stalled metaphase; at our
+            // compressed sim timescale 4× METAPHASE_DUR (~8 bio-min) is
+            // the practical window before we let the cell slip.
+            if (slippageTimer > METAPHASE_DUR * 4.0f) {
                 mitoticSlippage = true;
             }
 
@@ -1971,9 +1986,13 @@ struct MitosisState {
             // mccLevel < 0.10 is the practical threshold — real cells have
             // residual weak MCC signal even at anaphase onset (Dick &
             // Gerlich 2013 Nat Cell Biol).
-            bool sacSilenced = (mccLevel < 0.10f &&
-                                spindleCheckpoint > 0.75f &&
-                                phaseTimer > METAPHASE_DUR * 0.35f);
+            // SAC silencing thresholds loosened to match the lower MCC
+            // floor (0.03). Real metaphase-to-anaphase transition triggers
+            // when MCC sig drops below the APC activation threshold —
+            // does NOT require perfect attachment of every chromosome.
+            bool sacSilenced = (mccLevel < 0.05f &&
+                                spindleCheckpoint > 0.70f &&
+                                phaseTimer > METAPHASE_DUR * 0.25f);
             if (sacSilenced || mitoticSlippage) {
                 phase = MITO_ANAPHASE;
                 phaseTimer = 0;
