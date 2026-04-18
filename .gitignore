@@ -1,27 +1,60 @@
-# Build artifacts
+# ── Build artifacts ─────────────────────────────────────────────────────
 build/
+build-*/
 *.o
 *.air
 *.metallib
 *.dSYM/
 
-# Dev tools & test data (not for distribution)
+# ── Dev tools & test data (not for distribution) ────────────────────────
 _dev_tools/
+_release/
 
-# Exports (user data)
-exports/*.csv
+# ── Generated / runtime data ────────────────────────────────────────────
+logs/
+exports/
+data/
+imgui.ini
 
-# macOS
+# ── Distribution archives ───────────────────────────────────────────────
+*.zip
+*.tar.gz
+
+# ── Reference materials (large, user-local) ─────────────────────────────
+*.pdf
+*.sty
+MBoC7_project_gap_audit.txt
+"Molecular biology of the cell 7th Edition summary"*
+
+# ── Screenshots & captures (user-local) ─────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+*.mov
+*.mp4
+*.gif
+# but keep docs screenshots that ship with README:
+!docs/cellsim-dense-colony-drug-test.png
+!docs/cellsim-early-colony.png
+
+# ── macOS ───────────────────────────────────────────────────────────────
 .DS_Store
 *.swp
 
-# IDE
+# ── IDE ─────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.cursor/
 *.xcodeproj/
 *.xcworkspace/
+*.code-workspace
 
-# vcpkg (installed separately)
+# ── vcpkg (installed separately) ────────────────────────────────────────
 vcpkg_installed/
-_release/
-*.zip
+
+# ── Molecule generation venv ────────────────────────────────────────────
+.molgen_venv/
+__pycache__/
+
+# ── User-private files ──────────────────────────────────────────────────
+"(Human Only, NO AI Approaching, NEVER, d.md"

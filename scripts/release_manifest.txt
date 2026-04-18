@@ -1,0 +1,43 @@
+CellSim — minimum files needed for distribution
+================================================
+
+Anyone cloning the repo gets ONLY these (the .gitignore filters everything
+else out):
+
+  CMakeLists.txt          build configuration
+  LICENSE
+  README.md
+  UNITS.md                what world units mean
+  src/                    all simulator source
+  assets/shaders/         Metal shader source
+  assets/models/          GLB organelle meshes
+  assets/molecules/       SDF molecule structures
+  assets/proteins/        PDB protein structures
+  scripts/update.sh       incremental update script
+  scripts/release_manifest.txt
+  tests/headless_doubling.cpp   science-grade validator
+  data/reference/         (small CSVs of HeLa reference numbers — kept)
+
+Excluded by .gitignore (NOT shipped, regenerated locally):
+  build/, build-*/        compile artifacts
+  logs/                   per-session telemetry
+  exports/                CSV exports
+  data/raw/               large PDF/papers (user adds locally)
+  *.pdf, *.sty            literature references
+  *.zip                   distribution bundles
+  imgui.ini               GUI layout cache
+  _dev_tools/, _release/  internal staging
+  vcpkg_installed/        vendored deps
+
+How a user updates after install
+================================
+
+  cd ~/CellSim
+  scripts/update.sh             # pull all latest, incremental rebuild
+  scripts/update.sh --constants # tiny patch: just biology constants
+  scripts/update.sh --check     # dry-run: see what would change
+
+The --constants mode is the cheap path for frequent calibration tweaks:
+it pulls only the rate-constant files (Constants.h, Simulation.h CDK
+ODE, CentralDogma.h, etc.), then rebuilds incrementally. Typical patch:
+< 100 KB transferred, < 10 s rebuild.

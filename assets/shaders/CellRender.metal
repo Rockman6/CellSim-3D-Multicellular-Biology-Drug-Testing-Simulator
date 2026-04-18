@@ -33,7 +33,7 @@ struct CellInstance {
     float    glowIntensity;  // interior light strength
     uint     lodLevel;       // 0-3
     float    phase;          // 0-3 (G1/S/G2/M) for interior color
-    float    pad;
+    float    furrowDepth;    // 0=none, >0=cytokinesis cleavage furrow
 };
 
 // ── Vertex outputs ──────────────────────────────────────────────────────
@@ -98,6 +98,20 @@ vertex CellVertexOut cellVertex(
     float r = (1.0 + noise) * breathe;
 
     float3 deformedPos = normalize(p) * r;
+
+    // ── Cleavage furrow: smooth hourglass pinch along X (left/right split) ──
+    if (inst.furrowDepth > 0.01) {
+        float fw = inst.furrowDepth;
+        float distFromEq = deformedPos.x; // Split along X axis
+        // Gaussian pinch at equator — narrower spread for cleaner dumbbell shape
+        float pinch = 1.0 - fw * exp(-distFromEq * distFromEq * 6.0);
+        pinch = max(pinch, 0.02); // Tiny bridge, never fully zero (prevents degenerate triangles)
+        deformedPos.y *= pinch;
+        deformedPos.z *= pinch;
+        // Elongate along X — stronger so lobes are clearly visible
+        deformedPos.x *= (1.0 + fw * 0.45);
+    }
+
     float3 worldPos = deformedPos * inst.radius + inst.position;
 
     // Phase-dependent colors

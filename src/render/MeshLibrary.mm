@@ -20,6 +20,10 @@ bool MeshLibrary::init(id<MTLDevice> device) {
     auto disc = generateDisc(55.0f, 64);
     substrate_ = upload(device, disc);
 
+    // Cylinder for molecular bonds (unit cylinder: radius=1, height along Y from -0.5 to 0.5)
+    auto cyl = generateCylinder(12);
+    cylinder_ = upload(device, cyl);
+
     return true;
 }
 
@@ -121,6 +125,41 @@ MeshLibrary::RawMesh MeshLibrary::generateIcosphere(int subdivisions) {
         mesh.vertices.push_back(v);
     }
     mesh.indices = indices;
+
+    return mesh;
+}
+
+// ── Cylinder mesh (molecular bonds) ─────────────────────────────────────
+// Unit cylinder: radius=1, centered at origin, extends from y=-0.5 to y=0.5
+
+MeshLibrary::RawMesh MeshLibrary::generateCylinder(int segments) {
+    RawMesh mesh;
+
+    for (int i = 0; i <= segments; i++) {
+        float angle = (float)i / (float)segments * 2.0f * M_PI;
+        float cx = cosf(angle), cz = sinf(angle);
+
+        // Bottom vertex
+        Vertex vb;
+        vb.position = {cx, -0.5f, cz};
+        vb.normal = {cx, 0, cz};
+        vb.uv = {(float)i / segments, 0};
+        mesh.vertices.push_back(vb);
+
+        // Top vertex
+        Vertex vt;
+        vt.position = {cx, 0.5f, cz};
+        vt.normal = {cx, 0, cz};
+        vt.uv = {(float)i / segments, 1};
+        mesh.vertices.push_back(vt);
+    }
+
+    for (int i = 0; i < segments; i++) {
+        uint32_t b0 = i * 2, t0 = i * 2 + 1;
+        uint32_t b1 = (i + 1) * 2, t1 = (i + 1) * 2 + 1;
+        mesh.indices.insert(mesh.indices.end(), {b0, b1, t0});
+        mesh.indices.insert(mesh.indices.end(), {t0, b1, t1});
+    }
 
     return mesh;
 }

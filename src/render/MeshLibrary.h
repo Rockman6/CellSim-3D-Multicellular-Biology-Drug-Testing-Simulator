@@ -24,9 +24,13 @@ public:
     // Substrate disc mesh
     const MeshData& substrate() const { return substrate_; }
 
+    // Cylinder mesh for molecular bonds
+    const MeshData& cylinder() const { return cylinder_; }
+
 private:
     MeshData spheres_[3]; // LOD 0, 1, 2
     MeshData substrate_;
+    MeshData cylinder_;
 
     struct RawMesh {
         std::vector<Vertex>   vertices;
@@ -35,5 +39,6 @@ private:
 
     RawMesh generateIcosphere(int subdivisions);
     RawMesh generateDisc(float radius, int segments);
+    RawMesh generateCylinder(int segments);
     MeshData upload(id<MTLDevice> device, const RawMesh& mesh);
 };

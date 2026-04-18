@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../core/Constants.h"
+#include "CellCycleProgram.h"
+#include "MediumField.h"
 #include <simd/simd.h>
 #include <vector>
 #include <cmath>
@@ -30,7 +32,18 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 static float randf() { return (float)rand() / (float)RAND_MAX; }
-static float clampf(float v, float lo, float hi) { return fmaxf(lo, fminf(hi, v)); }
+// clampf is defined in CentralDogma.h (included above via CellCycleProgram.h)
+static float biomassFromCellSizeFactor(float sizeFactor) {
+    // In updateMetabolism(): size = 0.6 + biomass * 0.4.
+    // Keep daughters internally consistent with the rendered daughter size.
+    return clampf((sizeFactor - 0.6f) / 0.4f, 0.4f, 2.3f);
+}
+
+// Resource split ratio from physical particle distribution
+struct SplitStats {
+    float cytoplasmicRatioA = 0.5f; // Mass-weighted non-nuclear particle share for daughter A
+    int dnaA = 0, dnaB = 0;         // DNA node counts (verification only)
+};
 
 // ── Drug definition ─────────────────────────────────────────────────────
 // PK/PD model: PhysiPKPD framework (Bergman et al. 2023)
@@ -67,7 +80,9 @@ static const Drug DRUG_LIBRARY[] = {
 };
 static const int DRUG_COUNT = sizeof(DRUG_LIBRARY) / sizeof(Drug);
 
-// ── Nutrient Diffusion Field (Fick 2nd law, 4-species) ──────────────────
+// ── Legacy NutrientField (REPLACED by MediumField — kept dead so any
+// stray reference produces a compile error rather than silent drift)
+#if 0
 struct NutrientField {
     static constexpr int N = NUTRIENT_GRID_N;
     float o2[N*N], glucose[N*N], co2[N*N], pH_field[N*N];
@@ -139,7 +154,11 @@ struct NutrientField {
         float aerobicFrac = glycolytic ? 0.2f : 1.0f;
         co2[idx] = fminf(1.0f, co2[idx] + CO2_PRODUCE_BASE * aerobicFrac);
         float lactateProd = glycolytic ? LACTATE_PRODUCE*2.0f : LACTATE_PRODUCE*0.3f;
-        pH_field[idx] = fmaxf(0.60f, pH_field[idx] - lactateProd);
+        // Henderson-Hasselbalch with bicarbonate buffer (beta ≈ 25 mM/pH-unit in blood).
+        // Acid load δ[H+] is proportional to lactateProd; buffering factor 0.4
+        // dampens the raw pH drop. Normalised pH here stays in [0.55, 0.80].
+        const float BUFFER_STRENGTH = 0.40f;
+        pH_field[idx] = fmaxf(0.55f, pH_field[idx] - lactateProd * BUFFER_STRENGTH);
     }
 
     void diffuse(float dt, float envO2, float envGlu) {
@@ -178,6 +197,7 @@ struct NutrientField {
         if (drugDiffCoeff > 0) std::copy(drugNext, drugNext+N*N, drug);
     }
 };
+#endif
 
 // ── CDK/Cyclin ODE (Novak-Tyson 7-variable model) ──────────────────────
 struct CDKState {
@@ -205,9 +225,11 @@ struct CDKState {
         float APC_Cdh1 = fmaxf(0, 1-(CDK2Eact+CycA)*1.2f);
         float APC_Cdc20 = fmaxf(0, CycB-0.25f)*2.0f; // lower APC threshold
         float dCycA = (E2F*0.40f*fmaxf(0,CycE-0.12f) - CycA*(0.05f+APC_Cdh1*0.35f+APC_Cdc20)) * dt_bio * (1-p21e*0.6f);
-        // Cdc25 lower threshold + CycB faster synthesis → M phase actually reached
+        // Cdc25 + CycB synthesis tuned so CycB rises past 0.25 in ~4 bio-h
+        // of G2 (matches HeLa G2 duration). Rates were 4× too slow vs the
+        // sdt scale change so CycB never crossed the M-entry threshold.
         float Cdc25 = fmaxf(0, CycA-0.20f)*2.0f;
-        float dCycB = (0.15f*Cdc25*(1+CycB*0.8f) - CycB*(0.04f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
+        float dCycB = (0.55f*Cdc25*(1+CycB*0.8f) - CycB*(0.04f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
         float dp21 = -p21*0.04f*dt_bio;
 
         CycD=clampf(CycD+dCycD,0,1.5f); Rb=clampf(Rb+dRb,0,1);
@@ -258,16 +280,129 @@ struct SimCell {
 
     float glycolysisBias, prolifBias, rosTolerance, repairRate;
     int generation, cloneId; float telomere; bool senescent;
+    int cellUid = 0; // Unique per cell instance — never shared, never reused
 
     bool divisionPending; float localPressure;
     float motileAngle, motileSpeed;
     int apoptosisPhase; float apoTimer;
     float adaptationTimer;
+    float divisionCooldown = 0; // Prevents immediate re-entry into M-phase after division
+    float postDivisionRecovery = 0; // Seconds of post-mitotic settling / render blend
 
     // Drug response (PhysiPKPD model)
     float drugInternal;     // internalized drug concentration
     float drugDamage;       // accumulated drug-induced damage (0-1)
     bool  drugResistant;    // MDR resistance mutation
+
+    // ── Substrate adhesion (integrin / focal adhesion maturation) ────
+    // Drives Z-position drift, motility damping, and a "spread" deform.
+    // Newborn / rounded-up cells start at adhesionStrength = 0 and walk
+    // through the Adhesion::* timeline as they sit on the dish floor.
+    // Cells re-entering mitosis round up: spreadFactor decays toward 1.0
+    // and adhesionStrength decays toward 0 over Adhesion::ROUND_UP_BIOSEC.
+    float adhesionStrength = 0.0f;       // 0 (floating) → 0.95 (mature FA cluster)
+    float adhesionTimer    = 0.0f;       // bio-seconds since attachment began
+    int   focalAdhesionCount = 0;        // 0 → ~50 dots rendered under the cell
+    float spreadFactor     = 1.0f;       // 1.0 spheroid → 1.30 spread disk
+
+    // ── Osmosis / water flux / turgor pressure ───────────────────────
+    // Water moves across the membrane down its osmolarity gradient via
+    // aquaporins (Verkman 2008). Net flux drives elastic swelling /
+    // shrinking that the user sees as a slight cell-radius change. The
+    // real biology is per-bio-second; visual effect ranges ±20 %.
+    float osmoCytoMM   = Osmosis::OSMO_ISOTONIC_MM; // cytosolic osmolarity (mM)
+    float waterMM      = MediumComposition::DMEM_WATER_MM; // intracellular [H2O]
+    float turgorPa     = 0.0f;                      // hydrostatic pressure above ext
+    int   aquaporinCount = Osmosis::AQUAPORIN_COUNT_DEFAULT; // membrane mosaic count
+
+    // ── Mitochondrial network dynamics ─────────────────────────────
+    // HeLa cells carry 383-882 mitochondria per cell (Posakony 1977
+    // JCB — serial-section EM morphometry on synchronized cells;
+    // count approximately doubles from G1 → G2 and partitions at
+    // division). Mammalian somatic range is 80-2000 (Alberts Ch 14);
+    // hepatocytes 1000-2000, fibroblasts 100-500, muscle/neurons >1000.
+    // Dynamics:
+    //   * DRP1 fission — recruited at ER-mito contact sites by MFF /
+    //     MiD49/51; rises in stress, G2/M, low ATP (Friedman 2011 Sci).
+    //   * MFN1/2 + OPA1 fusion — requires GTP; dominant in G1/S with
+    //     high ATP and low stress (Chen 2003 JCB).
+    //   * PINK1/Parkin mitophagy — activated by ΔΨm loss; removes
+    //     damaged mitos (Pickrell & Youle 2015 Neuron).
+    //   * PGC-1α biogenesis — AMPK → SIRT1 → PGC-1α → NRF1/2 + TFAM
+    //     (Scarpulla 2011 BBA); driven by ATP deficit.
+    int   mitoCount       = 500;   // HeLa median count (Posakony 1977)
+    float mitoHealthFrac  = 1.0f;  // fraction passing ΔΨm threshold (0-1)
+    float mitoNetworkedFrac = 0.5f;// fraction in the fused tubular network
+    float drp1Active      = 0.20f; // fission regulator
+    float mfnActive       = 0.60f; // fusion regulator (MFN1/2 + OPA1 lumped)
+    float pink1Active     = 0.05f; // mitophagy signal
+    float pgc1aActive     = 0.30f; // biogenesis driver
+    static constexpr int MITO_TARGET_DEFAULT = 500;  // HeLa median
+    static constexpr int MITO_MIN = 200;             // fibroblast low end
+    static constexpr int MITO_MAX = 4000;            // high-demand tissues
+
+    // ── Biologically REAL molecule and macromolecule counts ─────────
+    // HeLa cell volume ≈ 4 pL (4×10⁻¹² L). At 1 mM the cell holds
+    // ~2.4×10⁹ molecules (1e-3 × 4e-15 × Nₐ). These counts drive
+    // biology (protein synthesis rate scales with ribosome count,
+    // ATP pool with molecule count, etc.) while particle rendering
+    // shows a representative sample, not one sphere per molecule.
+    //
+    // Source anchors (Milo 2013 Bioessays; book.bionumbers.org;
+    // hela_reference.csv for intracellular mM):
+    //   Ribosomes     4–10 × 10⁶  (Wolf & Schlessinger 1977; nucleolus output)
+    //   ATP           7.2 × 10⁹   (3 mM × 4 pL × Nₐ)
+    //   Glucose       1.2 × 10¹⁰  (5 mM)
+    //   NADH          2.4 × 10⁸   (0.1 mM)
+    //   Amino acids   2.4 × 10¹⁰  (10 mM total free pool)
+    //   Water         1.3 × 10¹⁴  (55 M — cell 70% water by mass)
+    //   tRNA          1.0 × 10⁷   (Dittmar 2006 RNA)
+    //   mRNA          3.6 × 10⁵   (Schwanhäusser 2011 Nature)
+    //   Ca²⁺ free     2.4 × 10⁵   (100 nM cytosolic)
+    //
+    // We use double so we can hold counts up to ~10¹⁵ without loss.
+    //
+    // ── Genome ──────────────────────────────────────────────────────
+    double genomeBp          = 6.4e9;   // human diploid, 3.2 Gb × 2 (post-S)
+    double nucleosomes       = 3.0e7;   // 30 million nucleosomes/cell
+                                        // (Luger 1997; ~1 per 200 bp)
+    // ── Central-dogma machinery ────────────────────────────────────
+    double ribosomeCount     = 6.0e6;   // Wolf & Schlessinger 1977
+    double rnaPolII          = 4.0e4;   // Jackson 1998 / Osheim 2002
+    double rnaPolI           = 2.0e2;   // nucleolar rRNA (~200 per cell)
+    double rnaPolIII         = 1.0e3;   // tRNA/5S transcription
+    double spliceosomes      = 1.0e5;   // Shepard 2009
+    double nuclearPores      = 4.0e3;   // Ribbeck & Görlich 2001
+    double chaperones        = 1.0e6;   // HSP70 + HSP90 + BiP ≈ 1% protein
+    double proteasomes       = 1.0e6;   // Eytan 1989; ~1% protein pool
+    double copiiVesicles     = 1.0e3;   // Bonfanti 1998 Cell
+    double secretoryVesicles = 3.0e3;   // varies; HeLa moderate secretor
+    double lysosomes         = 3.0e2;   // Saftig & Klumperman 2009
+    double peroxisomes       = 3.0e2;   // Smith & Aitchison 2013
+    double lipidDroplets     = 1.0e2;   // HeLa basal ~100 (Fujimoto 2014)
+    // ── Cytoskeleton ────────────────────────────────────────────────
+    double microtubulesTotal = 3.0e2;   // ~300 interphase MTs per HeLa
+    double actinFilaments    = 5.0e4;   // Pollard 2000 estimates
+    // ── Replication state ───────────────────────────────────────────
+    double replicationForks  = 0.0;     // only nonzero during S-phase
+    // ── Metabolites ────────────────────────────────────────────────
+    double atpMolecules      = 7.2e9;   // 3 mM × 4 pL × Nₐ
+    double glucoseMolecules  = 1.2e10;  // 5 mM
+    double nadhMolecules     = 2.4e8;   // 0.1 mM
+    double aaMolecules       = 2.4e10;  // total free pool, 10 mM
+    double waterMolecules    = 1.3e14;  // 55 M
+    double tRNACount         = 1.0e7;   // Dittmar 2006
+    double mRNACount         = 3.6e5;   // Schwanhäusser 2011 Nature
+    double calciumFree       = 2.4e5;   // 100 nM cytosolic
+    double cAMPMolecules     = 2.4e4;   // 10 nM basal (Beavo & Brunton 2002)
+    // ── Total protein pool (drives biomass) ────────────────────────
+    double totalProteins     = 4.0e9;   // Milo 2013 Bioessays (2-4 × 10⁹)
+
+    // Per-cell biological machinery: replication + mitosis state.
+    // Before this existed, only cells[0] had a real replication program
+    // (single global gCDogma) and a real mitosis state machine (single
+    // global gMitosis). Every cell now owns its own.
+    CellCycleProgram program;
 
     void init(simd_float3 pos, int idx) {
         position=pos; velocity={0,0,0};
@@ -290,20 +425,156 @@ struct SimCell {
         divisionPending=false; localPressure=0;
         motileAngle=randf()*M_PI*2; motileSpeed=MOTILITY_SPEED*(0.5f+randf());
         apoptosisPhase=0; apoTimer=0;
-        adaptationTimer=0;
+        adaptationTimer=0; divisionCooldown=0; postDivisionRecovery=0;
         drugInternal=0; drugDamage=0; drugResistant=false;
+        // Newborn cells start floating (adhesion = 0) and progress through
+        // the Adhesion timeline naturally via updateAdhesion().
+        adhesionStrength = 0.0f;
+        adhesionTimer    = 0.0f;
+        focalAdhesionCount = 0;
+        spreadFactor     = 1.0f;
+        // Osmosis baseline — isotonic with DMEM at start (290 mOsm; cell
+        // is in equilibrium with the dish until uptake / secretion shifts
+        // either side of the membrane).
+        osmoCytoMM   = Osmosis::OSMO_ISOTONIC_MM;
+        waterMM      = MediumComposition::DMEM_WATER_MM;
+        turgorPa     = 0.0f;
+        aquaporinCount = Osmosis::AQUAPORIN_COUNT_DEFAULT;
+        // Mitochondrial count at seeding — HeLa 500 ±150 matches
+        // Posakony 1977 JCB range (383-882) and accounts for cell-cycle
+        // phase: G1 low end, G2 high end.
+        mitoCount = MITO_TARGET_DEFAULT + (int)((randf() - 0.5f) * 300.0f);
+        if (mitoCount < MITO_MIN) mitoCount = MITO_MIN;
+        mitoHealthFrac = 0.95f + randf() * 0.05f;
+        mitoNetworkedFrac = 0.5f;
+        drp1Active = 0.20f; mfnActive = 0.60f;
+        pink1Active = 0.05f; pgc1aActive = 0.30f;
+
+        // Biologically real per-cell counts — values are the literature
+        // MEDIAN with symmetric jitter around the median so an average
+        // cell initializes at the target count, not below it.
+        // Sources: Milo 2013 Bioessays; BioNumbers; Alberts MBoC 7e.
+        auto jitter = [](float pct) -> float { return 1.0f - pct + 2.0f * pct * randf(); };
+        // Genome (diploid 2N; doubles to 4N in S-phase)
+        genomeBp          = 6.4e9;                        // fixed human diploid
+        nucleosomes       = 3.0e7  * jitter(0.10f);
+        // Central-dogma machinery
+        ribosomeCount     = 6.0e6  * jitter(0.30f);       // median 6M (Wolf 1977)
+        rnaPolII          = 4.0e4  * jitter(0.30f);
+        rnaPolI           = 2.0e2  * jitter(0.40f);
+        rnaPolIII         = 1.0e3  * jitter(0.40f);
+        spliceosomes      = 1.0e5  * jitter(0.25f);
+        nuclearPores      = 4.0e3  * jitter(0.15f);
+        chaperones        = 1.0e6  * jitter(0.25f);
+        proteasomes       = 1.0e6  * jitter(0.25f);
+        copiiVesicles     = 1.0e3  * jitter(0.40f);
+        secretoryVesicles = 3.0e3  * jitter(0.40f);
+        lysosomes         = 3.0e2  * jitter(0.40f);
+        peroxisomes       = 3.0e2  * jitter(0.40f);
+        lipidDroplets     = 1.0e2  * jitter(0.70f);       // highly variable
+        // Cytoskeleton
+        microtubulesTotal = 3.0e2  * jitter(0.30f);
+        actinFilaments    = 5.0e4  * jitter(0.25f);
+        replicationForks  = 0.0;                          // 0 outside S
+        // Metabolites
+        atpMolecules     = 7.2e9  * jitter(0.25f);
+        glucoseMolecules = 1.2e10 * jitter(0.30f);
+        nadhMolecules    = 2.4e8  * jitter(0.25f);
+        aaMolecules      = 2.4e10 * jitter(0.25f);
+        waterMolecules   = 1.3e14 * jitter(0.05f);
+        tRNACount        = 1.0e7  * jitter(0.20f);
+        mRNACount        = 3.6e5  * jitter(0.30f);
+        calciumFree      = 2.4e5  * jitter(0.50f);
+        cAMPMolecules    = 2.4e4  * jitter(0.70f);
+        totalProteins    = 4.0e9  * jitter(0.30f);
     }
 };
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Checkpoint predicates
+//  -----------------------------------------------------------------------
+//  Each predicate returns (passed, reason). On failure, `reason` is a
+//  literal describing the FIRST predicate that failed, in the order
+//  evaluated. The audit log writes the verbatim string so "why didn't
+//  this cell divide" always has a citable answer.
+//  -----------------------------------------------------------------------
+struct CheckpointResult { bool passed; const char* reason; };
+
+// G1 / S restriction-point gate. Per Bartek 2004, Geng 2003, Sherr 2002.
+static CheckpointResult evalG1S(const SimCell& c,
+                                float local_glucose_mM,
+                                float local_glutamine_mM,
+                                bool contactArrested) {
+    if (c.cdk.Rb >= 0.40f)        return {false, "Rb still active"};
+    if (c.cdk.CycE <= 0.18f)      return {false, "CycE below restriction-pt"};
+    if (c.cdk.p21 >= 0.35f)       return {false, "p21 high (stress / damage)"};
+    if (c.biomass <= 1.30f)       return {false, "insufficient biomass"};
+    if (c.ATP <= 25.0f)           return {false, "ATP < 25"};
+    if (local_glucose_mM <= 1.0f) return {false, "glucose-starved"};
+    if (local_glutamine_mM <= 0.05f) return {false, "glutamine-starved"};
+    if (c.damageLevel >= 0.25f)   return {false, "DNA damage above threshold"};
+    if (contactArrested)          return {false, "contact-inhibited (Hippo)"};
+    return {true, "G1S_OK"};
+}
+
+// G2 / M entry gate. Per Bartek 2004, Lindqvist 2009, Hartwell 1989.
+// `cdogma` is the cell's per-cell CentralDogmaState (replication program).
+static CheckpointResult evalG2M(const SimCell& c, const CentralDogmaState& cdogma) {
+    if (cdogma.replicationProgress < 0.999f)
+        return {false, "replication incomplete"};
+    if (cdogma.countActiveReplicationForks() > 0)
+        return {false, "forks still active"};
+    if (cdogma.chk1Signal >= 0.35f)
+        return {false, "Chk1 high (replication stress)"};
+    if (cdogma.escapedErrors >= 5)
+        return {false, "too many uncorrected errors"};
+    if (c.cdk.CycB <= 0.25f)      return {false, "CycB below activation"};
+    if (c.cdk.p21 >= 0.35f)       return {false, "p21 high (p53 / DDR)"};
+    if (c.damageLevel >= 0.40f)   return {false, "DSBs above threshold"};
+    if (c.ATP <= 30.0f)           return {false, "ATP insufficient for mitosis"};
+    if (c.biomass <= 1.70f)       return {false, "biomass < 1.70"};
+    return {true, "G2M_OK"};
+}
+
+// Spindle-Assembly Checkpoint release. Anaphase only when EVERY chromosome
+// is amphitelically attached, under tension, and MCC has dissolved.
+// Per Musacchio 2015, Cimini 2001.
+static CheckpointResult evalSAC(const MitosisState& mitosis) {
+    if (mitosis.mccLevel >= 0.10f)
+        return {false, "MCC still inhibiting APC"};
+    for (int i = 0; i < MitosisState::NUM_CHROMO; i++) {
+        const ChromosomeState& ch = mitosis.chromosomes[i];
+        if (ch.attachmentA < 0.85f || ch.attachmentB < 0.85f)
+            return {false, "unattached kinetochore"};
+        if (ch.attachmentType != ATTACH_AMPHITELIC)
+            return {false, "merotelic / syntelic"};
+        if (ch.tension < 0.30f)
+            return {false, "low tension"};
+    }
+    return {true, "SAC_OK"};
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 class Simulation {
 public:
     std::vector<SimCell> cells;
-    NutrientField nutrients;
+    // The dish chemistry. Closed system seeded from MediumComposition::DMEM_*.
+    // Member name kept as `nutrients` so existing call sites compile through
+    // the migration; future PRs can rename to `medium`.
+    MediumField nutrients;
     float bioTime=0;
+    // Legacy env sliders — kept so the (about-to-be-deleted) UI keeps
+    // compiling. `MediumField::init(envO2, envGlu)` ignores them.
     float envO2=0.80f, envGlucose=0.70f;
     float timeScale=1.0f;
+    float lastExecutedScaledDt=0.0f;
+    float pendingScaledDt=0.0f;
     bool paused=false;
+    SimMode mode=MODE_SINGLE_CELL;
+    float primaryReplicationProgress = 1.0f;
+    float primaryReplicationCheckpoint = 0.0f;
+    float primaryReplicationQuality = 1.0f;
+    bool primaryReplicationReady = true;
 
     int statAlive=0, statProlif=0, statQuiescent=0, statApoptotic=0, statNecrotic=0;
     float statAvgATP=0;
@@ -311,6 +582,158 @@ public:
     int statPhases[4]={};
     int statGlycolytic=0;
     int nextCloneId=0;
+    int nextCellUid=0;
+    int allocateCellUid() { return nextCellUid++; }
+
+    static constexpr float MAX_SUBSTEP_DT = 0.05f;
+    static constexpr float MAX_SCALED_DT_PER_FRAME_SINGLE = 2.00f;
+    static constexpr float MAX_SCALED_DT_PER_FRAME_SINGLE_LINEAGE = 0.90f;
+    static constexpr float MAX_SCALED_DT_PER_FRAME_COLONY = 0.20f;
+
+    // Division events for cross-boundary interior splitting
+    struct DivisionEvent {
+        int parentCellUid;
+        int daughterACellUid, daughterBCellUid;
+        simd_float3 posA, posB;
+    };
+    std::vector<DivisionEvent> pendingDivisions;
+
+    bool visualMitosisActive = false; // Set by main.mm each frame
+
+    // Derive a daughter cell from an IMMUTABLE parent snapshot.
+    // Both daughters should be derived from the same snapshot to prevent double resource loss.
+    SimCell deriveDaughter(const SimCell& original, simd_float3 pos, simd_float3 vel,
+                           float sizeFactor, const SplitStats& stats, bool isA) {
+        SimCell d = original; // Full copy from immutable snapshot
+        d.position = pos;
+        d.velocity = vel;
+        d.cellUid = allocateCellUid();
+        bool singleMode = (mode == MODE_SINGLE_CELL);
+
+        // RESET (cell cycle restarts):
+        d.phase = 0;
+        d.cdk.resetForNewCycle(singleMode ? 1.12f : 1.0f);
+        d.cycleTimer = 0; d.cycleProgress = 0;
+        d.checkpointG1Passed = false; d.checkpointG2Passed = false;
+        d.g1WaitTimer = 0; d.g2WaitTimer = 0;
+        d.divisionPending = false;
+        d.divisionCooldown = singleMode ? 1.5f : 8.0f;
+        // Reset the daughter's replication + mitosis program — without this
+        // the daughter inherits the parent's post-S-phase state (replication
+        // progress ≈ 1.0, all origins fired, forks drained). That would let
+        // it walk straight from G1 into G2/M on the next cycle with no real
+        // replication, breaking the central invariant "no cell enters M
+        // until its OWN genome has been re-replicated."
+        d.program.resetForNewCycle();
+        // Leave cdogmaInitialized as-is (inherited from parent via the
+        // copy); the reset clears the replication fields but keeps the
+        // codingMRNA/transcription scaffolding that init() built.
+        // This timer is interpreted in real wall-clock seconds, not scaled sim
+        // time, so the daughters remain visually continuous even at 20x/70x.
+        d.postDivisionRecovery = singleMode ? 6.0f : 4.0f;
+        d.fateLocked = false;
+        d.fate = SIM_FATE_PROLIF;
+        d.fateScores[0] = 8.0f;
+        d.fateScores[1] = 0.0f;
+        d.fateScores[2] = 0.0f;
+        d.fateTimer = 0.0f;
+        d.localPressure = 0.0f;
+
+        // LINEAGE-UPDATED:
+        d.generation = original.generation + 1;
+        d.telomere = original.telomere - TELO_LOSS_PER_DIV;
+        if (d.telomere < TELO_CRITICAL) d.senescent = true;
+
+        // PARTITIONED by weighted cytoplasmic ratio:
+        float ratio = isA ? stats.cytoplasmicRatioA : (1.0f - stats.cytoplasmicRatioA);
+        if (ratio <= 0.0f || ratio >= 1.0f) ratio = 0.5f;
+
+        // ATP and similar fast pools equilibrate much faster than structural cargo.
+        // In single-cell teaching mode, heavily compress asymmetry so daughters
+        // don't emerge metabolically crippled and stall for an unnaturally long time.
+        float fastPoolRatio = ratio;
+        if (singleMode) {
+            fastPoolRatio = 0.5f + (ratio - 0.5f) * 0.20f;
+            fastPoolRatio = clampf(fastPoolRatio, 0.40f, 0.60f);
+        }
+
+        d.ATP = fmaxf(original.ATP * fastPoolRatio, 55.0f); // floor to avoid instant ATP-starvation
+        d.ROS = original.ROS * ratio;
+        d.stress = original.stress * (singleMode
+            ? (0.5f + (ratio - 0.5f) * 0.40f)
+            : ratio);
+        d.drugInternal = original.drugInternal * ratio;
+        d.drugDamage = original.drugDamage * ratio;
+        // Mitochondria partition between daughters by the same cytoplasmic
+        // ratio (they ride the cytoplasm at cytokinesis). Biogenesis will
+        // restore each daughter toward the target over the next cycle.
+        d.mitoCount = (int)fmaxf(
+            (float)SimCell::MITO_MIN,
+            (float)original.mitoCount * ratio);
+        d.mitoHealthFrac = original.mitoHealthFrac;
+        d.mitoNetworkedFrac = 0.3f; // newly divided cells start more fragmented
+        d.drp1Active = 0.30f; // slightly elevated just after division
+        d.mfnActive = 0.45f;
+        d.pink1Active = original.pink1Active * 0.5f;
+        d.pgc1aActive = 0.40f; // biogenesis elevated post-division
+
+        // Real per-cell molecule/macromolecule counts are partitioned by
+        // the same cytoplasmic ratio — this is what ACTUALLY happens in a
+        // cell: whichever ribosomes/mRNAs/ATP were on the daughter-A side
+        // of the cleavage furrow go to daughter A. No program enforcement
+        // or re-spawn. Biogenesis/consumption from updateMetabolism then
+        // regrows the count over the next cycle.
+        // Genome: each daughter gets full 2N diploid (sister chromatids split).
+        d.genomeBp          = 6.4e9;
+        d.nucleosomes       = original.nucleosomes       * ratio;
+        // Central-dogma machinery partitions with cytoplasm / nucleus split.
+        d.ribosomeCount     = original.ribosomeCount     * ratio;
+        d.rnaPolII          = original.rnaPolII          * ratio;
+        d.rnaPolI           = original.rnaPolI           * ratio;
+        d.rnaPolIII         = original.rnaPolIII         * ratio;
+        d.spliceosomes      = original.spliceosomes      * ratio;
+        d.nuclearPores      = original.nuclearPores      * ratio;
+        d.chaperones        = original.chaperones        * ratio;
+        d.proteasomes       = original.proteasomes       * ratio;
+        d.copiiVesicles     = original.copiiVesicles     * ratio;
+        d.secretoryVesicles = original.secretoryVesicles * ratio;
+        d.lysosomes         = original.lysosomes         * ratio;
+        d.peroxisomes       = original.peroxisomes       * ratio;
+        d.lipidDroplets     = original.lipidDroplets     * ratio;
+        d.microtubulesTotal = original.microtubulesTotal * ratio;
+        d.actinFilaments    = original.actinFilaments    * ratio;
+        d.replicationForks  = 0.0;                       // not in S yet
+        d.atpMolecules      = original.atpMolecules      * ratio;
+        d.glucoseMolecules  = original.glucoseMolecules  * ratio;
+        d.nadhMolecules     = original.nadhMolecules     * ratio;
+        d.aaMolecules       = original.aaMolecules       * ratio;
+        d.waterMolecules    = original.waterMolecules    * ratio;
+        d.tRNACount         = original.tRNACount         * ratio;
+        d.mRNACount         = original.mRNACount         * ratio;
+        d.calciumFree       = original.calciumFree       * ratio;
+        d.cAMPMolecules     = original.cAMPMolecules     * ratio;
+        d.totalProteins     = original.totalProteins     * ratio;
+
+        // SIZE/BIOMASS: size is source of truth, biomass derived
+        d.size = original.size * sizeFactor;
+        d.biomass = biomassFromCellSizeFactor(d.size);
+
+        // INHERITED-with-cleanup: damage is halved at division (daughters
+        // get half each) rather than both inheriting full damage, which
+        // would accumulate without bound and cause random cell death.
+        d.damageLevel = original.damageLevel * 0.5f;
+        // Reset transient danger/stress timers so a daughter is not
+        // immediately flagged apoptotic from the parent's timer state.
+        d.atpDangerTimer = 0;
+        d.hypoxiaTimer = 0;
+        d.apoptosisPhase = 0;
+        d.apoTimer = 0;
+        d.necrotic = false;
+
+        // INHERITED as-is (mutations accumulate across generations):
+        // glycolysisBias, prolifBias, rosTolerance, repairRate, drugResistant
+        return d;
+    }
 
     // Drug system
     int   activeDrugIdx = 0;       // index into DRUG_LIBRARY (0 = none)
@@ -318,6 +741,9 @@ public:
     float statViability = 100.0f;  // % cells alive vs pre-drug count
     int   preDrugCount = 0;        // cell count when drug was applied
     float statAvgDrugDamage = 0;
+
+    // Mitosis visualization flag (set by renderer when visual mitosis completes)
+    bool mitosisVisualizationComplete = false;
 
     void applyDrugUniform(int drugIdx, float conc) {
         activeDrugIdx = drugIdx;
@@ -346,29 +772,93 @@ public:
         for (auto& c : cells) { c.drugInternal = 0; c.drugDamage *= 0.5f; }
     }
 
-    void init() {
+    void init() { init(mode); }
+
+    void init(SimMode m) {
+        mode = m;
         cells.clear(); nutrients.init(envO2, envGlucose);
-        nextCloneId=INIT_CELLS;
-        for (int i=0; i<INIT_CELLS; i++) {
-            float a=(float)i/INIT_CELLS*2*M_PI;
-            float r=5.0f+randf()*3.0f;
-            simd_float3 pos={r*cosf(a), FLOOR_Y+2.2f, r*sinf(a)};
-            SimCell c; c.init(pos, i); cells.push_back(c);
+        bioTime = 0;
+        lastExecutedScaledDt = 0;
+        pendingScaledDt = 0;
+        statDivisions = 0; statDeaths = 0;
+        activeDrugIdx = 0; drugConcentration = 0;
+        statViability = 100.0f; preDrugCount = 0; statAvgDrugDamage = 0;
+
+        int count = (mode == MODE_SINGLE_CELL) ? SINGLE_CELL_COUNT : INIT_CELLS;
+        nextCloneId = count;
+        nextCellUid = 0;
+        pendingDivisions.clear();
+        for (int i = 0; i < count; i++) {
+            float a = (float)i / fmaxf(1.0f, (float)count) * 2 * M_PI;
+            float r = (mode == MODE_SINGLE_CELL) ? 0.0f : 5.0f + randf() * 3.0f;
+            simd_float3 pos = {r * cosf(a), FLOOR_Y + 2.2f, r * sinf(a)};
+            SimCell c; c.init(pos, i);
+            c.cellUid = allocateCellUid();
+            if (mode == MODE_SINGLE_CELL) {
+                // Teaching / inspection mode should start from one healthy,
+                // division-capable founder cell rather than a randomly aged
+                // cell that can silently drift into apoptosis before any
+                // lineage behavior is visible.
+                c.age = 0.0f;
+                c.ATP = fmaxf(c.ATP, 82.0f);
+                c.stress = fminf(c.stress, 3.0f);
+                c.ROS = fminf(c.ROS, 2.0f);
+                c.damageLevel = fminf(c.damageLevel, 0.01f);
+                c.fate = SIM_FATE_PROLIF;
+                c.fateScores[0] = 8.0f;
+                c.fateScores[1] = 0.0f;
+                c.fateScores[2] = 0.0f;
+                c.fateTimer = 0.0f;
+                c.fateLocked = false;
+                c.apoptosisPhase = 0;
+                c.apoTimer = 0.0f;
+                c.atpDangerTimer = 0.0f;
+            }
+            cells.push_back(c);
         }
     }
 
     void update(float dt) {
+        lastExecutedScaledDt = 0.0f;
         if (paused||dt<=0) return;
-        float totalDt=dt*timeScale;
-        float subDt=fminf(totalDt, 0.05f);
-        int steps=(int)ceilf(totalDt/subDt);
-        subDt=totalDt/steps;
+
+        for (auto& c : cells) {
+            c.postDivisionRecovery = fmaxf(0.0f, c.postDivisionRecovery - dt);
+        }
+
+        float requestedDt = dt * timeScale;
+        pendingScaledDt += requestedDt;
+        float responsiveCap = MAX_SCALED_DT_PER_FRAME_COLONY;
+        if (mode == MODE_SINGLE_CELL) {
+            responsiveCap = (cells.size() <= 2)
+                ? MAX_SCALED_DT_PER_FRAME_SINGLE
+                : MAX_SCALED_DT_PER_FRAME_SINGLE_LINEAGE;
+        }
+        float totalDt = fminf(pendingScaledDt, responsiveCap);
+        if (totalDt <= 0.0f) return;
+        pendingScaledDt -= totalDt;
+
+        float subDt = fminf(totalDt, MAX_SUBSTEP_DT);
+        int steps = (int)ceilf(totalDt / fmaxf(subDt, 1e-6f));
+        subDt = totalDt / fmaxf((float)steps, 1.0f);
+
+        lastExecutedScaledDt = totalDt;
         bioTime += totalDt*BIO_MIN_PER_SEC*60;
         for (int s=0; s<steps; s++) {
             updatePhysics(subDt);
             for (auto& c:cells) { if(!c.alive) continue;
                 updateMetabolism(c,subDt); updateDrugResponse(c,subDt);
-                updateCellCycle(c,subDt); updateFate(c,subDt); updateApoptosis(c,subDt);
+                updateMitochondria(c,subDt);
+                updateAdhesion(c,subDt);
+                updateCellCycle(c,subDt); updateMitosisProgram(c,subDt);
+                // Per-cell replication / transcription tick. WITHOUT this
+                // every cell is stuck at replicationProgress = 0 and the
+                // G2/M checkpoint never opens. Dt clamped to a safe range
+                // so replication is stable across timeScales.
+                c.program.ensureCDogmaInitialized();
+                float dogmaDt = fminf(fmaxf(subDt, 1.0f/240.0f), 1.0f/30.0f);
+                c.program.cdogma.update(dogmaDt, c.phase);
+                updateFate(c,subDt); updateApoptosis(c,subDt);
             }
             nutrients.diffuse(subDt, envO2, envGlucose);
         }
@@ -379,13 +869,89 @@ public:
     }
 
 private:
+    bool singleCellPostDivisionDisplay() const {
+        return false; // All cells run full cycle — no freezing after division
+    }
+
+    bool isPrimaryCell(const SimCell& c) const {
+        return !cells.empty() && &c == &cells[0];
+    }
+
+    bool usesPrimaryVisualMitosis(const SimCell& c) const {
+        // Only the focused primary cell (cells[0]) uses the detailed visual
+        // mitosis machinery in main.mm (gMitosis: condensed chromatin,
+        // spindle, chromosome alignment, furrow). Every other cell — even
+        // in single-cell teaching mode — runs its own per-cell mitosis
+        // program and divides through processDivisions. Previously this
+        // function returned true for ALL cells in single mode, which meant
+        // background cells reached M-phase (DNA=1524) and then sat there
+        // forever because neither the visual path nor the per-cell path
+        // would finalize their division.
+        return mode == MODE_SINGLE_CELL && isPrimaryCell(c);
+    }
+
+    void syncMitosisCheckpointInputs(SimCell& c) {
+        c.program.ensureCDogmaInitialized();
+        c.program.mitosis.dnaDuplicationProgress =
+            clampf(c.program.cdogma.replicationProgress, 0.0f, 1.0f);
+        c.program.mitosis.dnaCheckpointPassed =
+            c.program.cdogma.replicationReadyForM();
+        c.program.mitosis.replicationQuality =
+            c.program.cdogma.replicationQuality;
+        // Background cells do not yet own a full per-cell particle interior
+        // inside Simulation itself, so their mitosis program uses the
+        // replicated genome state as the biological duplication signal.
+        c.program.mitosis.particlesDuplicated =
+            c.program.mitosis.dnaDuplicationProgress >= 0.995f;
+    }
+
+    void startMitosisProgram(SimCell& c) {
+        float cellR = c.radius * c.size;
+        c.program.mitosis.start(c.position, cellR);
+        syncMitosisCheckpointInputs(c);
+        c.program.logEvent(bioTime, 3, "MITOSIS_START");
+    }
+
+    void updateMitosisProgram(SimCell& c, float dt) {
+        if (!c.alive || c.apoptosisPhase > 0 || c.senescent) return;
+        if (c.postDivisionRecovery > 0.0f) return;
+        if (usesPrimaryVisualMitosis(c)) return;
+        if (c.phase != 3 && !c.program.mitosis.active) return;
+
+        syncMitosisCheckpointInputs(c);
+        if (!c.program.mitosis.active) {
+            if (!c.checkpointG2Passed || !c.program.mitosis.dnaCheckpointPassed) return;
+            startMitosisProgram(c);
+        }
+
+        c.phase = 3;
+        c.cycleProgress = 1.0f;
+
+        if (!c.program.mitosis.postDivisionComplete()) {
+            float cellR = c.radius * c.size;
+            c.program.mitosis.update(dt, c.position, cellR);
+            c.cycleTimer = fmaxf(c.cycleTimer,
+                                 CYCLE_G1_DUR + CYCLE_S_DUR + CYCLE_G2_DUR +
+                                 fminf(c.program.mitosis.totalProgress, CYCLE_M_DUR));
+            if (c.program.mitosis.postDivisionComplete()) {
+                c.divisionPending = true;
+                c.program.logEvent(bioTime, 3, "CYTOKINESIS_OK");
+            }
+        } else {
+            c.divisionPending = true;
+            c.program.mitosis.postDivisionTimer += dt;
+        }
+    }
+
     void updatePhysics(float dt) {
         int n=(int)cells.size();
         for (auto& c:cells) c.localPressure=0;
         for (int i=0;i<n;i++) {
             auto& a=cells[i]; if(!a.alive) continue;
-            a.motileAngle += (randf()-0.5f)*0.3f*dt;
-            float spd=a.motileSpeed*(a.fate==SIM_FATE_PROLIF?1.5f:0.5f);
+            float recoveryT = clampf(a.postDivisionRecovery / 6.0f, 0.0f, 1.0f);
+            float motilityBlend = 1.0f - recoveryT * 0.82f;
+            a.motileAngle += (randf()-0.5f)*0.3f*dt*(0.35f + 0.65f*motilityBlend);
+            float spd=a.motileSpeed*(a.fate==SIM_FATE_PROLIF?1.5f:0.5f)*motilityBlend;
             if (a.necrotic) spd*=0.1f;
             a.velocity.x += cosf(a.motileAngle)*spd*dt*0.5f;
             a.velocity.z += sinf(a.motileAngle)*spd*dt*0.5f;
@@ -393,7 +959,10 @@ private:
                 auto& b=cells[j]; if(!b.alive) continue;
                 float dx=a.position.x-b.position.x, dz=a.position.z-b.position.z;
                 float dist=sqrtf(dx*dx+dz*dz);
-                float minD=(a.radius+b.radius)*fminf(a.size,b.size)*0.9f;
+                // Use the true rendered radii for cell-cell exclusion so
+                // post-mitosis daughters don't visually overlap and hide one
+                // another's nucleus/DNA.
+                float minD=(a.radius*a.size + b.radius*b.size)*0.98f;
                 if (dist<minD&&dist>0.01f) {
                     float overlap=minD-dist;
                     float force=HERTZ_STIFFNESS*powf(overlap,1.5f);
@@ -414,12 +983,160 @@ private:
                 float vn=a.velocity.x*nx+a.velocity.z*nz;
                 if(vn>0){a.velocity.x-=nx*vn*1.5f; a.velocity.z-=nz*vn*1.5f;}
             }
-            a.position.y = FLOOR_Y+a.radius*a.size*0.85f+sinf(bioTime*0.0001f+(float)i*0.7f)*0.12f;
+            // Substrate anchor: spread cells sit slightly lower (flatter)
+            // and rounded cells sit higher. baseY shifts with spreadFactor
+            // so the visual matches the adhesion state.
+            float spread = a.spreadFactor;
+            float baseY = FLOOR_Y + a.radius * a.size * 0.85f / spread;
+            if (a.postDivisionRecovery > 0.0f) {
+                float bobY = baseY + sinf(bioTime*0.0001f+(float)i*0.7f)*0.12f;
+                float settleBlend = 1.0f - recoveryT;
+                a.velocity.y += (-0.6f - 1.2f * recoveryT) * dt;
+                a.velocity.y *= powf(0.92f, dt * 60.0f);
+                a.position.y += a.velocity.y * dt;
+                if (a.position.y < baseY) {
+                    a.position.y = baseY;
+                    if (a.velocity.y < 0.0f) a.velocity.y *= -0.18f;
+                }
+                a.position.y += (bobY - a.position.y) * settleBlend * 0.12f;
+            } else {
+                // Strong elastic anchor toward baseY scaled by adhesion
+                // strength (mature focal adhesions are stiff; floating
+                // cells just flop around). Per Geiger 2001 / Gallant 2005.
+                float anchorY = baseY + sinf(bioTime*0.0001f+(float)i*0.7f)*0.12f;
+                float k = 0.30f + 4.0f * a.adhesionStrength;     // anchor stiffness
+                a.position.y += (anchorY - a.position.y) * fminf(1.0f, k * dt);
+                // Adhered cells also damp lateral velocity (FA grip).
+                float damp = 1.0f - a.adhesionStrength * 0.40f;
+                a.velocity.x *= damp;
+                a.velocity.z *= damp;
+            }
         }
+    }
+
+    // ── Mitochondrial network dynamics ──────────────────────────────
+    // Models steady-state mitochondrial count via a balance of fission,
+    // fusion, mitophagy, and biogenesis. Not an exact reproduction — the
+    // regulators (DRP1, MFN1/2, OPA1, PINK1, PGC-1α) are lumped rather
+    // than individually integrated — but captures the biology:
+    //
+    //  * stress + G2/M phase → DRP1 active → fission (count ↑)
+    //  * healthy G1 with high ATP → fusion (count ↓, more networked)
+    //  * membrane-potential loss + damage → PINK1 → mitophagy (count ↓)
+    //  * low ATP / AMPK activation → PGC-1α → biogenesis (count ↑)
+    //
+    // Sources: Mishra & Chan 2014 Nat Rev MCB (dynamics overview);
+    //          Friedman 2011 Science (ER-mito contact → DRP1);
+    //          Chen 2003 JCB (MFN1/2); Pickrell & Youle 2015 Neuron;
+    //          Scarpulla 2011 BBA (PGC-1α biogenesis).
+    // ── Substrate adhesion (integrin-driven focal-adhesion maturation) ──
+    // Drives the cell along Cavalcanti-Adam 2007 / Geiger 2001 timeline:
+    // floating → contact → spreading → mature, with FA cluster growing
+    // 0 → ~50 punctate dots and spreadFactor 1.00 → 1.30. The maturation
+    // *decays* during mitosis when the cell rounds up (Maddox 2003) so
+    // daughters re-spread on the dish naturally.
+    void updateAdhesion(SimCell& c, float dt) {
+        if (!c.alive) return;
+        float bio_dt = bioDt(dt, timeScale);
+
+        // Round-up: cells in late G2 and M lose adhesion (mitotic round-up,
+        // Maddox 2003). Apoptotic / necrotic cells also detach.
+        bool roundedUp = (c.phase == 3) || c.necrotic || c.apoptosisPhase > 0;
+        if (roundedUp) {
+            float decay = bio_dt / Adhesion::ROUND_UP_BIOSEC;
+            c.adhesionStrength = fmaxf(0.0f, c.adhesionStrength - decay);
+            c.spreadFactor     = fmaxf(Adhesion::SPREAD_FACTOR_FLOATING,
+                                       c.spreadFactor - decay * 0.30f);
+            c.adhesionTimer    = 0.0f;
+            c.focalAdhesionCount = (int)(Adhesion::FA_COUNT_MATURE * c.adhesionStrength);
+            return;
+        }
+
+        // Maturation timeline. spreadFactor and adhesionStrength interpolate
+        // along the four-stage Cavalcanti-Adam / Geiger schedule.
+        c.adhesionTimer += bio_dt;
+        float t = c.adhesionTimer;
+        if (t < Adhesion::FLOATING_BIOSEC) {
+            c.spreadFactor     = Adhesion::SPREAD_FACTOR_FLOATING;
+            c.adhesionStrength = 0.0f;
+        } else if (t < Adhesion::CONTACT_BIOSEC) {
+            float u = (t - Adhesion::FLOATING_BIOSEC)
+                      / (Adhesion::CONTACT_BIOSEC - Adhesion::FLOATING_BIOSEC);
+            c.spreadFactor     = 1.00f + 0.05f * u;
+            c.adhesionStrength = 0.15f * u;
+        } else if (t < Adhesion::SPREADING_BIOSEC) {
+            float u = (t - Adhesion::CONTACT_BIOSEC)
+                      / (Adhesion::SPREADING_BIOSEC - Adhesion::CONTACT_BIOSEC);
+            c.spreadFactor     = 1.05f + (Adhesion::SPREAD_FACTOR_MATURE - 1.05f) * u;
+            c.adhesionStrength = 0.15f + (0.65f - 0.15f) * u;
+        } else {
+            c.spreadFactor     = Adhesion::SPREAD_FACTOR_MATURE;
+            c.adhesionStrength = fminf(Adhesion::STRENGTH_MATURE,
+                                       0.65f + (t - Adhesion::SPREADING_BIOSEC) / 3600.0f * 0.30f);
+        }
+        c.focalAdhesionCount = (int)(Adhesion::FA_COUNT_MATURE * c.adhesionStrength);
+    }
+
+    void updateMitochondria(SimCell& c, float dt) {
+        if (!c.alive) return;
+        float mdt = dt * MEDIUM_DT_SCALE;
+
+        // ── Signalling inputs (0-1 each) ─────────────────────────────
+        auto sigmoid = [](float x) { return 1.0f / (1.0f + expf(-x)); };
+
+        // DRP1 rises with stress + G2/M phase + low ATP (high ADP).
+        float phaseG2M = (c.phase >= 2) ? 0.45f : 0.0f;
+        float atpDeficit = clampf((70.0f - c.ATP) / 40.0f, 0.0f, 1.0f);
+        c.drp1Active = sigmoid(c.stress / 60.0f + phaseG2M + atpDeficit * 0.6f - 1.2f);
+
+        // MFN / OPA1 rise in G1 / S with low stress and sufficient ATP.
+        float phaseG1S = (c.phase <= 1) ? 0.35f : 0.0f;
+        c.mfnActive = sigmoid(-c.stress / 80.0f + phaseG1S + (c.ATP - 40.0f) / 50.0f);
+
+        // PINK1 stabilized when mito health drops (proxy: mitoPotential
+        // below threshold and/or damage accumulating).
+        float healthDeficit = 1.0f - clampf(c.mitoHealthFrac, 0.0f, 1.0f);
+        c.pink1Active = sigmoid(c.damageLevel * 2.0f + healthDeficit * 1.5f + c.ROS / 8.0f - 1.5f);
+
+        // PGC-1α biogenesis signal — activated by AMPK (ATP low) and
+        // in response to mitochondrial depletion.
+        float countDeficit = clampf((float)(SimCell::MITO_TARGET_DEFAULT - c.mitoCount)
+                                    / (float)SimCell::MITO_TARGET_DEFAULT, 0.0f, 1.0f);
+        c.pgc1aActive = sigmoid(atpDeficit * 1.8f + countDeficit * 1.2f - 0.9f);
+
+        // ── Event rates per second ───────────────────────────────────
+        // Rates scale with current count (fission/fusion/mitophagy are
+        // per-mitochondrion events). Biogenesis is a rate toward target.
+        float k_fission    = 0.030f * c.drp1Active;
+        float k_fusion     = 0.025f * c.mfnActive * c.mfnActive; // fusion needs 2
+        float k_mitophagy  = 0.010f * c.pink1Active * healthDeficit;
+        float k_biogenesis = 0.015f * c.pgc1aActive;
+
+        float N = (float)c.mitoCount;
+        // dN/dt = (+fission - fusion - mitophagy) * N + biogenesis * target
+        float dN = (k_fission - k_fusion - k_mitophagy) * N
+                 + k_biogenesis * (float)SimCell::MITO_TARGET_DEFAULT;
+        N += dN * mdt;
+
+        // Clamp to physiological bounds.
+        c.mitoCount = (int)clampf(N, (float)SimCell::MITO_MIN, (float)SimCell::MITO_MAX);
+
+        // Networked fraction tracks MFN/DRP1 balance (fusion wins → more
+        // networked, fission wins → more fragmented).
+        float netTarget = clampf(c.mfnActive / fmaxf(c.mfnActive + c.drp1Active, 0.001f), 0.0f, 1.0f);
+        c.mitoNetworkedFrac += (netTarget - c.mitoNetworkedFrac) * mdt * 0.2f;
+
+        // Health fraction: damage + ROS erode it; biogenesis + fusion
+        // restore it (fusion re-homogenizes damaged components).
+        float healthDecay = (c.ROS * 0.003f + c.damageLevel * 0.002f) * mdt;
+        float healthRepair = (c.mfnActive * 0.002f + c.pgc1aActive * 0.001f) * mdt;
+        c.mitoHealthFrac = clampf(c.mitoHealthFrac - healthDecay + healthRepair, 0.0f, 1.0f);
     }
 
     void updateMetabolism(SimCell& c, float dt) {
         float mdt=dt*MEDIUM_DT_SCALE;
+        bool postDivisionDisplay = (mode == MODE_SINGLE_CELL && c.postDivisionRecovery > 0.0f);
+        float lockedSize = c.size;
         float localO2=nutrients.getO2(c.position.x,c.position.z);
         float localGlu=nutrients.getGlucose(c.position.x,c.position.z);
         float localPH=nutrients.getPH(c.position.x,c.position.z);
@@ -466,7 +1183,17 @@ private:
         float oxpM=c.glycolytic?WARBURG_OXP_PENALTY*c.mitoHealth:1.0f;
         if(forcedGly){glyB=2.2f;oxpM=0.1f;}
         float gly=localGlu*1.8f*c.glycolysisBias*glyB;
-        float oxp=localGlu*localO2*6.5f*oxpM;
+        // OxPhos output scales with mitochondrial capacity: ATP is
+        // produced by the mito network, so more mitos (× health) =
+        // more ATP. Normalized so a HeLa cell at the 500 target and
+        // full health has OxPhos factor 1.0 — matches the previous
+        // tuning. Empty/damaged network collapses OxPhos.
+        // Ref: Brand & Nicholls 2011 Biochem J (coupled ATP output
+        // proportional to active mito mass).
+        float mitoCapacity = (float)c.mitoCount / (float)SimCell::MITO_TARGET_DEFAULT;
+        mitoCapacity *= clampf(c.mitoHealthFrac, 0.0f, 1.0f);
+        mitoCapacity = clampf(mitoCapacity, 0.15f, 2.5f); // guard rails
+        float oxp=localGlu*localO2*6.5f*oxpM*mitoCapacity;
 
         // Quiescent cells have much lower metabolic costs (G0 state)
         float basalC = 0.3f * mdt * metabolicActivity;
@@ -475,14 +1202,196 @@ private:
         float repC = c.damageLevel>0 ? c.damageLevel*0.08f*mdt : 0;
         c.ATP=clampf(c.ATP+(gly+oxp)*mdt*metabolicActivity-basalC-cycleC-motC-repC, 0, 100);
 
-        // ── Nutrient consumption ────────────────────────────────────
-        // Each cell consumes based on its metabolic activity
-        // Quiescent cells consume much less → colony sustainable at confluence
-        // No artificial density multiplier — real per-cell consumption creates natural depletion
+        // ── Biologically real molecule counts (Milo 2013 Bioessays) ──
+        // Driven by the same metabolic pathways; counts grow 1× → 2×
+        // from G1→G2 and halve at division. Rates tuned so that over
+        // a sim-scale cell cycle the integrated change ≈ 2×.
+        // Phase multiplier: cycle progresses from 0 (early G1) to 1 (M).
+        float cycleGrowth = clampf(c.cycleProgress, 0.0f, 1.0f);
+        // First-order relaxation to the biological target count:
+        //   dN/dt = k × (target − N)
+        // So counts regrow toward the literature median after division
+        // halved them, and stop at the target (don't blow up forever).
+        // k chosen per-molecule based on turnover time: fast pools
+        // (mRNA) converge in seconds, slow pools (ribosomes) in minutes.
+        auto relax = [mdt](double& N, double target, float k) {
+            N += (double)k * mdt * (target - N);
+        };
+        float mitoCap = (float)c.mitoCount / (float)SimCell::MITO_TARGET_DEFAULT
+                        * clampf(c.mitoHealthFrac, 0.1f, 1.5f);
+        float rateScale = metabolicActivity * fmaxf(mitoCap, 0.3f);
+        // Proliferating cells have 2× synthesis target; quiescent stays
+        // at 1× maintenance. Scale targets based on cycle progress so
+        // ribosomes, proteins, and organelles grow through G1→G2.
+        float cycleMul = 1.0f + clampf(c.cycleProgress, 0.0f, 1.0f) *
+                         (c.fate == SIM_FATE_PROLIF ? 1.0f : 0.0f);
+
+        relax(c.ribosomeCount, 6.0e6 * cycleMul,   0.040f * rateScale);
+        relax(c.rnaPolII,      4.0e4 * cycleMul,   0.050f * rateScale);
+        relax(c.rnaPolI,       2.0e2 * cycleMul,   0.050f * rateScale);
+        relax(c.rnaPolIII,     1.0e3 * cycleMul,   0.050f * rateScale);
+        relax(c.spliceosomes,  1.0e5 * cycleMul,   0.050f * rateScale);
+        relax(c.nuclearPores,  4.0e3 * cycleMul,   0.030f * rateScale);
+        relax(c.chaperones,    1.0e6 * cycleMul,   0.040f * rateScale);
+        relax(c.proteasomes,   1.0e6 * cycleMul,   0.040f * rateScale);
+        relax(c.copiiVesicles, 1.0e3 * cycleMul,   0.080f * rateScale);
+        relax(c.secretoryVesicles, 3.0e3 * cycleMul, 0.080f * rateScale);
+        relax(c.lysosomes,     3.0e2 * cycleMul,   0.020f * rateScale);
+        relax(c.peroxisomes,   3.0e2 * cycleMul,   0.020f * rateScale);
+        relax(c.lipidDroplets, 1.0e2,              0.015f * rateScale);
+        relax(c.microtubulesTotal, 3.0e2 * cycleMul, 0.060f * rateScale);
+        relax(c.actinFilaments,   5.0e4 * cycleMul, 0.060f * rateScale);
+        relax(c.totalProteins, 4.0e9 * cycleMul,   0.040f * rateScale);
+        // mRNA: faster turnover — converges in ~10 s sim time.
+        relax(c.mRNACount,     3.6e5 * cycleMul,   0.100f * metabolicActivity);
+        // tRNA: stable pool, moderate relaxation.
+        relax(c.tRNACount,     1.0e7 * cycleMul,   0.050f * rateScale);
+        // ATP: consumed at ~10⁹/s (turnover = whole pool every ~2 s);
+        // balanced with production below. We track a count derived from
+        // c.ATP (mM) and cell volume so the two stay consistent.
+        // Cell volume ~4 pL; 1 mM ≈ 2.4×10⁹ molecules.
+        // c.ATP is in "charge units" 0–100 mapped to 0–4 mM so each unit
+        // ≈ 2.4×10⁷ ATP molecules.
+        c.atpMolecules = (double)c.ATP * 7.5e7;  // 100 units → 7.5×10⁹
+        // Glucose consumption: ~3×10⁸ molecules per second per cell.
+        c.glucoseMolecules = clampf(
+            c.glucoseMolecules * (1.0f - 0.002f * metabolicActivity * mdt)
+                              + localGlu * 1.0e8 * mdt,
+            1.0e9, 5.0e10);
+        // NADH shuttles in TCA; turnover fast; count tracks production.
+        c.nadhMolecules = clampf(
+            c.nadhMolecules * (1.0f - 0.015f * mdt) + oxp * 5.0e6 * mdt,
+            1.0e7, 1.0e9);
+        // Amino acid pool — consumed by translation proportional to ribosome count.
+        float aaConsume = (float)c.ribosomeCount * 1e-7f * metabolicActivity * mdt;
+        c.aaMolecules = clampf(
+            c.aaMolecules * (1.0f - aaConsume * 0.05f)
+                         + localGlu * 1.5e8 * metabolicActivity * mdt,
+            1.0e9, 1.0e11);
+        // Water exchange is enormous (~10¹⁴ flux) but pool stays near
+        // steady state. Fix small variance.
+        c.waterMolecules = 1.3e14 * (1.0f + 0.02f * sinf(bioTime * 0.05f));
+        // Free cytosolic Ca²⁺ is dynamic (oscillates with signaling).
+        c.calciumFree = 2.4e5 * (0.8f + 0.4f * sinf(bioTime * 0.7f + c.cellUid * 0.31f));
+        // cAMP: rises on GPCR activation (here we just oscillate gently).
+        c.cAMPMolecules = 2.4e4 * (0.7f + 0.6f * sinf(bioTime * 0.12f + c.cellUid * 0.19f));
+
+        // ── Genome doubling through S-phase ─────────────────────────
+        // genomeBp goes 2N → 4N during S, halves at division.
+        if (c.phase == 1) {
+            float rep = clampf(c.program.cdogma.replicationProgress, 0.0f, 1.0f);
+            c.genomeBp = 6.4e9 * (1.0 + rep);  // 1× → 2×
+            c.nucleosomes = 3.0e7 * (1.0 + rep);
+            // Replication forks peak mid-S at ~30,000 active forks.
+            float forkShape = 4.0f * rep * (1.0f - rep);  // parabola, peaks at rep=0.5
+            c.replicationForks = 3.0e4 * forkShape;
+        } else {
+            c.replicationForks = 0.0;
+        }
+
+        // ── Central-dogma machinery growth (proliferating cells) ─────
+        if (c.fate == SIM_FATE_PROLIF) {
+            float mitoCap = (float)c.mitoCount / (float)SimCell::MITO_TARGET_DEFAULT;
+            mitoCap *= clampf(c.mitoHealthFrac, 0.1f, 1.5f);
+            float growthRate = 0.012f * mitoCap * (0.3f + 0.7f * cycleGrowth);
+            // RNA polymerases: made from proteins, grow with ribosome biogenesis.
+            c.rnaPolII   = clampf(c.rnaPolII   * (1.0f + growthRate * mdt), 1.0e4, 2.0e5);
+            c.rnaPolI    = clampf(c.rnaPolI    * (1.0f + growthRate * mdt), 5.0e1, 1.0e3);
+            c.rnaPolIII  = clampf(c.rnaPolIII  * (1.0f + growthRate * mdt), 2.0e2, 5.0e3);
+            c.spliceosomes = clampf(c.spliceosomes * (1.0f + growthRate * mdt), 5.0e4, 5.0e5);
+            // Nuclear pores assemble at ~2000/hour in proliferating cells.
+            c.nuclearPores = clampf(c.nuclearPores * (1.0f + growthRate * 0.5f * mdt), 1.5e3, 1.0e4);
+            // Chaperones / proteasomes scale with total protein synth.
+            c.chaperones = clampf(c.chaperones * (1.0f + growthRate * mdt), 3.0e5, 3.0e6);
+            c.proteasomes = clampf(c.proteasomes * (1.0f + growthRate * mdt), 3.0e5, 3.0e6);
+            // Total cellular protein doubles per cycle (~4e9 → 8e9).
+            c.totalProteins = clampf(c.totalProteins * (1.0f + growthRate * mdt), 1.0e9, 1.0e10);
+            // Cytoskeleton grows proportionally with cell.
+            c.microtubulesTotal = clampf(c.microtubulesTotal * (1.0f + growthRate * 0.7f * mdt), 1.5e2, 8.0e2);
+            c.actinFilaments    = clampf(c.actinFilaments    * (1.0f + growthRate * 0.7f * mdt), 2.0e4, 1.5e5);
+            // Membrane traffic scales with secretory demand.
+            c.copiiVesicles     = clampf(c.copiiVesicles     * (1.0f + growthRate * 0.5f * mdt), 5.0e2, 5.0e3);
+            c.secretoryVesicles = clampf(c.secretoryVesicles * (1.0f + growthRate * 0.5f * mdt), 1.0e3, 1.0e4);
+            // Digestive / metabolic organelles — slow growth.
+            c.lysosomes  = clampf(c.lysosomes  * (1.0f + growthRate * 0.3f * mdt), 1.5e2, 8.0e2);
+            c.peroxisomes = clampf(c.peroxisomes * (1.0f + growthRate * 0.3f * mdt), 1.5e2, 8.0e2);
+            // Lipid droplets depend on excess acetyl-CoA (simplify: slow drift)
+            c.lipidDroplets = clampf(c.lipidDroplets * (1.0f + growthRate * 0.2f * mdt), 3.0e1, 5.0e2);
+        }
+
+        // ── Nutrient exchange (closed-system stoichiometric reactions) ─
+        // Build a 12-species flux array (mM / bio-second) from the cell's
+        // current biology, then atomically debit/credit the local grid
+        // cell. Every entry comes from a balanced reaction (R1–R7); we
+        // never inject mass out of nothing.
+        //
+        // Rate constants are calibrated so a confluent dish (~600 cells)
+        // exhausts its glucose pool over ~24 bio-h, matching DMEM
+        // refresh practice (Reitzer 1979 / BNID 105005).
+        const float MAX_FLUX_MM_PER_BIOSEC = 5.0e-4f;          // saturating per-cell rate
+        float bioDtLocal = bioDt(dt, timeScale);
         float consumeFactor = metabolicActivity * (c.fate==SIM_FATE_PROLIF ? 1.8f : 1.0f);
-        nutrients.consume(c.position.x, c.position.z,
-            O2_CONSUME_BASE * consumeFactor * mdt,
-            GLC_CONSUME_BASE * consumeFactor * mdt, c.glycolytic);
+        float exMitoCap = clampf((float)c.mitoCount / (float)SimCell::MITO_TARGET_DEFAULT, 0.0f, 2.0f)
+                          * clampf(c.mitoHealthFrac, 0.1f, 1.5f);
+
+        // Substrate availability (Michaelis-Menten saturation).
+        float gluLocal = nutrients.get(MS_GLUCOSE,   c.position.x, c.position.z);
+        float gln      = nutrients.get(MS_GLUTAMINE, c.position.x, c.position.z);
+        float o2L      = nutrients.get(MS_O2,        c.position.x, c.position.z);
+        float aaL      = nutrients.get(MS_AA_POOL,   c.position.x, c.position.z);
+        float pyrL     = nutrients.get(MS_PYRUVATE,  c.position.x, c.position.z);
+
+        auto mm = [](float S, float Km) { return S / (S + Km + 1e-9f); };
+
+        float r_glycolysis  = MAX_FLUX_MM_PER_BIOSEC * consumeFactor * mm(gluLocal, 5.0f);
+        float r_oxphos      = MAX_FLUX_MM_PER_BIOSEC * consumeFactor * exMitoCap
+                              * mm(o2L, 0.05f) * mm(pyrL, 0.5f);
+        float r_glutamin    = 0.4f * MAX_FLUX_MM_PER_BIOSEC * consumeFactor * mm(gln, 0.5f);
+        float r_translation = 0.5f * MAX_FLUX_MM_PER_BIOSEC * consumeFactor * mm(aaL, 0.5f)
+                              * clampf((float)c.ribosomeCount / 1.0e6f, 0.1f, 2.0f);
+        float r_warburg     = c.glycolytic ? 0.8f : 0.1f;     // fraction of pyruvate → lactate
+
+        float flux[MS_COUNT] = {0};
+        // R1 Glycolysis: glucose → 2 pyruvate
+        flux[MS_GLUCOSE]  -= r_glycolysis;
+        flux[MS_PYRUVATE] += 2.0f * r_glycolysis;
+        // R2 Lactate fermentation: pyruvate → lactate (Warburg cells dump more)
+        float r_lactate = r_warburg * (2.0f * r_glycolysis + r_oxphos);
+        flux[MS_PYRUVATE] -= r_lactate;
+        flux[MS_LACTATE]  += r_lactate;
+        // R3 TCA + OxPhos: pyruvate + 2.5 O2 → 3 CO2
+        flux[MS_PYRUVATE] -= r_oxphos;
+        flux[MS_O2]       -= 2.5f * r_oxphos;
+        flux[MS_CO2]      += 3.0f * r_oxphos;
+        // R4 Glutaminolysis: glutamine + 0.5 O2 → 2 CO2
+        flux[MS_GLUTAMINE] -= r_glutamin;
+        flux[MS_O2]        -= 0.5f * r_glutamin;
+        flux[MS_CO2]       += 2.0f * r_glutamin;
+        // R5 Translation: AA pool → biomass (consumed only)
+        flux[MS_AA_POOL]   -= r_translation;
+        // R6 Receptor binding — catalytic, no net flux
+        // R7 Cell autolysis — handled at apoptosis / necrosis site
+        // R8 Aquaporin osmosis — water moves down osmolarity gradient.
+        //    Sum extracellular non-water non-pH non-drug species, compare
+        //    to cytosolic baseline; positive Δ pulls water INTO the cell
+        //    (cell swells); negative Δ pushes water OUT (cell shrinks).
+        float osmoExt = 0.0f;
+        for (int s = 0; s < MS_COUNT; s++) {
+            if (s == MS_HPLUS || s == MS_DRUG || s == MS_WATER || s == MS_GROWTH_F) continue;
+            osmoExt += nutrients.get(s, c.position.x, c.position.z);
+        }
+        float dOsmo = osmoExt - c.osmoCytoMM;
+        float Jw_mM = Osmosis::AQP_LP_PER_BIOSEC * (float)c.aquaporinCount * dOsmo;
+        flux[MS_WATER] -= Jw_mM;       // water leaves medium (rises if dOsmo>0)
+        c.waterMM      += Jw_mM * bioDtLocal;
+        // Turgor: deviation from baseline 55 000 mM water → elastic
+        // pressure. Capped to ±5 kPa to prevent runaway swelling.
+        float volRatio = c.waterMM / MediumComposition::DMEM_WATER_MM;
+        c.turgorPa = clampf(Osmosis::BULK_MOD_PA * (volRatio - 1.0f),
+                            -Osmosis::TURGOR_LYSE_PA, Osmosis::TURGOR_LYSE_PA);
+
+        nutrients.exchange(c.position.x, c.position.z, flux, bioDtLocal);
+        nutrients.updatePH();
 
         // ── Stress homeostasis ──────────────────────────────────────
         // Quiescent cells have lower stress because they consume less
@@ -539,7 +1448,7 @@ private:
 
         // ── Natural turnover at confluence ──────────────────────────
         // Real tissue: ~1-3% daily cell death even in homeostasis
-        if (c.age > TURNOVER_AGE_THRESHOLD && c.apoptosisPhase == 0) {
+        if (mode != MODE_SINGLE_CELL && c.age > TURNOVER_AGE_THRESHOLD && c.apoptosisPhase == 0) {
             float deathProb = TURNOVER_PROB_PER_DT * (c.age - TURNOVER_AGE_THRESHOLD) * 0.001f;
             if (randf() < deathProb * mdt) {
                 c.fate = SIM_FATE_APOPTOTIC; c.apoptosisPhase = 1; c.apoTimer = 0;
@@ -547,7 +1456,20 @@ private:
             }
         }
 
-        c.size=clampf(0.6f+c.biomass*0.4f, 0.5f, 1.8f);
+        // Base size from biomass + turgor-driven elastic swelling.
+        // 5 kPa turgor → 5 % radius change (Stewart 2011 Nat Rev MCB).
+        float turgorFrac = clampf(c.turgorPa / Osmosis::BULK_MOD_PA, -0.20f, 0.20f);
+        c.size=clampf((0.6f+c.biomass*0.4f) * (1.0f + turgorFrac), 0.5f, 1.8f);
+        if (postDivisionDisplay && c.apoptosisPhase == 0 && !c.necrotic) {
+            // In single-cell teaching mode, after mitosis we want two healthy,
+            // persistent daughters rather than a second round of growth/death.
+            c.size = clampf(lockedSize, 0.5f, 1.8f);
+            c.biomass = biomassFromCellSizeFactor(c.size);
+            c.ATP = fmaxf(c.ATP, 35.0f);
+            c.stress = fminf(c.stress, 20.0f);
+            c.damageLevel = fminf(c.damageLevel, 0.10f);
+            c.mitoPotential = fmaxf(c.mitoPotential, 150.0f);
+        }
         c.age+=mdt;
     }
 
@@ -613,6 +1535,39 @@ private:
 
     void updateCellCycle(SimCell& c, float dt) {
         if(c.apoptosisPhase>0||c.senescent) return;
+
+        // Fresh daughters should settle in early G1 before immediately
+        // resuming full growth/cycling. This keeps the lineage continuous and
+        // avoids the fake-looking "small daughters -> big M-phase cells" snap.
+        if (mode == MODE_SINGLE_CELL && c.postDivisionRecovery > 0.0f) {
+            c.phase = 0;
+            c.cycleProgress = 0;
+            c.cycleTimer = 0;
+            c.divisionPending = false;
+            c.checkpointG1Passed = false;
+            c.checkpointG2Passed = false;
+            c.g1WaitTimer = 0;
+            c.g2WaitTimer = 0;
+            // Do NOT raise divisionCooldown here. The previous code forced
+            // it to at least 18 slow-time units, which (with SLOW_DT_SCALE
+            // =0.06) meant ~5 real minutes before the cell could enter M
+            // again. The daughter's cooldown is already set appropriately
+            // in deriveDaughter() (1.5 single / 8 colony), and
+            // postDivisionRecovery itself already holds phase=0 for 6 s.
+            return;
+        }
+
+        // Once a cell has entered mitosis, the cell-cycle timer no longer
+        // owns progression. The per-cell mitosis program does.
+        if (c.program.mitosis.active) {
+            c.phase = 3;
+            c.cycleProgress = 1.0f;
+            c.divisionPending = c.program.mitosis.postDivisionComplete();
+            c.checkpointG1Passed = false;
+            c.checkpointG2Passed = true;
+            return;
+        }
+
         float sdt=dt*SLOW_DT_SCALE;
 
         // ── Lag phase: cells adapt before first division ────────────
@@ -676,42 +1631,129 @@ private:
             }
         }
 
+        // ── Sharp predicate-based G1/S checkpoint ──────────────────
+        // Replaces the old stochastic Hill product. Cell either passes the
+        // restriction point (all gates met) or holds at end-of-G1, with
+        // the *exact* failing predicate written to the audit log so the
+        // user can answer "why didn't this cell divide?" with a citation.
+        // No randf() — the gate is fully deterministic given the state.
         if(c.cycleTimer<g1end) {
             c.cycleProgress=c.cycleTimer/g1end;
             if(!c.checkpointG1Passed && !contactArrested) {
-                bool pass=c.cdk.readyForS()||(c.cdk.CycE>0.12f&&c.ATP>15&&pHOk&&c.ROS<70&&c.stress<90);
-                if(pass) c.checkpointG1Passed=true;
-                else { c.g1WaitTimer+=sdt;
-                       // Safety valve: but NOT if contact-arrested
-                       if(c.g1WaitTimer>CYCLE_G1_DUR*2.0f && !contactArrested) c.checkpointG1Passed=true;
-                       c.cycleTimer=g1end*0.99f; }
+                float gluLocalMM = nutrients.get(MS_GLUCOSE,   c.position.x, c.position.z);
+                float glnLocalMM = nutrients.get(MS_GLUTAMINE, c.position.x, c.position.z);
+                CheckpointResult g1s = evalG1S(c, gluLocalMM, glnLocalMM, contactArrested);
+                if (g1s.passed) {
+                    c.checkpointG1Passed = true;
+                    c.program.logEvent(bioTime, 0, "G1S_PASS", g1s.reason);
+                } else {
+                    c.g1WaitTimer += sdt;
+                    c.cycleTimer = g1end * 0.99f;
+                    // Log only intermittently to avoid filling the ring
+                    // every frame with the same reason.
+                    if (c.g1WaitTimer > CYCLE_G1_DUR * 0.10f &&
+                        ((int)(c.g1WaitTimer / sdt) % 256) == 0) {
+                        c.program.logEvent(bioTime, 0, "G1S_HOLD", g1s.reason);
+                    }
+                }
             }
         } else if(c.cycleTimer<se) {
             c.cycleProgress=(c.cycleTimer-g1end)/CYCLE_S_DUR;
+            // Per-cell S-phase gate: every cell has its own replication
+            // program (c.program.cdogma). S cannot complete visually faster
+            // than replication actually progresses. This replaces the
+            // previous "primary-only" special case (which used the global
+            // primaryReplicationProgress) and extends the same biology to
+            // every lineage in the dish.
+            //
+            // Reference: Chao et al. 2019 eLife single-cell tracking —
+            // S-phase duration in HeLa is ~8 h and scales with replication
+            // fork speed + origin firing, not a wall clock.
+            if (c.program.cdogmaInitialized) {
+                float replProgress = clampf(c.program.cdogma.replicationProgress, 0.0f, 0.999f);
+                c.cycleProgress = fminf(c.cycleProgress, replProgress);
+                bool replReady = c.program.cdogma.replicationReadyForM();
+                if (!replReady && c.cycleProgress > 0.985f) {
+                    // Hold at end of S until the real replication program
+                    // finishes all forks and clears chk1Signal.
+                    c.cycleTimer = g1end + CYCLE_S_DUR * 0.985f;
+                    c.cycleProgress = 0.985f;
+                    c.checkpointG2Passed = false;
+                }
+            }
         } else if(c.cycleTimer<g2end) {
             c.cycleProgress=(c.cycleTimer-se)/CYCLE_G2_DUR;
             if(!c.checkpointG2Passed) {
-                bool pass=c.cdk.readyForM()||(c.cdk.CycB>0.10f&&c.ATP>12&&pHOk&&c.stress<85);
-                if(pass) c.checkpointG2Passed=true;
-                else { c.g2WaitTimer+=sdt;
-                       if(c.g2WaitTimer>CYCLE_G2_DUR*3.5f) c.checkpointG2Passed=true;
-                       c.cycleTimer=g2end*0.99f; }
+                // Sharp predicate-based G2/M gate (replaces stochastic Hill product).
+                // Holds the cycle clock at G2 boundary until every required
+                // condition is met — no probabilistic noise, no safety valve.
+                c.program.ensureCDogmaInitialized();
+                CheckpointResult g2m = evalG2M(c, c.program.cdogma);
+                if (g2m.passed) {
+                    c.checkpointG2Passed = true;
+                    c.program.logEvent(bioTime, 2, "G2M_PASS", g2m.reason);
+                } else {
+                    c.g2WaitTimer += sdt;
+                    c.cycleTimer = g2end * 0.99f;
+                    c.cycleProgress = fminf(c.cycleProgress, 0.995f);
+                    if (c.g2WaitTimer > CYCLE_G2_DUR * 0.10f &&
+                        ((int)(c.g2WaitTimer / sdt) % 256) == 0) {
+                        c.program.logEvent(bioTime, 2, "G2M_HOLD", g2m.reason);
+                    }
+                }
             }
         } else {
+            // ── Division cooldown: prevent immediate re-entry ───────
+            if (c.divisionCooldown > 0) {
+                c.divisionCooldown -= sdt;
+                c.cycleTimer = g2end * 0.99f; // Hold at G2/M boundary
+                c.cycleProgress = 0.95f;
+                return; // Don't enter M-phase yet
+            }
+
             c.cycleProgress = 1.0f;
             c.phase = 3; // M phase
 
-            // ── SPACE CHECK before division ─────────────────────────
-            // Cell must have physical room for a daughter cell
-            // If surrounded, skip division → reset cycle (like a failed mitosis)
+            if (c.program.mitosis.active) {
+                c.cycleTimer = fmaxf(c.cycleTimer, g2end + fminf(c.program.mitosis.totalProgress, CYCLE_M_DUR));
+                return;
+            }
+
+            // ── M-entry licensing via the SHARP `evalG2M` predicate ──
+            // All biology gates collapse into one call returning
+            // `{passed, reason}`. The first failing predicate is what gets
+            // written to the audit log verbatim — same string the user
+            // would read in the in-app Audit panel — so "why didn't this
+            // cell divide" always has a citable answer.
+            //
+            // Refused licenses with reasons that are NOT covered by
+            // evalG2M (space, dish full, fate, senescence, tetraploid)
+            // are logged inline.
             bool hasSpace = neighborCount < 4 && c.localPressure < 1.5f;
             bool canDiv = (c.fate==SIM_FATE_PROLIF || c.fate==SIM_FATE_UNDETERMINED);
-            if(canDiv && !c.senescent && hasSpace && (int)cells.size()<MAX_CELLS) {
-                c.divisionPending = true;
+            bool notTetraploid = !c.program.tetraploid;
+            c.program.ensureCDogmaInitialized();
+            CheckpointResult m_entry = evalG2M(c, c.program.cdogma);
+
+            if (canDiv && !c.senescent && hasSpace && notTetraploid &&
+                m_entry.passed && (int)cells.size() < MAX_CELLS) {
+                c.divisionPending = false;
                 if(c.fate==SIM_FATE_UNDETERMINED) {
                     c.fate = SIM_FATE_PROLIF; c.fateLocked = true;
                 }
+                c.cycleTimer = fmaxf(c.cycleTimer, g2end);
+                c.program.logEvent(bioTime, 3, "M_LICENSED", m_entry.reason);
+                return;
             }
+
+            // Log the specific reason that refused the license.
+            const char* refuseReason = m_entry.reason;
+            if (!canDiv)                     refuseReason = "fate_nonprolif";
+            else if (c.senescent)            refuseReason = "senescent";
+            else if (!notTetraploid)         refuseReason = "tetraploid_from_slippage";
+            else if (!hasSpace)              refuseReason = "no_space";
+            else if ((int)cells.size() >= MAX_CELLS) refuseReason = "dish_full";
+            c.program.logEvent(bioTime, 3, "DIV_REFUSED", refuseReason);
 
             // Reset for next cycle
             c.cycleTimer = 0; c.cycleProgress = 0;
@@ -723,6 +1765,7 @@ private:
 
     void updateFate(SimCell& c, float dt) {
         if(c.apoptosisPhase>0||c.senescent) return;
+        if (mode == MODE_SINGLE_CELL && c.postDivisionRecovery > 0.0f) return;
 
         // Fate timer in MEDIUM timescale
         float fdt = dt * MEDIUM_DT_SCALE;
@@ -807,34 +1850,94 @@ private:
     }
 
     void processDivisions() {
-        std::vector<SimCell> daughters;
-        for(auto& m:cells) {
-            if(!m.divisionPending||!m.alive) continue;
-            m.divisionPending=false;
-            float ang=randf()*M_PI*2, off=m.radius*1.85f*m.size;
-            simd_float3 dp={m.position.x+cosf(ang)*off, m.position.y, m.position.z+sinf(ang)*off};
-            if(sqrtf(dp.x*dp.x+dp.z*dp.z)>SCENE_BOUND-3) continue;
-            SimCell d; d.init(dp, nextCloneId++);
-            float split=0.48f+randf()*0.04f;
-            d.ATP=fmaxf(35,m.ATP*split*1.3f); d.stress=fminf(15,m.stress*0.25f);
-            d.ROS=m.ROS*split; d.damageLevel=m.damageLevel*split;
-            d.biomass=1.0f; d.mitoHealth=m.mitoHealth*(0.45f+randf()*0.1f);
-            d.glycolysisBias=clampf(m.glycolysisBias+(randf()-0.5f)*GENOME_MUTATION_RATE*2, 0.3f, 2.2f);
-            d.prolifBias=clampf(m.prolifBias+(randf()-0.5f)*GENOME_MUTATION_RATE*2, 0.3f, 2.2f);
-            d.rosTolerance=clampf(m.rosTolerance+(randf()-0.5f)*GENOME_MUTATION_RATE*2, 0.3f, 2.2f);
-            d.repairRate=clampf(m.repairRate+(randf()-0.5f)*GENOME_MUTATION_RATE*2, 0.2f, 2.0f);
-            d.generation=m.generation+1;
-            d.cloneId=(fabsf(d.glycolysisBias-m.glycolysisBias)>0.08f)?nextCloneId++:m.cloneId;
-            d.telomere=m.telomere-TELO_LOSS_PER_DIV*(0.8f+randf()*0.4f);
-            if(d.telomere<TELO_CRITICAL) d.senescent=true;
-            m.biomass=fmaxf(0.6f,m.biomass*(1-split)); m.ATP=fmaxf(30,m.ATP*(1-split));
-            m.telomere-=TELO_LOSS_PER_DIV*(0.8f+randf()*0.4f);
-            if(m.telomere<TELO_CRITICAL) m.senescent=true;
-            d.velocity.x=cosf(ang)*1.2f; d.velocity.z=sinf(ang)*1.2f;
-            m.velocity.x-=cosf(ang)*0.5f; m.velocity.z-=sinf(ang)*0.5f;
-            daughters.push_back(d); statDivisions++;
+        // cells[0] in single-cell mode is finalized by the detailed visual
+        // mitosis in main.mm (gMitosis). Here we only route its
+        // divisionPending flag back into the "hold in M-phase for visual"
+        // state that main.mm watches. EVERY OTHER cell — including
+        // background cells in single mode — finalizes through the normal
+        // deriveDaughter() loop below. Previously this function early-
+        // returned in single mode, which left daughter B (and every
+        // subsequent background cell) permanently stuck at DNA=1524 /
+        // phase=3 with no one to spawn the daughters.
+        if (mode == MODE_SINGLE_CELL && !cells.empty()) {
+            auto& m = cells[0];
+            if (m.divisionPending) {
+                m.divisionPending = false;
+                m.phase = 3; // Stay in M-phase for visual mitosis
+            }
+            if (mitosisVisualizationComplete) {
+                mitosisVisualizationComplete = false;
+            }
         }
-        for(auto& d:daughters) cells.push_back(d);
+
+        // Colony mode and non-primary single-cell lineages use deriveDaughter()
+        // once their own mitosis program reaches cytokinesis completion.
+        // In single-cell mode, start at index 1 (cells[0] handled above).
+        int startIdx = (mode == MODE_SINGLE_CELL) ? 1 : 0;
+        std::vector<SimCell> daughters;
+        daughters.reserve(cells.size());
+
+        for (int i = startIdx; i < (int)cells.size(); i++) {
+            auto& m = cells[i];
+            bool mitosisReady = m.program.mitosis.postDivisionComplete();
+            if ((!m.divisionPending && !mitosisReady) || !m.alive) continue;
+
+            float ang = randf() * M_PI * 2.0f;
+            float off = m.radius * 1.85f * m.size;
+            simd_float3 dp = {
+                m.position.x + cosf(ang) * off,
+                m.position.y,
+                m.position.z + sinf(ang) * off
+            };
+            // If the candidate daughter would land outside the dish, try a few
+            // alternate angles before giving up so the parent doesn't silently
+            // get its divisionPending flag cleared with no offspring produced.
+            int tries = 0;
+            while (sqrtf(dp.x*dp.x + dp.z*dp.z) > SCENE_BOUND - 3.0f && tries < 8) {
+                ang = randf() * M_PI * 2.0f;
+                dp.x = m.position.x + cosf(ang) * off;
+                dp.z = m.position.z + sinf(ang) * off;
+                tries++;
+            }
+            if (sqrtf(dp.x*dp.x + dp.z*dp.z) > SCENE_BOUND - 3.0f) {
+                // Can't find a valid spot — keep the parent's pending flag so
+                // it retries next frame rather than losing its division.
+                m.program.logEvent(bioTime, 3, "DIV_REFUSED", "dish_edge");
+                continue;
+            }
+            m.divisionPending = false;
+
+            const SimCell parentSnapshot = m;
+            int parentUid = m.cellUid;
+            SplitStats stats;
+            stats.cytoplasmicRatioA = 0.5f;
+            float sf = 0.794f;
+            simd_float3 pushVel = {cosf(ang) * 1.2f, 0, sinf(ang) * 1.2f};
+
+            SimCell d = deriveDaughter(parentSnapshot, dp, pushVel, sf, stats, false);
+            if (mode != MODE_SINGLE_CELL) {
+                // Add small mutation to daughter's traits (colony evolution)
+                d.glycolysisBias = clampf(d.glycolysisBias + (randf() - 0.5f) * GENOME_MUTATION_RATE * 2, 0.3f, 2.2f);
+                d.prolifBias = clampf(d.prolifBias + (randf() - 0.5f) * GENOME_MUTATION_RATE * 2, 0.3f, 2.2f);
+                d.rosTolerance = clampf(d.rosTolerance + (randf() - 0.5f) * GENOME_MUTATION_RATE * 2, 0.3f, 2.2f);
+                d.repairRate = clampf(d.repairRate + (randf() - 0.5f) * GENOME_MUTATION_RATE * 2, 0.2f, 2.0f);
+                d.cloneId = (fabsf(d.glycolysisBias - parentSnapshot.glycolysisBias) > 0.08f)
+                    ? nextCloneId++
+                    : parentSnapshot.cloneId;
+            }
+
+            m = deriveDaughter(parentSnapshot, parentSnapshot.position,
+                               {-cosf(ang) * 0.5f, 0, -sinf(ang) * 0.5f},
+                               sf, stats, true);
+            m.cellUid = parentUid; // parent keeps UID
+
+            pendingDivisions.push_back({parentUid, m.cellUid, d.cellUid, m.position, d.position});
+            daughters.push_back(d);
+            statDivisions++;
+            m.program.logEvent(bioTime, 0, "DIV_FINALIZE");
+        }
+
+        for (auto& d : daughters) cells.push_back(d);
     }
 
     void updateStats() {
