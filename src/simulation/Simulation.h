@@ -204,10 +204,51 @@ struct CDKState {
     float CycD=0.05f, Rb=0.90f, E2F=0.02f;
     float CycE=0.01f, CycA=0.01f, CycB=0.01f, p21=0.05f;
 
+    // Unsynchronized-population init: an asynchronously-seeded HeLa
+    // culture has ~46% G1, ~33% S, ~17% G2, ~4% M (Casciari 1992).
+    // Without this, every cell in a fresh colony starts at CycE≈0.01
+    // and takes 30+ bio-h to build up to the G1/S threshold together —
+    // producing a big synchronized first-division burst at ~50 bio-h
+    // that doesn't match real HeLa growth curves.
     void randomize() {
-        CycD=0.05f+randf()*0.10f; Rb=0.90f+randf()*0.08f; E2F=0.02f+randf()*0.06f;
-        CycE=0.01f+randf()*0.04f; CycA=0.01f+randf()*0.03f; CycB=0.01f+randf()*0.02f;
-        p21=0.05f+randf()*0.05f;
+        float u = randf();
+        if (u < 0.46f) {
+            // G1 — anywhere along G1's CycD/Rb trajectory.
+            float g1u = randf();   // 0 = fresh G1, 1 = about to enter S
+            CycD = 0.10f + g1u * 0.50f;
+            Rb   = 0.95f - g1u * 0.40f;      // Rb drops 0.95 → 0.55 through G1
+            E2F  = 0.02f + g1u * 0.15f;
+            CycE = 0.02f + g1u * 0.18f;
+            CycA = 0.01f + g1u * 0.05f;
+            CycB = 0.01f + randf() * 0.02f;
+        } else if (u < 0.79f) {
+            // S — CycE high, CycA ramping.
+            float su = randf();
+            CycD = 0.25f + randf() * 0.20f;
+            Rb   = 0.35f - su * 0.15f;
+            E2F  = 0.40f + randf() * 0.30f;
+            CycE = 0.20f + randf() * 0.25f;
+            CycA = 0.15f + su * 0.25f;
+            CycB = 0.02f + randf() * 0.05f;
+        } else if (u < 0.96f) {
+            // G2 — CycA high, CycB rising.
+            float g2u = randf();
+            CycD = 0.20f + randf() * 0.20f;
+            Rb   = 0.20f;
+            E2F  = 0.55f;
+            CycE = 0.15f + randf() * 0.10f;
+            CycA = 0.40f + randf() * 0.15f;
+            CycB = 0.08f + g2u * 0.15f;
+        } else {
+            // M — CycB above threshold, mitosis imminent.
+            CycD = 0.30f;
+            Rb   = 0.15f;
+            E2F  = 0.50f;
+            CycE = 0.10f;
+            CycA = 0.55f;
+            CycB = 0.28f + randf() * 0.10f;
+        }
+        p21 = 0.05f + randf() * 0.05f;
     }
 
     void step(float dt_bio, float growthSignal) {
@@ -413,10 +454,46 @@ struct SimCell {
         mitoPotential=170+randf()*10; mitoHealth=1.0f;
         glycolytic=false; warburgTimer=0;
         hypoxiaTimer=0; hypoxiaIntensity=0; necrotic=false;
-        cdk.randomize(); phase=0;
-        cycleTimer=randf()*2.0f; cycleProgress=0;
-        checkpointG1Passed=false; checkpointG2Passed=false;
-        g1WaitTimer=0; g2WaitTimer=0;
+        cdk.randomize();
+        // Align cycleTimer + checkpoints with the CDK phase so a cell
+        // initialized (via randomize()) in S / G2 / M actually progresses
+        // through its cycle. Without this, a cell with CycB > 0.25 reads
+        // phase=M from the CDK but its cycleTimer is 0 and its G1/G2
+        // checkpoints are false — so it sits in M forever, never dividing.
+        phase = cdk.getPhase();
+        const float g1end = CYCLE_G1_DUR;
+        const float send  = g1end + CYCLE_S_DUR;
+        const float g2end = send  + CYCLE_G2_DUR;
+        if (phase == 0) {
+            cycleTimer           = randf() * g1end;
+            checkpointG1Passed   = false;
+            checkpointG2Passed   = false;
+        } else if (phase == 1) {
+            cycleTimer           = g1end + randf() * CYCLE_S_DUR;
+            checkpointG1Passed   = true;
+            checkpointG2Passed   = false;
+        } else if (phase == 2) {
+            cycleTimer           = send + randf() * CYCLE_G2_DUR;
+            checkpointG1Passed   = true;
+            checkpointG2Passed   = false;
+        } else {  // M
+            cycleTimer           = g2end;
+            checkpointG1Passed   = true;
+            checkpointG2Passed   = true;
+        }
+        cycleProgress = 0;
+        g1WaitTimer = 0; g2WaitTimer = 0;
+        // For cells seeded in G2 / M, their DNA is already replicated so
+        // the mitosis-entry gate can pass. Without this, M-phase cells
+        // stall at startMitosisProgram() because dnaCheckpointPassed
+        // never flips true (replicationProgress still 0).
+        if (phase >= 2) {
+            program.ensureCDogmaInitialized();
+            program.cdogma.replicationProgress = 1.0f;
+            program.cdogma.replicationQuality  = 1.0f;
+            program.cdogma.chk1Signal          = 0.0f;
+            program.cdogma.replicationActive   = false;
+        }
         fate=SIM_FATE_UNDETERMINED; fateScores[0]=fateScores[1]=fateScores[2]=0;
         fateTimer=0; fateLocked=false; atpDangerTimer=0;
         glycolysisBias=0.8f+randf()*0.4f; prolifBias=0.8f+randf()*0.4f;
