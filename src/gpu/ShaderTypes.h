@@ -31,7 +31,7 @@ struct CellInstance {
     float       glowIntensity;
     uint32_t    lodLevel;
     float       phase;       // 0-3: G1/S/G2/M
-    float       pad;
+    float       furrowDepth; // 0=none, >0=cytokinesis cleavage furrow
 };
 
 // Per-instance data for procedural organelles

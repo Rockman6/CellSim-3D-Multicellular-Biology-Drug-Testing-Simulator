@@ -1,0 +1,965 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{bm}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\usepackage{enumitem}
+\setlist{nosep}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{longtable}
+
+\title{CellSim --- Complete Mathematical \& Physical Specification \\
+       \large Every Equation in the Simulator, With Rationale and Glossary}
+\author{Auto-generated from source (post-scientific-audit version)}
+\date{\today}
+
+\newcommand{\rxn}[1]{\textsf{\textbf{#1}}}
+\newcommand{\eq}[1]{\begin{equation}#1\end{equation}}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\bigskip
+
+\section{Document Scope and Conventions}
+This document is a complete catalogue of every governing equation used by the CellSim simulator. Nothing is omitted. The simulator integrates 17 interacting subsystems; each is described with the rate laws, dynamical state variables, rationale, and a variable glossary.
+
+\paragraph{Execution order per frame.}
+\begin{enumerate}
+\item Metabolism (\S\ref{sec:metabolism}) --- produces ATP, NADH, consumes O\(_2\), glucose.
+\item Membrane transport (\S\ref{sec:membrane}) --- ion gradients and membrane potential.
+\item Signaling (\S\ref{sec:signaling}) --- integrates extracellular cues.
+\item Gene regulation (\S\ref{sec:genereg}) and central dogma (\S\ref{sec:dogma}) --- transcription / translation.
+\item Proteome (\S\ref{sec:proteome}) --- folding, PTMs, degradation.
+\item Vesicular traffic (\S\ref{sec:vesicles}) --- secretion, endocytosis, UPR, autophagy.
+\item Cytoskeleton (\S\ref{sec:cytoskel}) --- actin, MTs, motors.
+\item Cell junctions (\S\ref{sec:junctions}) --- cadherins, integrins, gap junctions.
+\item Genome (\S\ref{sec:genome}) --- chromosome state, telomeres.
+\item DNA repair (\S\ref{sec:dna}) --- lesion generation and repair.
+\item Apoptosis (\S\ref{sec:apop}).
+\item CDK / cyclin oscillator (\S\ref{sec:cdk}).
+\item Mitosis state machine (\S\ref{sec:mitosis}).
+\item Cancer (\S\ref{sec:cancer}).
+\item Development (\S\ref{sec:devo}).
+\item Stem cells (\S\ref{sec:stem}).
+\item Pathogens (\S\ref{sec:path}).
+\item Immunity (\S\ref{sec:immune}).
+\item Population-level dynamics (\S\ref{sec:popn}) --- motility, Hertz contact, drug PK/PD.
+\item Intracellular Langevin physics (\S\ref{sec:langevin}).
+\item Nutrient field (\S\ref{sec:nutrients}).
+\end{enumerate}
+
+\paragraph{Units.} Time in biological seconds; $t_{\rm bio} = \texttt{BIO\_TIME\_SCALE}\cdot t_{\rm wall}$ with $\texttt{BIO\_TIME\_SCALE} = 180$. Concentrations in \si{mM} (metabolism, ions) or \si{\micro M} (signaling). Distances in sim units ($\sim\si{\micro\meter}$). Membrane potential in \si{mV}. Energy in \si{kJ/mol}. Telomere in bp.
+
+\paragraph{Integrator.} Explicit forward Euler except where noted. Rush--Larsen exponential update is used for Hodgkin--Huxley gating variables. Each engine caps or subdivides $\Delta t$ to its own stability bound.
+
+\paragraph{Symbols.}
+\begin{tabular}{@{}ll@{}}\toprule
+$[X]$ & concentration of species $X$ \\
+$v_i$ & enzyme $i$'s flux / reaction rate \\
+$\phi(S;K,n) = S^n/(K^n+S^n)$ & Hill sigmoid \\
+$K_m$, $K_I$, $K_a$, $K_{0.5}$ & Michaelis, inhibition, activation, half-max constants \\
+$E_X$ & Nernst reversal for ion $X$ \\
+$\Delta\Psi$ & membrane potential \\
+$R, T, F, k_B$ & gas constant, temperature, Faraday, Boltzmann constants \\
+\bottomrule
+\end{tabular}
+
+\clearpage
+\section{Central Energy Metabolism}
+\label{sec:metabolism}
+The metabolic engine (\texttt{Metabolism.h}) tracks 35 metabolites and 22 enzymatic reactions. The unifying rate law is a mass-action Michaelis--Menten product with allosteric modifiers:
+\eq{ v_i = V_{\max,i} \prod_{S\in\text{subs}}\frac{[S]}{K_m^S+[S]}\,\prod_{I}\frac{K_I}{K_I+[I]}\,\prod_A\bigg(1+\alpha_A\frac{[A]}{K_a^A+[A]}\bigg). }
+
+\subsection{Physical constants (37\,\si{\celsius})}
+\[ R=\SI{8.314e-3}{kJ/(mol.K)},\quad T=\SI{310.15}{K},\quad F=\SI{96.485}{kJ/(mol.V)},\quad RT=\SI{2.577}{kJ/mol},\quad \tfrac{2.303RT}{F}=\SI{61.5}{mV}. \]
+\[ \Delta G^{\circ}_{\rm ATP} = -\SI{54}{kJ/mol},\quad \Delta G^{\circ}_{\rm NADH\to O_2} = -\SI{220}{kJ/mol}. \]
+
+\subsection{Glycolysis --- 10 enzymatic steps}
+
+\paragraph{Step 1 Hexokinase (HK, EC 2.7.1.1):}
+\eq{ v_{\rm HK} = V_{\rm HK}\frac{[\rm Glc]}{K_m^{\rm Glc}+[\rm Glc]}\frac{[\rm ATP]}{K_m^{\rm ATP}+[\rm ATP]}\frac{K_I^{\rm G6P}}{K_I^{\rm G6P}+[\rm G6P]} }
+Product inhibition prevents G6P accumulation during downstream bottlenecks.
+
+\paragraph{Step 2 Phosphoglucose Isomerase (PGI, EC 5.3.1.9):}
+\eq{ v_{\rm PGI} = \frac{V_f\,[\rm G6P]/K_m^{G6P} - V_r\,[\rm F6P]/K_m^{F6P}}{1+[\rm G6P]/K_m^{G6P}+[\rm F6P]/K_m^{F6P}} }
+Haldane reversible form; near equilibrium in vivo.
+
+\paragraph{Step 3 Phosphofructokinase-1 (PFK-1, EC 2.7.1.11):}
+\eq{ v_{\rm PFK} = V_{\rm PFK}\frac{[\rm F6P]}{K_m^{F6P}+[\rm F6P]}\frac{[\rm ATP]}{K_m^{ATP}+[\rm ATP]}\cdot\frac{K_I^{\rm ATP}}{K_I^{\rm ATP}+[\rm ATP]}\cdot\bigg(1+4\frac{[\rm AMP]}{K_a^{AMP}+[\rm AMP]}\bigg)\cdot\frac{K_I^{\rm cit}}{K_I^{\rm cit}+[\rm cit]} }
+Master regulator. ATP inhibits, AMP activates, citrate (TCA overflow) inhibits.
+
+\paragraph{Step 4 Aldolase (ALD, EC 4.1.2.13):}
+\eq{ v_{\rm ALD} = V_{\rm ALD}\frac{[\rm F1,6BP]}{K_m+[\rm F1,6BP]} }
+Produces DHAP and G3P (1:1).
+
+\paragraph{Step 5 Triose Phosphate Isomerase (TPI, EC 5.3.1.1):}
+\eq{ v_{\rm TPI} = V_{\rm TPI}\frac{[\rm DHAP]-[\rm G3P]/K_{\rm eq}}{K_m+[\rm DHAP]+[\rm G3P]},\quad K_{\rm eq}=0.0476 }
+``Perfect enzyme'' --- near diffusion limit.
+
+\paragraph{Step 6 Glyceraldehyde-3-P Dehydrogenase (GAPDH, EC 1.2.1.12):}
+\eq{ v_{\rm GAPDH} = V_{\rm GAPDH}\frac{[\rm G3P]}{K_m^{G3P}+[\rm G3P]}\frac{[\rm NAD^+]}{K_m^{NAD}+[\rm NAD^+]}\frac{[\rm Pi]}{K_m^{Pi}+[\rm Pi]} }
+
+\paragraph{Step 7 Phosphoglycerate Kinase (PGK, EC 2.7.2.3):}
+\eq{ v_{\rm PGK} = V_{\rm PGK}\frac{[\rm BPG]}{K_m^{BPG}+[\rm BPG]}\frac{[\rm ADP]}{K_m^{ADP}+[\rm ADP]} }
+
+\paragraph{Step 8 Phosphoglycerate Mutase (PGM, EC 5.4.2.11):}
+Reversible MM as in step 2.
+
+\paragraph{Step 9 Enolase (ENO, EC 4.2.1.11):}
+\eq{ v_{\rm ENO} = V_{\rm ENO}\frac{[\rm 2PG]}{K_m+[\rm 2PG]} }
+
+\paragraph{Step 10 Pyruvate Kinase (PK, EC 2.7.1.40):}
+\eq{ v_{\rm PK} = V_{\rm PK}\frac{[\rm PEP]}{K_m^{PEP}+[\rm PEP]}\frac{[\rm ADP]}{K_m^{ADP}+[\rm ADP]}\cdot\bigg(1+3\frac{[\rm F1,6BP]}{K_a+[\rm F1,6BP]}\bigg)\cdot\frac{K_I^{\rm ATP}}{K_I^{\rm ATP}+[\rm ATP]} }
+Feed-forward activation (F1,6BP) couples early to late glycolysis.
+
+\subsection{Pyruvate Dehydrogenase Complex (PDH)}
+\eq{ v_{\rm PDH} = V_{\rm PDH}\frac{[\rm pyr]}{K_m^{pyr}+[\rm pyr]}\frac{[\rm CoA]}{K_m^{CoA}+[\rm CoA]}\frac{[\rm NAD^+]}{K_m^{NAD}+[\rm NAD^+]}\frac{K_I^{\rm AcCoA}}{K_I^{\rm AcCoA}+[\rm AcCoA]}\frac{K_I^{\rm NADH}}{K_I^{\rm NADH}+[\rm NADH]} }
+
+\subsection{Citric Acid Cycle --- 8 steps}
+
+\paragraph{Citrate Synthase (CS, EC 2.3.3.1):}
+\eq{ v_{\rm CS} = V_{\rm CS}\frac{[\rm AcCoA]}{K_m+[\rm AcCoA]}\frac{[\rm OAA]}{K_m+[\rm OAA]}\frac{K_I^{\rm ATP}}{K_I^{\rm ATP}+[\rm ATP]}\frac{K_I^{\rm NADH}}{K_I^{\rm NADH}+[\rm NADH]}\frac{K_I^{\rm cit}}{K_I^{\rm cit}+[\rm cit]} }
+
+\paragraph{Aconitase (ACO, EC 4.2.1.3):} reversible MM between citrate and isocitrate.
+
+\paragraph{Isocitrate Dehydrogenase (IDH, EC 1.1.1.41):}
+\eq{ v_{\rm IDH} = V_{\rm IDH}\frac{[\rm isocit]}{K_m+[\rm isocit]}\frac{[\rm NAD^+]}{K_m^{NAD}+[\rm NAD^+]}\bigg(1+3\frac{[\rm ADP]}{K_a+[\rm ADP]}\bigg)\frac{K_I^{\rm ATP}}{K_I^{\rm ATP}+[\rm ATP]}\frac{K_I^{\rm NADH}}{K_I^{\rm NADH}+[\rm NADH]} }
+Key regulatory step; activated by ADP, inhibited by ATP/NADH.
+
+\paragraph{$\alpha$-Ketoglutarate Dehydrogenase (KGDH, EC 1.2.4.2):}
+\eq{ v_{\rm KGDH} = V_{\rm KGDH}\frac{[\rm aKG]}{K_m+[\rm aKG]}\frac{[\rm CoA]}{K_m+[\rm CoA]}\frac{[\rm NAD^+]}{K_m^{NAD}+[\rm NAD^+]}\frac{K_I^{\rm SCoA}}{K_I^{\rm SCoA}+[\rm SCoA]}\frac{K_I^{\rm NADH}}{K_I^{\rm NADH}+[\rm NADH]} }
+
+\paragraph{Succinyl-CoA Synthetase (SCS, EC 6.2.1.4):}
+\eq{ v_{\rm SCS} = V_{\rm SCS}\frac{[\rm SCoA]}{K_m+[\rm SCoA]}\frac{[\rm GDP]}{0.05+[\rm GDP]} }
+Substrate-level phosphorylation producing GTP.
+
+\paragraph{Succinate Dehydrogenase (SDH / Complex II, EC 1.3.5.1):}
+\eq{ v_{\rm SDH} = V_{\rm SDH}\frac{[\rm succ]}{K_m+[\rm succ]}\frac{[\rm FAD]}{0.05+[\rm FAD]} }
+Membrane-embedded; also feeds electrons to Q pool.
+
+\paragraph{Fumarase (FUM, EC 4.2.1.2):} reversible MM (fumarate $\leftrightharpoons$ malate).
+
+\paragraph{Malate Dehydrogenase (MDH, EC 1.1.1.37):}
+\eq{ v_{\rm MDH} = V_f\frac{[\rm mal]}{K_m+[\rm mal]}\frac{[\rm NAD^+]}{K_m^{NAD}+[\rm NAD^+]} - V_r\frac{[\rm OAA]}{K+[\rm OAA]}\frac{[\rm NADH]}{K+[\rm NADH]} }
+Reverse reaction included because $K_{\rm eq}$ favours malate strongly.
+
+\subsection{Oxidative Phosphorylation}
+
+\paragraph{Complex I:}
+\eq{ v_{\rm CI} = V_{\rm CI}\frac{[\rm NADH]}{K_m+[\rm NADH]}\frac{[\rm O_2]}{K_m^{O_2}+[\rm O_2]},\quad n^H_{\rm CI}=4 }
+
+\paragraph{Complex II:} $v_{\rm CII}=V_{\rm CII}[\rm FADH_2]/(K+[\rm FADH_2])$, pumps 0 H$^+$.
+
+\paragraph{Complex III:} $v_{\rm CIII}=v_{\rm CI}+v_{\rm CII}$ (rate follows upstream supply), pumps 4 H$^+$ per two electrons (Q-cycle).
+
+\paragraph{Complex IV:}
+\eq{ v_{\rm CIV} = v_{\rm CIII}\cdot\frac{[\rm O_2]}{K_m^{O_2}+[\rm O_2]},\quad n^H_{\rm CIV}=2\ \text{per electron} }
+
+\paragraph{ATP Synthase (F$_0$F$_1$, EC 7.1.2.2):}
+\eq{ v_{\rm ATPsyn} = V_{\rm ATPsyn}\frac{[\rm ADP]}{K_m^{ADP}+[\rm ADP]}\frac{[\rm Pi]}{K_m^{Pi}+[\rm Pi]}\cdot\mathrm{clip}_{[0,1]}\!\left(\frac{\Delta p - 0.12\,\mathrm V}{0.08\,\mathrm V}\right) }
+with $H$/ATP stoichiometry $= 10/3 \approx 3.33$ (10 c-subunits, 3 catalytic sites).
+
+\paragraph{Proton-motive force (Mitchell):}
+\eq{ \Delta p = \Delta\Psi - \frac{2.303\,RT}{F}\Delta\mathrm{pH} = \Delta\Psi - \SI{61.5}{mV}\cdot\Delta\mathrm{pH} }
+
+\paragraph{Yield (stoichiometry):}
+\[ \text{ATP/NADH}\approx 2.5,\quad \text{ATP/FADH}_2\approx 1.5. \]
+
+\subsection{Fermentation (lactate)}
+\eq{ v_{\rm LDH} = V_{\rm LDH}\frac{[\rm pyr]}{K_m+[\rm pyr]}\frac{[\rm NADH]}{K_m^{NADH}+[\rm NADH]}\frac{K_{O_2}}{K_{O_2}+[\rm O_2]} }
+$K_{O_2}=\SI{3}{\micro M}$ --- flows only when O$_2$ is low.
+
+\subsection{$\beta$-Oxidation of fatty acids}
+\eq{ v_{\beta\text{-ox}} = V\cdot\frac{[\rm palmitoyl\text{-}CoA]}{K_m+[\cdots]}\cdot\frac{[\rm NAD^+]}{0.1+[\cdots]}\frac{[\rm FAD]}{0.05+[\cdots]}\frac{[\rm CoA]}{0.01+[\cdots]} }
+Each cycle yields 1 AcCoA + 1 NADH + 1 FADH$_2$; palmitate (C16) gives 7 cycles $\to$ 8 AcCoA + 7 NADH + 7 FADH$_2$.
+
+\subsection{Pentose Phosphate Pathway (oxidative)}
+Rate-limited by G6PDH and the NADP$^+$/NADPH ratio:
+\eq{ v_{\rm G6PDH} = V\cdot\frac{[\rm G6P]}{K_m+[\rm G6P]}\cdot\frac{[\rm NADP^+]}{K_m^{NADP}+[\rm NADP^+]} }
+Yields 2 NADPH + 1 ribose-5-P per G6P.
+
+\subsection{Adenylate Kinase (2 ADP $\leftrightharpoons$ ATP + AMP)}
+\eq{ v_{\rm AK} = V_{\rm AK}\!\left(1-\frac{Q}{K_{\rm eq}}\right)\frac{[\rm ADP]}{0.1+[\rm ADP]},\quad Q=\frac{[\rm ATP][\rm AMP]}{[\rm ADP]^2},\quad K_{\rm eq}=0.44 }
+
+\subsection{Atkinson energy charge \& redox ratio}
+\eq{ EC = \frac{[\rm ATP]+\tfrac12[\rm ADP]}{[\rm ATP]+[\rm ADP]+[\rm AMP]},\quad r_{\rm NAD} = \frac{[\rm NADH]}{[\rm NAD^+]} }
+
+\subsection{Pool mass balance}
+For each intermediate $X$:
+\eq{ \frac{\mathrm d[X]}{\mathrm dt} = \sum_{j\in\rm prod}\nu_{X,j}\,v_j - \sum_{k\in\rm cons}\nu_{X,k}\,v_k }
+
+\paragraph{ATP/ADP one-to-one update (post-audit):}
+\eq{ \frac{\mathrm d[\rm ATP]}{\mathrm dt} = v_{\rm PGK}+v_{\rm PK}+v_{\rm SCS}+v_{\rm ATPsyn} - v_{\rm HK}-v_{\rm PFK}-r_{\rm consume},\quad \frac{\mathrm d[\rm ADP]}{\mathrm dt}=-\frac{\mathrm d[\rm ATP]}{\mathrm dt} }
+
+\paragraph{GTP demand (post-audit):} added first-order consumption for translation/Ras hydrolysis:
+\eq{ \frac{\mathrm d[\rm GTP]}{\mathrm dt} = v_{\rm SCS} - \frac{0.05\,[\rm GTP]}{0.3+[\rm GTP]} }
+
+\paragraph{Proton gradient \& $\Delta\Psi$ (post-audit):}
+\eq{ j_{\rm net}=\sum_{i\in\rm ETC} n^H_i v_i - n^H_{\rm ATPsyn}v_{\rm ATPsyn} - g_{\rm leak}\max(0,\Delta\Psi-\SI{140}{mV}) }
+\eq{ \frac{\mathrm d[\rm H^+]_{\rm IMS}}{\mathrm dt}=\varepsilon_H j_{\rm net},\quad \frac{\mathrm d[\rm H^+]_{\rm mat}}{\mathrm dt}=-\varepsilon_H j_{\rm net} }
+\eq{ \Delta\Psi_{\rm tgt}=\SI{180}{mV}+\SI{20}{mV}\tanh(2 j_{\rm net}),\qquad \frac{\mathrm d\Delta\Psi}{\mathrm dt}=\tau^{-1}(\Delta\Psi_{\rm tgt}-\Delta\Psi) }
+
+\paragraph{O$_2$ coupling to extracellular field (post-audit):}
+\eq{ \frac{\mathrm d[\rm O_2]_{\rm int}}{\mathrm dt} = PA\cdot([\rm O_2]_{\rm ext}-[\rm O_2]_{\rm int}),\quad PA\approx\SI{0.1}{s^{-1}} }
+
+\paragraph{Variable glossary (Metabolism).}
+\begin{tabular}{@{}ll@{}}\toprule
+Symbol & Meaning \\\midrule
+$[X]$ & concentration of metabolite $X$ in \si{mM} \\
+$V_{\max}$ & maximal enzyme velocity (\si{mM/s}, normalised) \\
+$K_m, K_I, K_a$ & Michaelis, inhibition, activation constants \\
+$\Delta\Psi$ & inner-membrane electric potential (matrix-negative) \\
+$\Delta\mathrm{pH}$ & matrix--IMS pH difference \\
+$n^H_i$ & protons pumped per turnover (4, 0, 4, 2 for CI--CIV) \\
+$EC$ & Atkinson energy charge \\
+$r_{\rm NAD}$ & cytosolic NADH/NAD$^+$ ratio \\
+\bottomrule\end{tabular}
+
+\clearpage
+\section{Membrane Transport \& Electrophysiology}
+\label{sec:membrane}
+
+\subsection{Nernst \& Goldman equilibrium}
+For ion $i$ with valence $z_i$,
+\eq{ E_i = \frac{RT}{z_i F}\ln\frac{[X]_o}{[X]_i} = \frac{26.7}{z_i}\ln\frac{[X]_o}{[X]_i}\,\si{mV}\ (\text{at 37\si{\celsius}}) }
+Goldman--Hodgkin--Katz resting potential from Na$^+$, K$^+$, Cl$^-$ permeabilities:
+\eq{ V_{\rm rest} = \frac{RT}{F}\ln\frac{P_{\rm Na}[\rm Na]_o + P_{\rm K}[\rm K]_o + P_{\rm Cl}[\rm Cl]_i}{P_{\rm Na}[\rm Na]_i + P_{\rm K}[\rm K]_i + P_{\rm Cl}[\rm Cl]_o} }
+
+\subsection{Hodgkin--Huxley, modern convention (post-audit)}
+$V$ in \si{mV}, rest $\approx -65$\,mV; rate constants per ms.
+\eq{ \alpha_m=\frac{0.1(V+40)}{1-e^{-(V+40)/10}},\quad \beta_m=4 e^{-(V+65)/18},\quad \alpha_h=0.07 e^{-(V+65)/20},\quad \beta_h=\frac{1}{1+e^{-(V+35)/10}} }
+\eq{ \alpha_n=\frac{0.01(V+55)}{1-e^{-(V+55)/10}},\quad \beta_n=0.125 e^{-(V+65)/80} }
+\paragraph{Rush--Larsen exponential update} (unconditionally stable):
+\eq{ x^{n+1}=x_\infty+(x^n-x_\infty)e^{-\Delta t/\tau_x},\quad x_\infty=\frac{\alpha}{\alpha+\beta},\quad \tau_x=\frac{1}{\alpha+\beta} }
+
+\subsection{Conductances and current}
+\eq{ g_{\rm Na}=\bar g_{\rm Na}m^3h,\quad g_{\rm K}=\bar g_{\rm K} n^4 }
+\eq{ C_m\frac{\mathrm dV}{\mathrm dt} = -\big[g_{\rm Na}(V-E_{\rm Na}) + g_{\rm K}(V-E_{\rm K}) + g_L(V-E_L) + I_{\rm pump}\big] }
+
+\subsection{Na/K ATPase}
+\eq{ v_{\rm NaK}=V_{\rm NaK}\frac{[\rm ATP]}{1+[\rm ATP]}\frac{[\rm Na]_i}{K_m^{\rm Na}+[\rm Na]_i}\frac{[\rm K]_o}{K_m^{\rm K}+[\rm K]_o} }
+\eq{ \dot{[\rm Na]}_i\supseteq -3v_{\rm NaK},\qquad \dot{[\rm K]}_i\supseteq+2 v_{\rm NaK},\qquad I_{\rm pump}=F\cdot v_{\rm NaK}\text{ (net +1 charge out)} }
+
+\subsection{PMCA / SERCA (Ca$^{2+}$ pumps)}
+\eq{ v_{\rm PMCA} = V\frac{[\rm Ca]_i}{K_m+[\rm Ca]_i}\frac{[\rm ATP]}{1+[\rm ATP]},\qquad v_{\rm SERCA} = V\frac{[\rm Ca]^2}{K^2+[\rm Ca]^2} }
+(Hill $n=2$ for SERCA's two-ATP catalytic cycle.)
+
+\clearpage
+\section{Signal Transduction Pathways}
+\label{sec:signaling}
+Generic pathway motif:
+\eq{ \frac{\mathrm dX_a}{\mathrm dt}=k_{\rm on}\,Y\,X_i - k_{\rm off}\,X_a,\qquad X_i=X_{\rm tot}-X_a }
+with Hill response $\phi(S;K,n)$ for cooperative binding.
+
+\subsection{GPCR $\to$ cAMP $\to$ PKA (Gs, Gi, Gq)}
+\eq{ \dot{[\rm GPCR_a]}=k_{\rm on}L(1-[\rm GPCR_a])-k_{\rm off}[\rm GPCR_a] }
+\eq{ \dot{[\rm G_{s\alpha}]} = 0.3[\rm GPCR_a](1-[\rm G_{s\alpha}]) - 0.1[\rm G_{s\alpha}],\quad \text{analogous for }G_i,G_q }
+\eq{ [\rm AC]=\max(0,2[\rm G_{s\alpha}]-1.5[\rm G_{i\alpha}]) }
+\eq{ \dot{[\rm cAMP]} = k_{\rm AC}[\rm AC] - \frac{v_{\rm PDE}[\rm cAMP]}{1+[\rm cAMP]} }
+\eq{ [\rm PKA_a] = \phi([\rm cAMP]; 0.5, 2) }
+CREB phosphorylation:
+\eq{ \dot{[\rm CREB_P]}=0.5[\rm PKA_a](1-[\rm CREB_P]) - 0.05[\rm CREB_P] }
+
+\subsection{IP$_3$ / DAG / Ca$^{2+}$ / PKC}
+PLC$\beta$ cleavage of PIP$_2$:
+\eq{ v_{\rm PLC}=[\rm PLC_a]\cdot\frac{[\rm PIP_2]}{5+[\rm PIP_2]} }
+IP$_3$ receptor (Li-Rinzel bell):
+\eq{ j_{\rm IP3R}=5\,\phi([\rm IP_3];0.3,2)\,\phi([\rm Ca]_c;0.3,2)\cdot\frac{1}{1+([\rm Ca]_c/1)^4}([\rm Ca]_{\rm ER}-[\rm Ca]_c) }
+SERCA + PMCA extrusion (see \S\ref{sec:membrane}).
+Calmodulin (4 Ca$^{2+}$):
+\eq{ [\rm CaM\cdot Ca_4]=\phi([\rm Ca]_c;0.5,4) }
+PKC (requires Ca$^{2+}$ AND DAG):
+\eq{ \dot{[\rm PKC_a]} = \frac{[\rm Ca]_c}{0.5+[\rm Ca]_c}\frac{[\rm DAG]}{0.5+[\rm DAG]}(1-[\rm PKC_a])-0.2[\rm PKC_a] }
+
+\subsection{Ras / MAPK cascade (Kholodenko 2000)}
+\eq{ f_{\rm FB}=\frac{1}{1+2[\rm ERK_a]},\quad \dot{[\rm Ras_{GTP}]}=0.5[\rm Grb2\!\cdot\!Sos][\rm Ras_{GDP}]f_{\rm FB} - 0.1[\rm Ras_{GTP}] }
+\eq{ \dot{[\rm Raf_a]} = [\rm Ras_{GTP}]\frac{[\rm Raf_i]}{0.1+[\rm Raf_i]}\cdot\frac{1}{1+[\rm Akt_a]} - 0.3\frac{[\rm Raf_a]}{0.1+[\rm Raf_a]} }
+\eq{ \dot{[\rm MEK_a]} = 2[\rm Raf_a]\frac{[\rm MEK_i]}{0.3+[\rm MEK_i]} - 0.5\frac{[\rm MEK_a]}{0.3+[\rm MEK_a]} }
+\eq{ \dot{[\rm ERK_a]} = 3[\rm MEK_a]\frac{[\rm ERK_i]}{0.3+[\rm ERK_i]} - 0.5\frac{[\rm ERK_a]}{0.3+[\rm ERK_a]} }
+ERK nuclear translocation (mass-conserving, post-audit):
+\eq{ \dot{[\rm ERK_n]}=0.3[\rm ERK_a]-0.1[\rm ERK_n],\qquad \dot{[\rm ERK_a]}\supseteq-\dot{[\rm ERK_n]} }
+
+\subsection{PI3K--Akt--mTOR}
+\eq{ [\rm PI3K]=0.8[\rm RTK]/(0.2+[\rm RTK]) }
+\eq{ \dot{[\rm PIP_3]}=[\rm PI3K]\frac{[\rm PIP_2]}{5+[\rm PIP_2]} - 2[\rm PTEN]\frac{[\rm PIP_3]}{0.5+[\rm PIP_3]} }
+\eq{ \dot{[\rm Akt_a]}=2[\rm PIP_3]\frac{[\rm Akt_i]}{0.5+[\rm Akt_i]} - 0.3\frac{[\rm Akt_a]}{0.3+[\rm Akt_a]} }
+\eq{ \dot{[\rm mTORC1_a]}=[\rm Akt_a]\frac{[\rm mT_i]}{0.5+[\rm mT_i]} - 0.2[\rm mTORC1_a] }
+\eq{ [\rm S6K_a]=\phi([\rm mTORC1_a];0.3,2),\quad [\rm BAD_P]=\phi([\rm Akt_a];0.3,1.5),\quad [\rm FOXO_n]=1-\phi([\rm Akt_a];0.5,2) }
+
+\subsection{JAK--STAT}
+\eq{ \dot{[\rm JAK]}=0.5 L(1-[\rm JAK]) - 0.1[\rm JAK](1+5[\rm SOCS]) }
+\eq{ \dot{[\rm STAT_P]}=[\rm JAK](1-[\rm STAT_P])-0.2[\rm STAT_P],\quad [\rm STAT_2]=[\rm STAT_P]^2 }
+\eq{ \dot{[\rm SOCS]}=0.1[\rm STAT_2]-0.05[\rm SOCS] }
+
+\subsection{TGF-$\beta$ / Smad}
+\eq{ \dot{[\rm Smad2_P]}=\frac{0.5[\rm TGFR]}{1+[\rm Smad7]}(1-[\rm Smad2_P])-0.1[\rm Smad2_P] }
+\eq{ [\rm Smad4\text{-}complex]=0.8[\rm Smad2_P],\quad \dot{[\rm Smad7]}=0.05[\rm Smad4\text{-}cx]-0.02[\rm Smad7] }
+
+\subsection{Notch / Delta (contact-dependent)}
+\eq{ v_{\rm cleave}=0.3[\rm Delta][\rm Notch_R],\quad \dot{[\rm NICD]}=v_{\rm cleave}-0.1[\rm NICD],\quad \dot{[\rm Hes\text{-}Hey]}=0.5[\rm NICD]-0.1[\rm Hes\text{-}Hey] }
+
+\subsection{Wnt / $\beta$-catenin}
+\eq{ [\rm Frz_a]=\frac{[\rm Wnt]}{0.5+[\rm Wnt]},\quad \dot{[\rm Dvl]}=0.5[\rm Frz_a]-0.1[\rm Dvl],\quad [\rm DC]=\frac{1}{1+3[\rm Dvl]} }
+\eq{ \dot{[\beta\text{-cat}]}=0.2-2[\rm DC]\frac{[\beta\text{-cat}]}{0.1+[\beta\text{-cat}]},\qquad [\rm TCF_a]=\phi([\beta\text{-cat}];0.5,2) }
+\eq{ \dot{[\rm Axin2]}=0.1[\rm TCF_a]-0.05[\rm Axin2] }
+
+\subsection{Hedgehog / Smoothened}
+\eq{ [\rm SMO_a]=\frac{[\rm Hh]}{0.5+[\rm Hh]},\quad \dot{[\rm Gli_a]}=0.3[\rm SMO_a]-0.1[\rm Gli_a],\quad \dot{[\rm Gli_R]}=0.2(1-[\rm SMO_a])-0.1[\rm Gli_R] }
+
+\subsection{NF-$\kappa$B (Hoffmann 2002)}
+\eq{ \dot{[\rm I\kappa B]}=0.5[\rm NFkB_n] - \frac{[\rm IKK_a][\rm I\kappa B]}{0.1+[\rm I\kappa B]} }
+\eq{ \dot{[\rm NFkB_n]}=\frac{[\rm IKK_a][\rm I\kappa B]}{0.1+[\rm I\kappa B]} - 0.1[\rm NFkB_n] }
+
+\subsection{Nuclear receptors (steroid)}
+\eq{ [\rm NR_a]=\phi([\rm hormone]; K, 1),\quad \dot{[\rm target\text{-}gene]}=k_{\rm s}[\rm NR_a]-k_{\rm d}[\rm target] }
+
+\subsection{NO / cGMP / PKG}
+\eq{ \dot{[\rm cGMP]}=k_{\rm GC}[\rm NO]-k_{\rm PDE}[\rm cGMP],\quad [\rm PKG_a]=\phi([\rm cGMP];K,2) }
+
+\subsection{Circadian clock (Leloup--Goldbeter 2003)}
+\eq{ \dot{[\rm Per_m]} = \frac{v_{\rm sP}[\rm BMAL]^4}{K^4+[\rm BMAL]^4} - \frac{v_{\rm mP}[\rm Per_m]}{K_m+[\rm Per_m]} }
+\eq{ \dot{[\rm Cry_m]} = \frac{v_{\rm sC}[\rm BMAL]^4}{K^4+[\rm BMAL]^4} - \frac{v_{\rm mC}[\rm Cry_m]}{K_m+[\rm Cry_m]} }
+\eq{ \dot{[\rm PER]}=k_{sP}[\rm Per_m] - v_{dP}\frac{[\rm PER]}{K+[\rm PER]},\quad \dot{[\rm CRY]}=k_{sC}[\rm Cry_m]-v_{dC}\frac{[\rm CRY]}{K+[\rm CRY]} }
+\eq{ [\rm PER\!\cdot\!CRY]=k_c[\rm PER][\rm CRY] }
+Produces $\sim\SI{24}{h}$ period from the negative feedback of PER$\cdot$CRY on BMAL/CLOCK.
+
+\subsection{Rho GTPase switch (cytoskeletal control)}
+\eq{ \dot{[\rm RhoA_{GTP}]} = k_{\rm GEF} - k_{\rm GAP}[\rm RhoA_{GTP}] }
+(analogous for Rac1, Cdc42).
+
+\subsection{Cross-pathway summary signals}
+\eq{ S_{\rm prolif}=[\rm ERK_a][\rm Akt_a],\quad S_{\rm surv}=[\rm Akt_a]+[\rm NFkB_n],\quad S_{\rm grow}=[\rm mTORC1_a][\rm S6K_a] }
+
+\clearpage
+\section{Gene Regulation and Central Dogma}
+\label{sec:genereg}
+
+\subsection{Chromatin accessibility}
+\eq{ \mathrm{access} = \frac{H_{\rm open}}{H_{\rm open}+H_{\rm closed}+0.1},\quad H_{\rm open}=[\rm H3K4me3]+[\rm H3K27ac]+[\rm H4K16ac]+[\rm H3K9ac] }
+\eq{ H_{\rm closed}=[\rm H3K9me3]+[\rm H3K27me3] }
+
+\subsection{Transcription}
+\eq{ \mathrm{promoter} = \mathrm{access}\cdot(1-0.9\cdot[\rm CpG\_me])\cdot\frac{A}{0.5+A+R},\quad \mathrm{A,R}=\text{TF activation, repression} }
+\eq{ \dot{[m]} = (\beta_{\rm basal} + (\beta_{\max}-\beta_{\rm basal})\cdot\mathrm{promoter})\cdot\eta_{\rm splice} - \frac{\ln 2}{t_{1/2}^m}[m] }
+
+\subsection{Translation}
+\eq{ \dot{[P]} = k_{\rm tr}\,[m]\,\rho_{\rm rib}\,\Gamma_{\rm global} - \frac{\ln 2}{t_{1/2}^P}[P] }
+
+\subsection{Post-translational modifications (Goldbeter--Koshland)}
+\eq{ \dot P_a = \frac{k_{\rm kin}[K](P_{\rm tot}-P_a)}{K_m^k+(P_{\rm tot}-P_a)} - \frac{k_{\rm pho}[\Phi]P_a}{K_m^p+P_a} }
+(Zero-order ultrasensitivity when substrate $\gg K_m$).
+
+\subsection{Degradation (proteasome / N-end rule)}
+\eq{ \dot{[P]}\supseteq-\frac{\ln 2}{t_{1/2}(aa_1)}[P] - k_{\rm ub}[\rm Ub_3][P] }
+with half-life buckets $\{72000, 7200, 180\}$\,s by N-terminal residue.
+
+\subsection{Central dogma HBB gene model}
+\label{sec:dogma}
+The simulation uses real HBB sequence (763 bp, 3 exons, 2 introns):
+\[\text{Exon 1 (1--142)}\ \to\ \text{Intron 1 (143--272)}\ \to\ \text{Exon 2 (273--497)}\ \to\ \text{Intron 2 (498--617)}\ \to\ \text{Exon 3 (618--763)}\]
+
+Base transcription rule:
+\[ A\to U,\ T\to A,\ G\to C,\ C\to G\qquad(\text{template strand to mRNA}) \]
+
+Genetic code: standard 64-codon table; \texttt{AUG}=start, \texttt{UAA}/\texttt{UAG}/\texttt{UGA}=stop.
+
+Replication error hotspot multiplier (used by MMR scoring):
+\eq{ \mu_{\rm hot}(i) = \begin{cases}2.5 & \text{CpG}\\3.0 & \text{dinucleotide repeat}\\4.0 & \text{trinucleotide repeat}\\1.0 & \text{otherwise}\end{cases} }
+
+Error probability per base per replication:
+\eq{ P_{\rm err}(i) = r_{\rm base}\cdot\mu_{\rm hot}(i),\quad r_{\rm base}=\SI{e-3}{}\text{ (visualization-scaled)} }
+
+MMR detection/repair kinetics:
+\eq{ \dot n_{\rm det} = k_{\rm det}\cdot n_{\rm undet},\quad \dot n_{\rm rep}=k_{\rm rep}\cdot n_{\rm det},\quad P_{\rm fix}=0.99 }
+
+Replication quality score:
+\eq{ q_{\rm rep} = 1 - \frac{n_{\rm unrepaired}}{5} }
+
+\clearpage
+\section{Proteome}
+\label{sec:proteome}
+
+\subsection{Secondary structure (Chou--Fasman, 5-residue window)}
+\eq{ h(p) = \frac{1}{5}\sum_{i\in W_5(p)}\alpha_i,\quad s(p) = \frac{1}{5}\sum_{i\in W_5(p)}\beta_i }
+\eq{ \mathrm{SS}(p) = \begin{cases}\alpha & h>1.03\ \land\ h>s \\ \beta & s>1.05\ \land\ s>h \\ \text{coil} & \text{otherwise}\end{cases} }
+
+\subsection{Folding}
+\eq{ \Delta G_{\rm fold}\approx -5\cdot M_W\,{\rm kJ/mol\,per\,kDa} }
+\eq{ \eta_{\rm core}=\max\!\left(0,\frac{\sum H_i}{4.5 L}\right),\quad H_i=\text{Kyte--Doolittle index} }
+
+\subsection{N-end rule half-lives (Bachmair 1986)}
+\[ t_{1/2}(\rm M,S,A,T,V,G)=\SI{72000}{s},\quad t_{1/2}(\rm R,K,F,L,W)=\SI{180}{s},\quad t_{1/2}(\text{else})=\SI{7200}{s} \]
+
+\subsection{Binding and enzyme kinetics}
+\eq{ [\rm PL]=\frac{[\rm P][\rm L]}{K_d+[\rm L]},\quad v=\frac{k_{\rm cat}[\rm E][\rm S]}{K_m+[\rm S]} }
+
+\subsection{Allosteric regulation (MWC)}
+\eq{ Y = \frac{L(1+\alpha)^n c_{\rm R} + (1+\alpha)^n c_{\rm T}}{L(1+\alpha)^n + (1+\alpha)^n},\quad \alpha=\frac{[\rm S]}{K_{\rm R}} }
+
+\subsection{Inhibition modes}
+\[
+v_{\rm comp}=\frac{V[\rm S]}{K_m(1+[\rm I]/K_i)+[\rm S]},\quad v_{\rm uncomp}=\frac{V[\rm S]}{K_m+[\rm S](1+[\rm I]/K_i)},\quad v_{\rm noncomp}=\frac{V[\rm S]}{(K_m+[\rm S])(1+[\rm I]/K_i)}
+\]
+
+\clearpage
+\section{Vesicular Traffic, UPR, Autophagy}
+\label{sec:vesicles}
+
+\subsection{Vesicle budding fluxes}
+Generic budding rate for coat $c$ from compartment $O$:
+\eq{ \Phi_{c,O} = k_c\cdot C_{c,{\rm avail}}\cdot\frac{L_O}{K+L_O}\cdot\frac{[\rm ATP]}{1+[\rm ATP]} }
+where $L_O$ is the protein load and $C_c$ is coat availability (Sar1/COPII, ARF1/COPI, clathrin).
+
+\subsection{COPII, COPI, clathrin-mediated routes}
+\[
+\Phi_{\rm ER\to Golgi}=0.2\,C_{\rm COPII}\,L_{\rm ER}/(2+L_{\rm ER}),\quad \Phi_{\rm Golgi\to ER}=0.1\,C_{\rm COPI}\,L_{\rm Golgi}\cdot 0.1
+\]
+\[
+\Phi_{\rm TGN\to PM}=0.15 L_{\rm TGN},\quad \Phi_{\rm TGN\to Lys}=0.05 L_{\rm TGN},\quad \Phi_{\rm endo}=0.1 C_{\rm clathrin}\cdot d_{\rm dynamin}
+\]
+
+\subsection{Vesicle progression and fusion}
+Each vesicle $i$ has progress $p_i\in[0,1]$:
+\eq{ p_i^{n+1} = p_i^n + v_i\cdot\Delta t\cdot 0.5,\quad \text{fuse when }p_i\ge1 }
+On fusion: $L_{\rm orig}\to L_{\rm orig}-0.1$, $L_{\rm dest}\to L_{\rm dest}+0.1$.
+
+\subsection{Unfolded Protein Response (UPR)}
+\eq{ \mathrm{ER\ stress} = \frac{L_{\rm ER}}{5\,[\rm BiP]+1} }
+\eq{ \dot{[\rm IRE1_a]}=0.5\,\mathrm{ER\_stress}-0.1[\rm IRE1_a],\quad \dot{[\rm XBP1s]}=0.3[\rm IRE1_a]-0.05[\rm XBP1s] }
+\eq{ \dot{[\rm PERK_a]}=0.3\,\mathrm{ER\_stress}-0.1[\rm PERK_a],\quad \dot{[\rm eIF2\alpha_P]}=0.5[\rm PERK_a]-0.1[\rm eIF2\alpha_P] }
+\eq{ \dot{[\rm ATF6_a]}=0.2\,\mathrm{ER\_stress}-0.1[\rm ATF6_a],\quad \dot{[\rm BiP]}=0.1([\rm XBP1s]+[\rm ATF6_a])-0.01[\rm BiP] }
+\eq{ \dot{[\rm CHOP]}=0.05[\rm PERK_a][\rm ATF6_a]-0.02[\rm CHOP] }
+(CHOP accumulation commits to apoptosis.)
+
+\subsection{Autophagy}
+\eq{ I_{\rm mT}=1-[\rm mTORC1_a],\quad \dot{[\rm ULK1_a]}=0.3 I_{\rm mT}(1-[\rm ULK1_a])-0.05[\rm ULK1_a] }
+LC3 lipidation:
+\eq{ v_{\rm LC3}=0.2[\rm ULK1_a][\rm LC3_I],\quad \dot{[\rm LC3_{II}]}=v_{\rm LC3}-0.1[\rm LC3_{II}],\quad \dot{[\rm LC3_I]}=-v_{\rm LC3} }
+Autophagosome formation and turnover:
+\eq{ \dot N_{\rm auto} = 0.1[\rm LC3_{II}][\rm Beclin1] - 0.05 N_{\rm auto},\quad \Phi_{\rm autoly}=0.2 N_{\rm auto}\,L_{\rm lys} }
+
+\clearpage
+\section{Cytoskeleton}
+\label{sec:cytoskel}
+
+\subsection{Actin polymerization}
+Critical concentrations: $C_c^{\rm barbed}=\SI{0.12}{\micro M}$, $C_c^{\rm pointed}=\SI{0.6}{\micro M}$.
+Barbed-end polymerization of ATP-G-actin:
+\eq{ v_{\rm poly}^+ = k_+ N_+ \max(0,[\rm G\text{-}actin\text{-}ATP] - C_c^{\rm barbed}) }
+Pointed-end depolymerization:
+\eq{ v_{\rm depoly}^- = k_- N_- }
+Arp2/3 branching (new barbed ends):
+\eq{ \dot N_{\rm branch} = k_{\rm Arp}[\rm Arp2/3_a]\,[\rm F\text{-}actin] }
+with $[\rm Arp2/3_a]=[\rm WAVE]/(0.3+[\rm WAVE])$, $[\rm WAVE]=0.8[\rm Rac1]+0.3[\rm Cdc42]$.
+Capping ($k_{\rm cap}$) and cofilin severing ($k_{\rm sev}\cdot(1-0.5[\rm Tm])$) reduce barbed and increase pointed ends.
+Profilin--thymosin exchange on G-actin:
+\eq{ \dot{[\rm G\text{-}actin\text{-}ATP]}\supseteq 0.5[\rm G\text{-}actin\text{-}ADP] }
+Cortical tension:
+\eq{ \sigma_{\rm cortex}=\SI{50}{pN/\micro m}+200[\rm MyoII_{cortex}] }
+
+\subsection{Microtubules (dynamic instability)}
+Two-state Markov with catastrophe $r_c$ and rescue $r_r$ per MT per minute:
+\eq{ \dot f_g = r_r f_s - r_c f_g,\quad f_s=1-f_g }
+\eq{ \dot L = f_g v_g - f_s v_s }
+with $v_g\approx\SI{1.5}{\micro m/min}$, $v_s\approx\SI{20}{\micro m/min}$.
+MAP stabilisation: $r_c = r_{c,0}/(1+2([\rm MAP2]+[\rm Tau]))$.
+$\gamma$-TuRC nucleation: $\dot N_{\rm MT}\supseteq k_{\rm nuc}[\gamma\text{-TuRC}][\rm centrosome]$.
+
+\subsection{Motor proteins}
+\eq{ F_{\rm contract}= [\rm MyoII_a]\cdot[\rm F\text{-}actin]\cdot 5\,\si{pN},\quad v_{\rm kinesin}=\SI{8}{nm}\cdot\frac{[\rm ATP]}{K_m+[\rm ATP]}\cdot k_{\rm cat} }
+
+\subsection{Outputs}
+\eq{ k_{\rm stiff}=0.005\,\sigma_{\rm cortex}+0.3\,\sigma_{\rm IF}+0.001 F_{\rm contract} }
+\eq{ v_{\rm migration}=\min(\mathrm{protrusion},\mathrm{traction})\cdot 10,\quad \mathrm{pol}=\frac{|[\rm Rac1]-[\rm RhoA]|}{[\rm Rac1]+[\rm RhoA]+0.1} }
+
+\clearpage
+\section{Cell Junctions and Extracellular Matrix}
+\label{sec:junctions}
+
+\subsection{Cadherin adherens junctions}
+\eq{ \mathrm{adhesion}=([\rm E\text{-cad}]+[\rm N\text{-cad}])\,\frac{[\rm Ca^{2+}]_o}{1+[\rm Ca^{2+}]_o}\,[\beta\text{-cat}][\alpha\text{-cat}]\cdot 100\,\si{pN} }
+Mechanosensing reinforcement when tension $>\SI{5}{pN}$:
+\eq{ \dot{[\rm vinculin]}\supseteq 0.1\cdot\frac{T}{50},\quad \mathrm{adhesion}\to\mathrm{adhesion}(1+0.5[\rm vinculin]) }
+
+\subsection{Desmosomes}
+\eq{ \sigma_{\rm desmo}=[\rm Dsg][\rm Dsc][\rm DP]\cdot 200\,\si{pN} }
+
+\subsection{Tight junctions}
+\eq{ I_{\rm barrier}=\frac{[\rm cldn1]+[\rm occludin]}{2}[\rm ZO1],\quad P_{\rm para}=0.5[\rm cldn2](1-I_{\rm barrier}/2) }
+
+\subsection{Gap junctions (connexons, pH/Ca/V-gated)}
+\eq{ g_{\rm pH}=\begin{cases}1 & pH>6.5\\ pH-5.5 & pH\le 6.5\end{cases} ,\ g_{\rm Ca}=\frac{1}{1+[\rm Ca]_c/0.5},\ g_V=\frac{1}{1+|V|/50} }
+\eq{ \phi_{\rm gj}=g_{\rm pH}g_{\rm Ca}g_V,\quad \kappa_{\rm ion}=N_{\rm conn}\phi_{\rm gj}\cdot 0.01 }
+
+\subsection{Integrin / focal adhesion}
+\eq{ \mathrm{act}=[\rm talin]\cdot[\rm signal],\quad \dot{[\rm integrin_a]}=\mathrm{act}(1-[\rm integrin_a])-0.1[\rm integrin_a] }
+Bound ECM fractions:
+\eq{ B_{\rm FN}=[\rm integrin_a][\alpha5\beta1],\quad B_{\rm col}=[\rm integrin_a][\alpha2\beta1],\quad B_{\rm lam}=[\rm integrin_a][\alpha6\beta4] }
+FAK autophosphorylation upon clustering:
+\eq{ [\rm FAK_P]=[\rm FAK]\frac{B_{\rm tot}}{0.3+B_{\rm tot}},\ [\rm Src_a]=0.5[\rm FAK_P] }
+Adhesion force:
+\eq{ F_{\rm FA}=B_{\rm tot}(1+[\rm vinc_{FA}]+[\rm zyxin])\cdot 50\,\si{pN} }
+Anoikis prevention signal: $s_{\rm surv}=0.3[\rm FAK_P]+0.2[\rm Src_a]$.
+
+\clearpage
+\section{Genome Model}
+\label{sec:genome}
+The genome is 46 chromosomes (23 pairs, from \texttt{HUMAN\_CHROMOSOMES[24]} table, bp sizes from hg38).
+
+\subsection{Ploidy tracking}
+\eq{ p(t) = 2+2\,r(t),\quad r=\text{S-phase progress}\in[0,1] }
+
+\subsection{Chromosome replication timing}
+Euchromatin replicates early:
+\eq{ r_i = \mathrm{clip}_{[0,1]}\!\left(\frac{r-(1-f_{\rm eu}^i)}{f_{\rm eu}^i}\right) }
+with $f_{\rm eu}^i = 1 - f_{\rm rep}^i$ (repeat fraction of chromosome $i$).
+
+\subsection{Nuclear territory position}
+\eq{ \rho_i = 1 - \min(1, \mathrm{gene\_density}_i / 25) }
+(gene-rich chromosomes toward nucleus interior, gene-poor at periphery).
+
+\subsection{Telomere shortening (end-replication problem)}
+\eq{ L^{n+1}_{\rm telo} = L^n_{\rm telo} - \ell_{\rm loss} + k_{\rm TERT}[\rm TERT][\rm TERC],\quad \ell_{\rm loss}=\SI{100}{bp}\ (\text{Harley 1990}) }
+Senescence when $L<L_{\rm crit}=\SI{3000}{bp}$.
+
+\subsection{Condensation during mitosis}
+\eq{ c_i(t) = c_{\rm max}\cdot r_{\rm cond}(t),\quad [\rm CENP\text{-}A]_i=1\ \text{if}\ r_{\rm cond}>0.5 }
+
+\clearpage
+\section{DNA Damage, Repair, and DDR}
+\label{sec:dna}
+
+\subsection{Spontaneous damage rates (Lindahl 1993, post-audit)}
+Per biological second, Bernoulli draw:
+\[
+r_{\rm AP}=0.058,\ r_{\rm Deam}=0.0035,\ r_{\rm Ox}=0.0116\cdot\mathrm{ROS},\ r_{\rm SSB}=0.116,\ r_{\rm DSB}=0.0003\ [\si{s^{-1}}]
+\]
+UV lesions: $r_{\rm CPD}=U_{\rm UV}$ (external UV input in photons/s).
+
+\subsection{Pathway-specific kinetics}
+For each lesion $L$ with recognition enzyme $D$ and repair factor $E$:
+\eq{ \dot N_{\rm det}=k_{\rm det}[D]N_{\rm undet},\qquad \dot N_{\rm rep}=k_{\rm rep}[E]N_{\rm det} }
+Rates used (per lesion per second):
+\[
+\begin{array}{lll}
+\textbf{BER} & k_{\rm det}=0.5[\rm UNG/OGG1] & k_{\rm rep}=0.3[\rm PolB] \\
+\textbf{NER} & k_{\rm det}=0.2[\rm XPC] & k_{\rm rep}=0.1\cdot 0.9\,[\rm XPG] \\
+\textbf{MMR} & k_{\rm det}=0.5[\rm MSH2][\rm MSH6] & k_{\rm rep}=0.3\cdot 0.99 \\
+\textbf{SSBR} & k_{\rm det}=\text{(implicit)} & k_{\rm rep}=0.5 \\
+\end{array}
+\]
+Overall repair rates (efficiency constants): MMR 0.99, BER 0.95, NER 0.90, NHEJ 0.85, HR 0.99.
+
+\subsection{HR vs NHEJ pathway choice}
+For DSBs in S/G2 (sister chromatid present):
+\eq{ k_{\rm HR} = 0.05\,[\rm RAD51][\rm BRCA2]\cdot\eta_{\rm HR} }
+In G1 (no sister):
+\eq{ k_{\rm NHEJ}=0.1\,[\rm Ku70]\cdot\eta_{\rm NHEJ},\qquad P(\text{mutagenic del})=0.1 }
+
+\subsection{DNA Damage Response (DDR)}
+\eq{ [\rm ATM_a]=\min(1,\,n_{\rm DSB}\cdot 0.2),\quad [\rm ATR_a]=\min(1,\,n_{\rm SSB}\cdot 0.01+n_{\rm base}\cdot 0.001) }
+\eq{ \dot{[\rm Chk1_a]}=0.5[\rm ATR_a]-0.1[\rm Chk1_a],\quad \dot{[\rm Chk2_a]}=0.5[\rm ATM_a]-0.1[\rm Chk2_a] }
+\eq{ [\rm CDC25A]=\frac{1}{1+5[\rm Chk1_a]+3[\rm Chk2_a]},\quad [\rm CDC25C]=\frac{1}{1+3[\rm Chk1_a]+5[\rm Chk2_a]} }
+
+\subsection{p53--MDM2 feedback}
+\eq{ \sigma = 0.5[\rm ATM_a]+0.3[\rm Chk2_a],\quad [\rm MDM2]=\frac{0.5}{1+5\sigma} }
+\eq{ \dot{[\rm p53]}=0.1+0.5\sigma-[\rm MDM2][\rm p53],\quad [\rm p53_P]=\frac{[\rm p53]\sigma}{0.5+\sigma} }
+\eq{ \dot{[\rm p21]}=0.5[\rm p53_P]-0.05[\rm p21] }
+
+\subsection{Checkpoint predicates}
+\[
+G1/S\ \text{arrested} = [\rm p21]>0.5\ \lor\ [\rm CDC25A]<0.3
+\]
+\[
+\text{intra-}S\ \text{arrested} = [\rm Chk1_a]>0.5,\quad G2/M\ \text{arrested} = [\rm CDC25C]<0.3
+\]
+
+\subsection{Origin licensing (pre-RC formation)}
+\eq{ \dot{[\rm Cdc6]}= [\mathrm{CDK}<0.2]\cdot 0.1(1-[\rm Cdc6]),\quad \dot{[\rm Cdt1]}= [\mathrm{CDK}<0.2]\cdot 0.1(1-[\rm Cdt1])(1-[\rm geminin]) }
+\eq{ \dot{[\rm MCM]}=0.05[\rm Cdc6][\rm Cdt1][\rm ORC](1-[\rm MCM]) }
+Licensed when $[\rm MCM]>0.8$; high CDK raises geminin which prevents re-licensing (no re-replication).
+
+\subsection{Telomerase reverse transcriptase}
+\eq{ \Delta L_{\rm telo} = k_{\rm TERT}[\rm TERT][\rm TERC]\cdot 100\,\si{bp} }
+Normally off in somatic cells, reactivated in $\sim$90\% of cancers.
+
+\clearpage
+\section{Apoptosis}
+\label{sec:apop}
+
+\subsection{Bcl-2 family balance}
+\eq{ B_{\rm eff}=\max(0,\,[\rm Bcl2]-0.3[\rm Bad]-0.2[\rm Puma]-0.5[\rm tBid]) }
+\eq{ \mathrm{BclXL}_{\rm eff}=\max(0,[\rm BclXL]-0.2[\rm Bad]),\quad \mathrm{Mcl1}_{\rm eff}=\max(0,[\rm Mcl1]-0.5[\rm Noxa]) }
+\eq{ B_{\rm anti}=B_{\rm eff}+\mathrm{BclXL}_{\rm eff}+\mathrm{Mcl1}_{\rm eff} }
+
+\subsection{Bax/Bak activation}
+\eq{ v_{\rm Bax}^{\rm act}=\frac{[\rm tBid]+0.5[\rm Bim]+0.3[\rm Puma]}{1+3B_{\rm anti}},\quad \dot{[\rm Bax_a]}=v_{\rm Bax}^{\rm act}[\rm Bax_i] }
+
+\subsection{MOMP (Hill $n=2$)}
+\eq{ d=[\rm Bax_a]+[\rm Bak_a],\qquad \dot{[\rm MOMP]} = \frac{2 d^2}{0.1+d^2}(1-[\rm MOMP]) }
+
+\subsection{Cytochrome c / Smac release}
+\eq{ v_{\rm rel}=5[\rm MOMP],\quad \dot{[\rm cytc_c]}=v_{\rm rel}[\rm cytc_m]-k_{\rm clr}[\rm cytc_c] }
+\eq{ \dot{[\rm Smac_c]}=v_{\rm rel}[\rm Smac_m],\quad [\rm XIAP_{\rm free}]=\max(0,[\rm XIAP]-[\rm Smac_c]) }
+
+\subsection{Apoptosome assembly}
+\eq{ \dot{[\rm Apoptosome]} = k_{\rm ap}[\rm Apaf1]\frac{[\rm cytc_c]^2}{0.1+[\rm cytc_c]} }
+
+\subsection{Caspase cascade}
+\eq{ \dot{[\rm C9_a]}=2[\rm Apoptosome][\rm C9_i]+0.3[\rm C3_a][\rm C9_i] - \lambda_{\rm XIAP}[\rm C9_a] }
+\eq{ \dot{[\rm C3_a]}=(2[\rm C9_a]+[\rm C8_a])[\rm C3_i]\cdot(1-\phi([\rm XIAP_{\rm free}];0.1,1)) }
+\eq{ \dot{[\rm C6_a]}=0.5[\rm C3_a],\quad \dot{[\rm C7_a]}=0.5[\rm C3_a] }
+Extrinsic arm:
+\eq{ [\rm Fas_a]=\frac{[\rm FasL]}{0.1+[\rm FasL]},\quad [\rm DISC]=[\rm Fas_a][\rm FADD],\quad \dot{[\rm C8_a]}=[\rm DISC][\rm C8_i] }
+Bid cleavage crosstalk:
+\eq{ \dot{[\rm tBid]}=2[\rm C8_a][\rm Bid] }
+
+\subsection{Execution markers}
+For each marker $Y\in\{$DNA-frag, lamin-cleavage, PS-expose, shrinkage, blebbing$\}$:
+\eq{ \dot Y = k_Y[\rm C3_a](1-Y),\quad A_{\rm prog}=\bar Y }
+Cell is committed when $[\rm C3_a]>0.5$.
+
+\clearpage
+\section{CDK/Cyclin Oscillator}
+\label{sec:cdk}
+Phenomenological 7-variable model (Simulation.h::CDKState). Growth signal $\gamma\in[0,1]$.
+\eq{ \dot{[\rm CycD]}=0.45\gamma-[\rm CycD](0.20+0.10(1-\gamma)) }
+\eq{ [\rm CDK4_a]=[\rm CycD](1-0.5 p_{21}^{\rm eff}),\quad [\rm CDK2E_a]=[\rm CycE](1-p_{21}^{\rm eff}),\quad p_{21}^{\rm eff}=\min(1,1.5[\rm p21]) }
+\eq{ \dot{[\rm Rb]}=0.08(1-[\rm Rb]) - (0.6[\rm CDK4_a]+0.4[\rm CDK2E_a])[\rm Rb] }
+\eq{ \dot{[\rm E2F]}=(1-[\rm Rb])\cdot 0.5\,(1+1.2[\rm E2F])-(0.4[\rm Rb]+0.1)[\rm E2F] }
+\eq{ \dot{[\rm CycE]}=[\rm E2F]\cdot 0.45(1-[\rm CycA])-[\rm CycE](0.15+0.55[\rm CycA])\cdot(1-0.8 p_{21}^{\rm eff}) }
+\eq{ \mathrm{APC}_{\rm Cdh1}=\max(0,1-([\rm CDK2E_a]+[\rm CycA])\cdot 1.2),\quad \mathrm{APC}_{\rm Cdc20}=2\max(0,[\rm CycB]-0.25) }
+\eq{ \dot{[\rm CycA]}=0.4[\rm E2F]\max(0,[\rm CycE]-0.12)-[\rm CycA](0.05+0.35\,\mathrm{APC}_{\rm Cdh1}+\mathrm{APC}_{\rm Cdc20})(1-0.6 p_{21}^{\rm eff}) }
+\eq{ \mathrm{Cdc25}=2\max(0,[\rm CycA]-0.2),\quad \dot{[\rm CycB]}=0.15\mathrm{Cdc25}(1+0.8[\rm CycB])-[\rm CycB](0.04+2.5\,\mathrm{APC}_{\rm Cdc20})(1-0.3 p_{21}^{\rm eff}) }
+\eq{ \dot{[\rm p21]}=-0.04[\rm p21]+M_{\rm p21}\sigma_{\rm mech} }
+
+\paragraph{Phase classifier.}
+\[
+\text{phase}=\begin{cases}M & [\rm CycB]>0.25 \\ G_2 & [\rm CycA]>0.30 \\ S & [\rm CycA]>0.08\ \text{or}\ [\rm CycE]>0.18 \\ G_1 & \text{else}\end{cases}
+\]
+\paragraph{Transition predicates.}
+\[ \mathrm{readyS}=[\rm CycE]>0.18\ \land\ [\rm Rb]<0.5\ \land\ [\rm p21]<0.5 \]
+\[ \mathrm{readyM}=[\rm CycB]>0.25\ \land\ [\rm p21]<0.35\ \land\ [\rm CycA]>0.3 \]
+
+\clearpage
+\section{Mitosis State Machine}
+\label{sec:mitosis}
+
+The machine (\texttt{MitosisState}) advances through six phases with fixed wall-clock durations (seconds):
+\[ \tau_{\rm pro}=2.4,\ \tau_{\rm promet}=1.8,\ \tau_{\rm meta}=2.0,\ \tau_{\rm ana}=1.3,\ \tau_{\rm telo}=1.8,\ \tau_{\rm cyto}=2.2 \]
+
+\subsection{Phase-controlled kinematic variables}
+Let $p\in[0,1]$ be progress through current phase. Then:
+
+\paragraph{Prophase:}
+\eq{ \text{chromatinCondensation} = p,\quad \text{nucleusAlpha}=\max(0,1-1.3p),\quad \text{poleSeparation}=0.3 p }
+
+\paragraph{Prometaphase:}
+\eq{ \text{poleSeparation}=0.3+0.3p,\quad \text{orgMigration}=0.3 p }
+Chromosomes congress toward equator $(\cos\theta,0,\sin\theta)\cdot\SI{0.12}{}cellR$ at rate $0.06$.
+
+\paragraph{Metaphase:}
+\eq{ \text{poleSeparation}=0.6,\quad \text{orgMigration}=0.3+0.2 p }
+
+\paragraph{Anaphase:}
+\eq{ \text{poleSeparation}=0.6+0.5 p,\quad \text{cellElongation}=0.25 p,\quad \text{orgMigration}=0.5+0.4 p }
+Sisters move to opposite poles at $\text{spd}=0.12$ per phase-tick.
+
+\paragraph{Telophase:}
+\eq{ \text{chromatinCondensation}=1-p,\quad \text{nucleusAlpha}=p,\quad \text{poleSeparation}=1.1(1-0.5 p),\quad \text{furrowDepth}=0.35 p }
+
+\paragraph{Cytokinesis:}
+\eq{ \text{furrowDepth}=0.35+0.65 p,\quad \text{cellElongation}=0.25+0.2 p,\quad \text{poleSeparation}=0.55(1-p) }
+
+\subsection{Pole positions (local frame, X axis)}
+\eq{ \mathrm{poleA}=(+\mathrm{sep}\cdot 0.35 R,\ 0,\ 0),\qquad \mathrm{poleB}=(-\mathrm{sep}\cdot 0.35 R,\ 0,\ 0) }
+
+\clearpage
+\section{Cancer Biology}
+\label{sec:cancer}
+
+\subsection{Mutation effect integration}
+For each mutation $m$ with penetrance $p_m$ and type $\tau_m$, apply additive / multiplicative effects to other engines:
+\[ \begin{array}{ll}
+\text{Ras G12V}  & e_{\rm Ras_{\rm const}}\mathrel{+}=0.8\,p_m \\
+\text{B-Raf V600E}& e_{\rm Ras_{\rm const}}\mathrel{+}=0.5\,p_m \\
+\text{PIK3CA H1047R}& e_{\rm PI3K_{\rm const}}\mathrel{+}=0.7\,p_m \\
+\text{TP53 loss} & e_{\rm p53_{\rm func}}\mathrel{-}=0.9\,p_m \\
+\text{RB1 loss} & e_{\rm Rb_{\rm func}}\mathrel{-}=0.9\,p_m \\
+\text{PTEN loss} & e_{\rm PTEN_{\rm func}}\mathrel{-}=0.9\,p_m \\
+\text{BCL2 over} & e_{\rm BCL2}\mathrel{+}=3\,p_m \\
+\text{TERT reactivation} & e_{\rm telomerase} = \text{true} \\
+\text{E-cad loss} & e_{\rm Ecad}\mathrel{-}=0.8\,p_m \\
+\text{APC loss} & e_{\rm Wnt_{\rm const}}\mathrel{+}=0.8\,p_m \\
+\text{MSH2/MLH1 loss} & e_{\rm MMR_{\rm func}}\mathrel{-}=0.9\,p_m \\
+\text{Myc amp} & e_{\rm Warburg}\mathrel{+}=0.3\,p_m
+\end{array} \]
+
+\subsection{Hallmark scoring}
+\eq{ H_{\rm prolif}=\min(1, e_{\rm Ras_{\rm const}}+e_{\rm PI3K_{\rm const}}+e_{\rm Wnt_{\rm const}}) }
+\eq{ H_{\rm evasion}=1-\min(e_{\rm p53_{\rm func}},e_{\rm Rb_{\rm func}}) }
+\eq{ H_{\rm death}=\min(1,\,0.3(e_{\rm BCL2}-1)+0.5(1-e_{\rm p53_{\rm func}})) }
+\eq{ H_{\rm immortal}=\mathbb 1[e_{\rm telomerase}],\quad H_{\rm invasion}=1-e_{\rm Ecad},\quad H_{\rm Warburg}=\min(1,e_{\rm Warburg}) }
+Overall malignancy:
+\eq{ M=\frac{1}{8}\sum_k H_k }
+Mutator phenotype multiplier: $\mu_{\rm mut}=1/\max(0.1,e_{\rm MMR_{\rm func}})$.
+Fitness: $w=1+M$.
+
+\subsection{Per-division mutation draw}
+\eq{ P(\text{new driver}) = r\cdot 0.001\cdot\mu_{\rm mut},\quad P(\text{LOH per heterozygous mutation}) = r\cdot 0.01\cdot\mu_{\rm mut} }
+
+\clearpage
+\section{Developmental Biology}
+\label{sec:devo}
+
+\subsection{Morphogen positional interpretation}
+\eq{ x_{\rm AP} = \frac{[\rm Wnt]+[\rm Nanos]+[\rm FGF]}{[\rm Bicoid]+[\rm Wnt]+[\rm Nanos]+[\rm FGF]+0.01} }
+\eq{ \mathrm{bmp}_{\rm net}=\frac{[\rm BMP]}{1+[\rm Chordin]+[\rm Noggin]},\quad x_{\rm DV}=\frac{\mathrm{bmp}_{\rm net}}{1+\mathrm{bmp}_{\rm net}} }
+
+\subsection{Germ layer specification}
+\[
+\text{germ}(x_{\rm AP},x_{\rm DV})=\begin{cases}
+\text{endoderm} & [\rm Nodal]>0.7\\
+\text{mesoderm} & 0.3<[\rm Nodal]\le 0.7\\
+\text{ectoderm} & [\rm Nodal]\le 0.3
+\end{cases}
+\]
+Neural ectoderm if additionally $\mathrm{bmp}_{\rm net}<0.3$: $[\rm Sox1]=1-\mathrm{bmp}_{\rm net}$.
+
+\subsection{Hox colinearity}
+\eq{ [\rm Hox_k] = \min\!\left(1, (x_{\rm AP}-a_k)\cdot s_k\right)\cdot\mathbb 1[x_{\rm AP}>a_k] }
+with anterior-limit thresholds $\{a_k\}=\{0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9\}$ for Hox1,3,5,7,9,11,13.
+
+\subsection{PAR polarity (mutual exclusion)}
+\eq{ \dot{[\rm PAR3]} = a\cdot 0.5 - 0.3[\rm PAR1][\rm PAR3] }
+\eq{ \dot{[\rm PAR1]} = (1-a)\cdot 0.5 - 0.3[\rm PAR3][\rm PAR1] }
+\eq{ \mathrm{pol}=\frac{|[\rm PAR3]-[\rm PAR1]|}{[\rm PAR3]+[\rm PAR1]+0.01} }
+
+\subsection{Notch-Delta lateral inhibition}
+\eq{ \dot{[\rm Delta]} = -0.5[\rm Notch_R][\rm Delta] }
+
+\subsection{Pluripotency loss upon specification}
+\eq{ [\rm Oct4]\to 0.5[\rm Oct4],\quad [\rm Nanog]\to 0.5[\rm Nanog],\quad \dot d=0.01,\quad \dot p=-0.01 }
+with $d$ = differentiation, $p$ = pluripotency.
+
+\clearpage
+\section{Stem Cells}
+\label{sec:stem}
+
+\subsection{Niche stemness signal}
+\eq{ S_{\rm stem}=\frac{([\rm Wnt](1+[\rm Rspo])+0.5[\rm Notch]+0.3[\rm Noggin])}{([\rm Wnt]\cdots+0.5[\rm BMP]+0.1)} }
+
+\subsection{Division-mode choice}
+Probability of symmetric self-renewal vs asymmetric vs differentiation:
+\eq{ P_{\rm sym}=\phi(S_{\rm stem};0.5,3),\quad P_{\rm asym}=1-P_{\rm sym}-P_{\rm diff},\quad P_{\rm diff}=\phi([\rm BMP];0.5,2) }
+
+\subsection{Hayflick limit}
+\eq{ n_{\rm remaining}=\max\!\left(0,\ \lfloor (L_{\rm telo}-L_{\rm crit})/\ell_{\rm loss}\rfloor\right) }
+
+\subsection{iPSC reprogramming (Yamanaka factors)}
+\eq{ \dot{[\rm Oct4]}=k_{\rm reprog}([\rm factor]-[\rm Oct4]),\quad P_{\rm iPSC}=\prod_{X\in\{\rm Oct4,Sox2,Klf4,Myc\}}\phi([X];0.5,4) }
+
+\subsection{Quiescence (G$_0$)}
+\eq{ \mathrm{depth}_{Q}=\phi([\rm BMP];0.3,2)\cdot(1-[\rm Akt_a]) }
+
+\clearpage
+\section{Pathogens}
+\label{sec:path}
+
+\subsection{Bacterial / viral life cycle}
+Shared infection progress:
+\eq{ \dot{\mathrm{progress}} = k_{\rm stage}\cdot\mathrm{host\_permissive}\cdot(1-\mathrm{progress}) }
+
+\subsection{Viral replication kinetics}
+\eq{ \dot{[\rm genome]} = k_{\rm rep}\,\frac{[\rm host\_pol]}{K+[\rm host\_pol]}\,[\rm genome] - k_{\rm deg}[\rm genome] }
+\eq{ \dot{[\rm viral\_prot]} = k_{\rm tr}[\rm genome](1-[\rm shutoff]),\quad \dot{[\rm virions]}=k_{\rm assem}\min([\rm genome],[\rm viral\_prot]) }
+
+\subsection{Immune evasion penalties}
+\eq{ \mathrm{MHC\_I}_{\rm surface}\to(1-d_{\rm MHC}),\quad \mathrm{IFN}_{\rm response}\to (1-[\rm IFN_{\rm ant}])\cdot\mathrm{IFN} }
+
+\subsection{Microbiota function}
+\eq{ R_{\rm colonize}=\mathrm{abundance}\cdot H_{\rm Shannon}/3,\quad \mathrm{SCFA}_{\rm butyrate}\to\mathrm{colon\_energy} }
+
+\clearpage
+\section{Immunity}
+\label{sec:immune}
+
+\subsection{Innate PRR / NF-$\kappa$B / IFN}
+On binding PAMP $p$ with TLR receptor $R_p$:
+\eq{ \dot{[\rm NFkB_{\rm innate}]}\supseteq [p]\cdot[R_p],\quad \dot{[\rm IRF3_a]}\supseteq[\rm dsRNA](\text{TLR3+RIG-I}) }
+Cytokine output:
+\eq{ \dot{[\rm TNF\alpha]}=0.5[\rm NFkB]-0.1[\rm TNF\alpha],\quad \dot{[\rm IL1\beta]}=0.3[\rm inflammasome]-0.1[\rm IL1\beta] }
+\eq{ \dot{[\rm IFN\alpha]}=0.5[\rm IRF3_a]-0.1[\rm IFN\alpha] }
+Antiviral state:
+\eq{ A_{\rm antiviral}=\frac{[\rm IFN\alpha]+[\rm IFN\beta]}{1+[\rm IFN\alpha]+[\rm IFN\beta]} }
+
+\subsection{Complement cascade}
+\eq{ \mathrm{drive}=0.1\,\mathrm{path\_load}+0.3[\rm IgM]+0.2[\rm IgG],\quad \dot{[\rm C3b]}=\mathrm{drive}-0.1[\rm C3b] }
+\eq{ \dot{[\rm MAC]}=0.1[\rm C3b]-0.05[\rm MAC] }
+
+\subsection{Phagocyte activation}
+\eq{ [\rm M\phi_a]=\frac{[\rm TNF\alpha]+[\rm IFN\gamma]}{2+[\rm TNF\alpha]+[\rm IFN\gamma]},\quad v_{\rm phago}=[\rm M\phi_a](1+[\rm C3b]+[\rm opsonin]) }
+
+\subsection{NK cell activation}
+\eq{ A_{\rm NK}=\max(0,\,[\rm stress\_ligand](1-\mathrm{MHC\_I\_surface})) }
+
+\subsection{Adaptive response (appears at $>3$ days since infection)}
+B-cell activation / class switching:
+\eq{ \dot{[\rm B_{\rm act}]}=0.05[\rm DC_{\rm mat}][\rm B_{\rm naive}],\quad \dot{[\rm plasma]}=0.02[\rm B_{\rm act}] }
+\eq{ \dot{[\rm IgM]}=0.1[\rm plasma],\quad \dot{[\rm IgG]}=0.2[\rm plasma]\cdot\mathbb 1[t_{\rm inf}>7\,\mathrm d] }
+Affinity maturation: $\dot{[\rm aff]}=0.01$, saturating at 1.
+Opsonisation and neutralisation:
+\eq{ O=([\rm IgG]+[\rm IgM])\cdot\mathrm{aff},\quad N=[\rm IgG]\cdot\mathrm{aff}\cdot 0.5 }
+T-cell activation:
+\eq{ T_{\rm act}=[\rm costim][\rm DC_{\rm mat}],\quad \dot{[\rm Th1]}=0.02 T_{\rm act}\mathbb 1[[\rm IL12]>0.1] }
+CTL killing:
+\eq{ \dot{[\rm CTL_e]}=0.03 T_{\rm act}[\rm CD8_{\rm naive}],\quad K_{\rm cyto}=0.3[\rm CTL_e] }
+
+\subsection{Pathogen clearance}
+\eq{ \dot{\mathrm{path\_load}}= -(v_{\rm phago}\cdot 0.1 + [\rm MAC]\cdot 0.05 + A_{\rm antiviral}\cdot 0.05 + 0.2 N + 0.1 K_{\rm cyto}) }
+
+\clearpage
+\section{Population-level Cell Dynamics}
+\label{sec:popn}
+
+\subsection{Hertz contact force (cell-cell)}
+\eq{ \delta = (r_a\cdot s_a + r_b\cdot s_b)\cdot 0.98 - \|\mathbf x_a-\mathbf x_b\|,\quad F_{\rm Hertz}=k_H\max(0,\delta)^{3/2} }
+\eq{ \dot{\mathbf v}_a \supseteq +\frac{F_{\rm Hertz}}{m_a}\hat{\mathbf n},\quad \dot{\mathbf v}_b \supseteq -\frac{F_{\rm Hertz}}{m_b}\hat{\mathbf n} }
+
+\subsection{Motility}
+\eq{ \theta^{n+1}=\theta^n+\mathcal N(0,\sigma^2\Delta t)\cdot\eta,\qquad \eta=1-0.82\cdot\mathrm{recoveryT} }
+\eq{ \mathbf v\supseteq v_0\,\eta\,(\mathrm{fate\,factor})\cdot(\cos\theta,0,\sin\theta),\quad \mathrm{fate\,factor}=1.5\ \text{if prolif},\ 0.5\ \text{else} }
+Drag: $\mathbf v\to\mathbf v\cdot\mathrm{CELL\_DAMPING}^{\Delta t\cdot 60}$, $\mathrm{CELL\_DAMPING}=0.92$.
+
+\subsection{Fate softmax}
+\eq{ P(\text{fate}=i)=\frac{\exp(s_i/T)}{\sum_j\exp(s_j/T)},\quad T=4 }
+
+\subsection{ATP-dependent survival}
+\eq{ \text{apoptotic if }\ \mathrm{ATP}<\theta_{\rm ATP}^{\rm danger}=6\ \text{for}\ >\SI{90}{s}\ \lor\ \mathrm{damageLevel}>1.2\ \lor\ (\mathrm{mito}_\Psi<45 \land \mathrm{ROS}>95) }
+
+\subsection{Drug PK/PD (PhysiPKPD)}
+\eq{ \dot C_{\rm int}=k_{\rm up}(1-\mathrm{MDR})\,C_{\rm ext}-k_{\rm eff}C_{\rm int} }
+\eq{ \dot D = \frac{C_{\rm int}^{n_H}}{EC_{50}^{n_H}+C_{\rm int}^{n_H}}\,E_{\max} - k_{\rm rep} D }
+Effect per MOA:
+\[
+\begin{array}{ll}
+\text{ANTI\_PROLIF} & [\rm p21]\mathrel{+}=0.1 D\\
+\text{PRO\_APOPTOSIS} & \text{apoptotic if } D>0.7\\
+\text{DNA\_DAMAGE} & \text{damageLevel}\mathrel{+}=0.05 D\\
+\text{MITO\_TOXIN} & \mathrm{mito}_\Psi\mathrel{-}=2 D
+\end{array}
+\]
+
+\subsection{Motility--fate quiescence coupling}
+When crowded ($>6$ neighbours) or highly pressured: fate score toward quiescence rises with rate 0.3--1.5.
+
+\clearpage
+\section{Intracellular Langevin Physics}
+\label{sec:langevin}
+
+Each particle $i$:
+\eq{ m_i\ddot{\mathbf x}_i = -\gamma_i\dot{\mathbf x}_i + \mathbf F^{\rm th}_i + \mathbf F^{\rm home}_i + \mathbf F^{\rm tether}_i + \mathbf F^{\rm coll}_i + \mathbf F^{\rm conf}_i + \mathbf F^{\rm field}_i + \mathbf F^{\rm job}_i }
+with $m_i = r_i^2\cdot 10$ (scaled).
+
+\subsection{Stokes drag (post-audit)}
+\eq{ \gamma_i = 6\pi\eta r_i,\quad \mathbf F^{\rm drag}_i=-\gamma_i\mathbf v_i }
+
+\subsection{Thermal noise (fluctuation-dissipation, post-audit)}
+\eq{ \langle F^{\rm th}_{i,\alpha}(t)F^{\rm th}_{j,\beta}(t')\rangle = 2\gamma_i k_BT\,\delta_{ij}\delta_{\alpha\beta}\delta(t-t') }
+\eq{ \mathbf F^{\rm th}_i=\sqrt{\frac{2\gamma_i k_BT}{\Delta t}}\,\mathcal N_3(0,1)\cdot a_i }
+with particle-type amplitude $a_i\in[0,1]$.
+
+\subsection{Home and tether springs}
+\eq{ \mathbf F^{\rm home}_i = -k_h(\mathbf x_i-\mathbf h_i),\quad \mathbf F^{\rm tether}_{ij}=-k_t(\|\mathbf r_{ij}\|-\ell_0)\hat{\mathbf r}_{ij} }
+
+\subsection{Attraction fields}
+\eq{ \mathbf F^{\rm field}_i = \sum_a \mathbb 1[\text{tag/type match}]\cdot\frac{k_a m_i}{\|\mathbf r_{ia}\|^2+\epsilon^2}\,\hat{\mathbf r}_{ia} }
+
+\subsection{Particle--particle collision (soft)}
+\eq{ \mathbf F^{\rm coll}_{ij}=k_c\max(0,r_i+r_j-\|\mathbf r_{ij}\|)\,\hat{\mathbf r}_{ij} }
+
+\subsection{Membrane confinement (two layers)}
+\eq{ p = \frac{d-s}{b-s},\quad b=r_{\rm conf}-r_i,\quad s=0.9 b }
+\eq{ \mathbf F^{\rm conf}_i = -3 k_m p^2\,\hat{\mathbf n}\quad\text{if }d>s }
+Hard wall reset: $\mathbf v\to -\alpha(d-b)\hat{\mathbf n}$ when $d>b$.
+
+\subsection{Job forces}
+\[ \mathbf F^{\rm goto}_i = \hat{\mathbf u}\cdot v_{\rm job},\quad \mathbf F^{\rm attach}_i = 3(\mathbf x_t-\mathbf x_i),\quad \dot r_i^{\rm consumed}=-2 r_i \]
+
+\subsection{Integrator}
+Euler, step $\Delta t \le 16\,\si{ms}$, with velocity cap $v_{\max}=0.3$ (0.8 for go-to).
+
+\clearpage
+\section{Nutrient Diffusion Field}
+\label{sec:nutrients}
+
+For each chemical species $C\in\{\rm O_2,\,Glc,\,CO_2,\,pH,\,drug\}$ on an $N\times N$ grid ($N=64$):
+\eq{ \frac{\partial C}{\partial t} = D_C\nabla^2 C - \sum_{c\in\text{cells}}q_C(\mathbf x_c) + \sum_{c}p_C(\mathbf x_c) }
+Five-point Laplacian:
+\eq{ \nabla^2 C_{ij}\approx C_{i-1,j}+C_{i+1,j}+C_{i,j-1}+C_{i,j+1}-4 C_{ij} }
+Update:
+\eq{ C_{ij}^{n+1} = (C_{ij}^n + D_C\cdot\nabla^2 C_{ij}\cdot \Delta t)\cdot 0.9998 }
+
+\subsection{Boundary condition (bulk-mix)}
+\eq{ C_{\rm boundary}^{n+1} = 0.55\,C_{\rm env}+0.45\,C_{\rm boundary}^{n} }
+
+\subsection{Per-cell consumption / production}
+\eq{ \Delta O_2 = -O^{\rm cons}_{\rm base}\cdot f_{\rm activity}\cdot\Delta t,\quad \Delta {\rm Glc} = -G^{\rm cons}_{\rm base}\cdot f\cdot\Delta t }
+\eq{ \Delta\mathrm{CO}_2=+P^{\rm CO2}_{\rm base}\,\alpha_{\rm aerobic}\cdot\Delta t,\quad \alpha_{\rm aerobic}=\begin{cases}0.2 & \text{glycolytic}\\1.0 & \text{else}\end{cases} }
+\eq{ \Delta\mathrm{pH}=-L_{\rm prod}\cdot\beta_{\rm buf},\quad \beta_{\rm buf}=0.40\ (\text{Henderson--Hasselbalch, post-audit}) }
+
+\subsection{Drug field}
+\eq{ C_{\rm drug}^{n+1}=(C_{\rm drug}^n+D_{\rm drug}\nabla^2 C_{\rm drug}\Delta t)(1-k_{\rm decay}) }
+Boundary wash-out: $C_{\rm drug}^{n+1}=0.9\,C_{\rm drug}^n$.
+Gaussian injection at $(x_0,z_0)$ with radius $\rho$:
+\eq{ C_{\rm drug}(x,z)\ +\!=\ C_0\exp\!\Big(-\frac{(x-x_0)^2+(z-z_0)^2}{2\rho^2}\Big) }
+
+\clearpage
+\section{Conservation Laws \& Post-audit Diagnostics}
+\begin{itemize}
+\item Adenylate pool: $\Sigma_A=[\rm ATP]+[\rm ADP]+[\rm AMP]\approx\SI{3.9}{mM}$
+\item NAD pool: $\Sigma_N=[\rm NAD^+]+[\rm NADH]\approx\SI{1.6}{mM}$
+\item Cell population: $N^{n+1}=N^n+N_{\rm div}-N_{\rm apo}-N_{\rm necro}$
+\item Carbon accounting: $\text{C-in (glucose)}\ =\ \text{C-out (CO}_2\text{+lactate+biomass)}$
+\end{itemize}
+
+\section{References}
+\footnotesize
+Alberts B.\ \emph{Molecular Biology of the Cell} 7th Ed., 2022.\;
+Berg, Tymoczko \& Stryer, \emph{Biochemistry} 9th Ed.\;
+Hodgkin AL, Huxley AF. \emph{J Physiol} 117:500 (1952).\;
+Rush S, Larsen H. \emph{IEEE Trans Biomed Eng} 25:389 (1978).\;
+Mitchell P. \emph{Nature} 191:144 (1961).\;
+Novak B, Tyson JJ. \emph{Nat Rev MCB} 9:981 (2008).\;
+Kholodenko BN. \emph{Eur J Biochem} 267:1583 (2000).\;
+Hoffmann A et al.\ \emph{Science} 298:1241 (2002).\;
+Leloup JC, Goldbeter A. \emph{PNAS} 100:7051 (2003).\;
+Li YX, Rinzel J. \emph{J Theor Biol} 166:461 (1994).\;
+Harley CB et al.\ \emph{Nature} 345:458 (1990).\;
+Lindahl T. \emph{Nature} 362:709 (1993).\;
+Kunkel TA. \emph{JBC} 279:16895 (2004).\;
+Albeck JG et al.\ \emph{PLoS Biol} 6:2831 (2008).\;
+Einstein A. \emph{Ann Phys} 17:549 (1905).\;
+Stokes GG. \emph{TCPS} 9:8 (1851).\;
+Bergman D et al.\ \emph{GigaByte} (2023).\;
+Delarue M et al.\ \emph{Dev Cell} 45:190 (2018).\;
+Bachmair A, Finley D, Varshavsky A. \emph{Science} 234:179 (1986).\;
+Park JO et al.\ \emph{Nat Chem Biol} 12:482 (2016).\;
+Goldbeter A, Koshland DE. \emph{PNAS} 78:6840 (1981).\;
+Casciari JJ. \emph{Biotechnol Bioeng} 40:101 (1992).\;
+Green DR, Kroemer G. \emph{Science} 305:626 (2004).\;
+Hanahan D, Weinberg RA. \emph{Cell} 144:646 (2011).\;
+Geva-Zatorsky N et al.\ \emph{Mol Syst Biol} 2:2006.0033.\;
+Koonin EV. \emph{Nature} 515:36 (2014).\;
+Elowitz MB et al.\ \emph{Science} 297:1183 (2002).\;
+Raj A, van Oudenaarden A. \emph{Cell} 135:216 (2008).\;
+Chou PY, Fasman GD. \emph{Biochemistry} 13:211 (1974).\;
+Kyte J, Doolittle RF. \emph{J Mol Biol} 157:105 (1982).
+
+\end{document}

@@ -55,11 +55,45 @@ bool MetalContext::init(CAMetalLayer* layer) {
     NSString* execDir  = [execPath stringByDeletingLastPathComponent];
     NSString* libPath  = [execDir stringByAppendingPathComponent:@"default.metallib"];
 
+    // Try precompiled metallib first
     if ([[NSFileManager defaultManager] fileExistsAtPath:libPath]) {
-        shaderLibrary_ = [device_ newLibraryWithURL:[NSURL fileURLWithPath:libPath] error:&error];
+        NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:libPath error:nil];
+        if ([attrs fileSize] > 0) {
+            shaderLibrary_ = [device_ newLibraryWithURL:[NSURL fileURLWithPath:libPath] error:&error];
+        }
     }
     if (!shaderLibrary_) shaderLibrary_ = [device_ newDefaultLibrary];
-    if (!shaderLibrary_) { NSLog(@"[Metal] No shaders: %@", error); return false; }
+
+    // Fallback: compile shaders from source at runtime (each file separately)
+    if (!shaderLibrary_) {
+        NSLog(@"[Metal] No precompiled metallib — compiling shaders from source...");
+        NSString* shaderDir = [[execDir stringByDeletingLastPathComponent]
+                               stringByAppendingPathComponent:@"assets/shaders"];
+        NSArray* shaderFiles = [[NSFileManager defaultManager]
+                                contentsOfDirectoryAtPath:shaderDir error:nil];
+        MTLCompileOptions* opts = [[MTLCompileOptions alloc] init];
+        for (NSString* file in shaderFiles) {
+            if (![file hasSuffix:@".metal"]) continue;
+            NSString* path = [shaderDir stringByAppendingPathComponent:file];
+            NSString* src = [NSString stringWithContentsOfFile:path
+                                                     encoding:NSUTF8StringEncoding error:nil];
+            if (!src) continue;
+            NSError* compErr = nil;
+            id<MTLLibrary> lib = [device_ newLibraryWithSource:src options:opts error:&compErr];
+            if (lib) {
+                runtimeLibraries_.push_back(lib);
+                NSLog(@"[Metal] Compiled shader: %@", file);
+            } else {
+                NSLog(@"[Metal] Failed to compile %@: %@", file, compErr);
+            }
+        }
+        if (!runtimeLibraries_.empty()) {
+            shaderLibrary_ = runtimeLibraries_[0];
+        }
+    }
+    if (!shaderLibrary_ && runtimeLibraries_.empty()) {
+        NSLog(@"[Metal] No shaders: %@", error); return false;
+    }
 
     // Depth states
     {
@@ -71,8 +105,14 @@ bool MetalContext::init(CAMetalLayer* layer) {
     {
         MTLDepthStencilDescriptor* d = [[MTLDepthStencilDescriptor alloc] init];
         d.depthCompareFunction = MTLCompareFunctionLess;
-        d.depthWriteEnabled = NO; // for transparent objects
+        d.depthWriteEnabled = NO;
         depthStateNoWrite_ = [device_ newDepthStencilStateWithDescriptor:d];
+    }
+    {
+        MTLDepthStencilDescriptor* d = [[MTLDepthStencilDescriptor alloc] init];
+        d.depthCompareFunction = MTLCompareFunctionAlways;  // pierce-through
+        d.depthWriteEnabled = NO;
+        depthStateAlways_ = [device_ newDepthStencilStateWithDescriptor:d];
     }
 
     if (!createSubstratePipeline()) return false;
@@ -80,16 +120,31 @@ bool MetalContext::init(CAMetalLayer* layer) {
     if (!createGLBOrganellePipeline()) return false;
     if (!createCellPipeline()) return false;
     if (!createWirePipeline()) return false;
+    createMoleculeAtomPipeline();
+    createMoleculeBondPipeline();
+    createFluidPipeline();
 
     NSLog(@"[Metal] Ready — %@", device_.name);
     return true;
 }
 
+id<MTLFunction> MetalContext::findFunction(NSString* name) {
+    // Try primary library first
+    id<MTLFunction> fn = [shaderLibrary_ newFunctionWithName:name];
+    if (fn) return fn;
+    // Search runtime libraries
+    for (auto& lib : runtimeLibraries_) {
+        fn = [lib newFunctionWithName:name];
+        if (fn) return fn;
+    }
+    return nil;
+}
+
 bool MetalContext::createCellPipeline() {
     NSError* error = nil;
     auto desc = makeBlendedPipelineDesc(
-        [shaderLibrary_ newFunctionWithName:@"cellVertex"],
-        [shaderLibrary_ newFunctionWithName:@"cellFragment"], false
+        findFunction(@"cellVertex"),
+        findFunction(@"cellFragment"), false
     );
     cellPipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!cellPipeline_) { NSLog(@"[Metal] Cell pipe: %@", error); return false; }
@@ -99,8 +154,8 @@ bool MetalContext::createCellPipeline() {
 bool MetalContext::createWirePipeline() {
     NSError* error = nil;
     auto desc = makeBlendedPipelineDesc(
-        [shaderLibrary_ newFunctionWithName:@"wireVertex"],
-        [shaderLibrary_ newFunctionWithName:@"wireFragment"], false
+        findFunction(@"wireVertex"),
+        findFunction(@"wireFragment"), false
     );
     wirePipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!wirePipeline_) { NSLog(@"[Metal] Wire pipe: %@", error); return false; }
@@ -110,8 +165,8 @@ bool MetalContext::createWirePipeline() {
 bool MetalContext::createOrganellePipeline() {
     NSError* error = nil;
     auto desc = makeBlendedPipelineDesc(
-        [shaderLibrary_ newFunctionWithName:@"organelleVertex"],
-        [shaderLibrary_ newFunctionWithName:@"organelleFragment"], false
+        findFunction(@"organelleVertex"),
+        findFunction(@"organelleFragment"), false
     );
     organellePipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!organellePipeline_) { NSLog(@"[Metal] Organelle pipe: %@", error); return false; }
@@ -121,8 +176,8 @@ bool MetalContext::createOrganellePipeline() {
 bool MetalContext::createGLBOrganellePipeline() {
     NSError* error = nil;
     auto desc = makeBlendedPipelineDesc(
-        [shaderLibrary_ newFunctionWithName:@"glbOrganelleVertex"],
-        [shaderLibrary_ newFunctionWithName:@"glbOrganelleFragment"], false
+        findFunction(@"glbOrganelleVertex"),
+        findFunction(@"glbOrganelleFragment"), false
     );
     glbOrganellePipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!glbOrganellePipeline_) { NSLog(@"[Metal] GLB Organelle pipe: %@", error); return false; }
@@ -132,12 +187,54 @@ bool MetalContext::createGLBOrganellePipeline() {
 bool MetalContext::createSubstratePipeline() {
     NSError* error = nil;
     MTLRenderPipelineDescriptor* desc = [[MTLRenderPipelineDescriptor alloc] init];
-    desc.vertexFunction   = [shaderLibrary_ newFunctionWithName:@"substrateVertex"];
-    desc.fragmentFunction = [shaderLibrary_ newFunctionWithName:@"substrateFragment"];
+    desc.vertexFunction   = findFunction(@"substrateVertex");
+    desc.fragmentFunction = findFunction(@"substrateFragment");
     desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
     desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
     substratePipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
     if (!substratePipeline_) { NSLog(@"[Metal] Substrate pipe: %@", error); return false; }
+    return true;
+}
+
+bool MetalContext::createMoleculeAtomPipeline() {
+    id<MTLFunction> vert = findFunction(@"moleculeAtomVertex");
+    id<MTLFunction> frag = findFunction(@"moleculeFragment");
+    if (!vert || !frag) {
+        NSLog(@"[Metal] Molecule atom shader functions not found (optional)");
+        return false;
+    }
+    NSError* error = nil;
+    auto desc = makeBlendedPipelineDesc(vert, frag, false);
+    moleculeAtomPipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
+    if (!moleculeAtomPipeline_) { NSLog(@"[Metal] Molecule atom pipe: %@", error); return false; }
+    return true;
+}
+
+bool MetalContext::createMoleculeBondPipeline() {
+    id<MTLFunction> vert = findFunction(@"moleculeBondVertex");
+    id<MTLFunction> frag = findFunction(@"moleculeFragment");
+    if (!vert || !frag) {
+        NSLog(@"[Metal] Molecule bond shader functions not found (optional)");
+        return false;
+    }
+    NSError* error = nil;
+    auto desc = makeBlendedPipelineDesc(vert, frag, false);
+    moleculeBondPipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
+    if (!moleculeBondPipeline_) { NSLog(@"[Metal] Molecule bond pipe: %@", error); return false; }
+    return true;
+}
+
+bool MetalContext::createFluidPipeline() {
+    id<MTLFunction> vert = findFunction(@"fluidVertex");
+    id<MTLFunction> frag = findFunction(@"fluidFragment");
+    if (!vert || !frag) {
+        NSLog(@"[Metal] Fluid shader functions not found (optional)");
+        return false;
+    }
+    NSError* error = nil;
+    auto desc = makeBlendedPipelineDesc(vert, frag, false);
+    fluidPipeline_ = [device_ newRenderPipelineStateWithDescriptor:desc error:&error];
+    if (!fluidPipeline_) { NSLog(@"[Metal] Fluid pipe: %@", error); return false; }
     return true;
 }
 
@@ -153,7 +250,9 @@ void MetalContext::recreateDepthTexture(uint32_t width, uint32_t height) {
 void MetalContext::shutdown() {
     cellPipeline_ = nil; wirePipeline_ = nil;
     organellePipeline_ = nil; glbOrganellePipeline_ = nil; substratePipeline_ = nil;
+    moleculeAtomPipeline_ = nil; moleculeBondPipeline_ = nil;
     depthState_ = nil; depthStateNoWrite_ = nil;
     depthTexture_ = nil; shaderLibrary_ = nil;
+    runtimeLibraries_.clear();
     commandQueue_ = nil; device_ = nil;
 }

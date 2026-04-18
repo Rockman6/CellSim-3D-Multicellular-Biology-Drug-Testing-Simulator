@@ -160,6 +160,24 @@ LoadedMesh GLBLoader::load(id<MTLDevice> device, const std::string& path, uint32
         printf("[GLBLoader] Decimated %s: %u → %zu triangles (step=%u)\n",
                path.c_str(), totalTris, decimated.size() / 3, step);
         allIndices = std::move(decimated);
+
+        // Compact vertex buffer: only keep vertices referenced by decimated indices.
+        // This is critical for models like rough ER (1.5M verts → ~15K used).
+        std::vector<int32_t> vertRemap(allVertices.size(), -1);
+        std::vector<Vertex> compactVerts;
+        compactVerts.reserve(allIndices.size()); // upper bound
+        for (auto& idx : allIndices) {
+            if (vertRemap[idx] < 0) {
+                vertRemap[idx] = (int32_t)compactVerts.size();
+                compactVerts.push_back(allVertices[idx]);
+            }
+            idx = (uint32_t)vertRemap[idx];
+        }
+        size_t oldVerts = allVertices.size();
+        allVertices = std::move(compactVerts);
+        printf("[GLBLoader] Compacted verts: %zu → %zu (saved %.1f MB)\n",
+               oldVerts, allVertices.size(),
+               (float)(oldVerts - allVertices.size()) * sizeof(Vertex) / (1024*1024));
     }
 
     printf("[GLBLoader] %s: %zu verts, %zu idx, bbox=%.2f x %.2f x %.2f\n",
