@@ -52,6 +52,28 @@ static Simulation   gSim;
 static std::string  gModelDir;
 static SimMode      gSimMode = MODE_SINGLE_CELL;
 
+// ── Startup Setup overlay ──────────────────────────────────────────────
+// Shown immediately after app launch. User picks a preset template or
+// manually tunes the initial conditions (cell count, medium composition,
+// timescale target), then clicks Start to begin the sim. The old
+// "Mode [Single Cell / Colony]" switcher is gone — there's just ONE
+// configurable cell mode now. Colony-specific internals are kept in the
+// Simulation class so headless validation still works with the same code.
+struct SimSetup {
+    bool   showOverlay      = true;   // visible until user clicks Start
+    int    initCells        = 5;      // seed count (1 = classic single-cell)
+    float  glucoseMM        = 25.0f;
+    float  glutamineMM      = 6.0f;
+    float  aaPoolMM         = 7.0f;
+    float  o2MM             = 0.20f;
+    float  co2MM            = 2.40f;
+    float  pH               = 7.40f;
+    float  growthFactorNgML = 50.0f;
+    float  initialTimeScale = 1.0f;   // 1× = 3 bio-min / wall-sec
+    int    templateIdx      = 0;      // which preset is highlighted
+};
+static SimSetup gSetup;
+
 // Molecule rendering
 static MoleculeCache gMolCache;
 static MolGenRunner  gMolGen;
@@ -6290,47 +6312,209 @@ static void switchMode(SimMode newMode) {
         gCamera.setColonyView();
 }
 
+// Apply gSetup to the running simulation. Replaces the existing cells
+// with a freshly-seeded population and bakes the medium with the user's
+// chosen initial concentrations. Called when the user clicks "Start" on
+// the setup overlay, or whenever they re-open it and re-start.
+static void applySetupAndStartSimulation() {
+    gSim.timeScale = gSetup.initialTimeScale;
+    gSim.init(MODE_SINGLE_CELL);
+    // Seed additional cells to match gSetup.initCells.
+    while ((int)gSim.cells.size() < gSetup.initCells
+           && (int)gSim.cells.size() < MAX_CELLS) {
+        SimCell c;
+        float r = sqrtf((float)rand()/RAND_MAX) * SCENE_BOUND * 0.45f;
+        float a = (float)rand()/RAND_MAX * 2.0f * (float)M_PI;
+        simd_float3 p = {r*cosf(a), FLOOR_Y, r*sinf(a)};
+        c.init(p, (int)gSim.cells.size());
+        c.cellUid = gSim.allocateCellUid();
+        gSim.cells.push_back(c);
+    }
+    // Override the medium-field initial concentrations with the user's
+    // template values. Existing values are already set from Constants.h
+    // defaults; we overwrite only the species the UI exposes.
+    for (int i = 0; i < MediumField::CELLS; i++) {
+        gSim.nutrients.c[MS_GLUCOSE][i]   = gSetup.glucoseMM;
+        gSim.nutrients.c[MS_GLUTAMINE][i] = gSetup.glutamineMM;
+        gSim.nutrients.c[MS_AA_POOL][i]   = gSetup.aaPoolMM;
+        gSim.nutrients.c[MS_O2][i]        = gSetup.o2MM;
+        gSim.nutrients.c[MS_CO2][i]       = gSetup.co2MM;
+        gSim.nutrients.c[MS_HPLUS][i]     = gSetup.pH;
+        gSim.nutrients.c[MS_GROWTH_F][i]  = gSetup.growthFactorNgML;
+    }
+    // Reset mass-balance baseline so the checker doesn't flag the new
+    // totals as drift.
+    for (int s = 0; s < MS_COUNT; s++) {
+        double sum = 0.0;
+        for (int i = 0; i < MediumField::CELLS; i++) sum += gSim.nutrients.c[s][i];
+        gSim.nutrients.totalAtStart[s] = sum;
+    }
+    initFluidHaze();
+    initMediumChemicals();
+    gSelectedCell = 0;
+    gSelectedCellUid = gSim.cells.empty() ? -1 : gSim.cells[0].cellUid;
+    gCamera.setSingleCellView();
+}
+
+// Apply one of the named templates to gSetup.
+static void applySetupTemplate(int idx) {
+    gSetup.templateIdx = idx;
+    switch (idx) {
+        case 0:   // HeLa Standard (DMEM HG + 10 % FBS, 5 % CO2 atmosphere)
+            gSetup.initCells = 5;
+            gSetup.glucoseMM = 25.0f;  gSetup.glutamineMM = 4.0f;
+            gSetup.aaPoolMM = 5.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 50.0f;
+            gSetup.initialTimeScale = 20.0f;
+            break;
+        case 1:   // CTC Fluo-N2DL-HeLa (Mitocheck, 10 % CO2, GlutaMAX + NEAA)
+            gSetup.initCells = 125;
+            gSetup.glucoseMM = 25.0f;  gSetup.glutamineMM = 6.0f;
+            gSetup.aaPoolMM = 7.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 2.40f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 50.0f;
+            gSetup.initialTimeScale = 60.0f;
+            break;
+        case 2:   // Hypoxia (3 % O2, low glucose, stressful)
+            gSetup.initCells = 10;
+            gSetup.glucoseMM = 5.5f;   gSetup.glutamineMM = 2.0f;
+            gSetup.aaPoolMM = 3.0f;    gSetup.o2MM = 0.04f;    // 3 % atm
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.20f;
+            gSetup.growthFactorNgML = 10.0f;
+            gSetup.initialTimeScale = 20.0f;
+            break;
+        case 3:   // Starvation (low glucose + low AAs — drives apoptosis)
+            gSetup.initCells = 5;
+            gSetup.glucoseMM = 1.0f;   gSetup.glutamineMM = 0.5f;
+            gSetup.aaPoolMM = 1.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 5.0f;
+            gSetup.initialTimeScale = 20.0f;
+            break;
+        case 4:   // Rich Medium (overfed — serum-rich IGF/EGF boost)
+            gSetup.initCells = 5;
+            gSetup.glucoseMM = 35.0f;  gSetup.glutamineMM = 8.0f;
+            gSetup.aaPoolMM = 10.0f;   gSetup.o2MM = 0.25f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 150.0f;
+            gSetup.initialTimeScale = 20.0f;
+            break;
+        case 5:   // Single Cell Detail (classic 1-cell mode)
+            gSetup.initCells = 1;
+            gSetup.glucoseMM = 25.0f;  gSetup.glutamineMM = 4.0f;
+            gSetup.aaPoolMM = 5.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 50.0f;
+            gSetup.initialTimeScale = 1.0f;
+            break;
+        case 6:   // Dense Colony (near-confluent 400 cells)
+            gSetup.initCells = 400;
+            gSetup.glucoseMM = 25.0f;  gSetup.glutamineMM = 4.0f;
+            gSetup.aaPoolMM = 5.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 50.0f;
+            gSetup.initialTimeScale = 60.0f;
+            break;
+    }
+}
+
 // ── ImGui UI ────────────────────────────────────────────────────────────
 static void drawUI() {
-    // Mode switcher (top-center)
-    {
-        float winW = 220;
-        ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - winW) * 0.5f, 10), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Mode", nullptr, ImGuiWindowFlags_NoCollapse);
-        bool isSingle = (gSimMode == MODE_SINGLE_CELL);
-        if (ImGui::Button(isSingle ? "[ Single Cell ]" : "  Single Cell  ", ImVec2(95, 0)) && !isSingle)
-            switchMode(MODE_SINGLE_CELL);
-        ImGui::SameLine();
-        if (ImGui::Button(!isSingle ? "[ Colony ]" : "  Colony  ", ImVec2(95, 0)) && isSingle)
-            switchMode(MODE_COLONY);
-        // Reset button — goes back to 1 cell
-        if (isSingle && gSim.cells.size() > 1) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Reset 1")) {
-                switchMode(MODE_SINGLE_CELL);
+    // ── Setup Overlay (on startup / when user presses R) ─────────────
+    // Modal-ish panel at the top-center. User picks a preset template
+    // (which fills every field below with the matching values) OR
+    // manually tunes each field, then clicks Start.
+    if (gSetup.showOverlay) {
+        ImVec2 ds = ImGui::GetIO().DisplaySize;
+        float winW = 560, winH = 520;
+        ImGui::SetNextWindowPos(ImVec2((ds.x - winW) * 0.5f, (ds.y - winH) * 0.5f),
+                                ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+        ImGui::Begin("Cell Mode — Setup", nullptr,
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+
+        ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                           "Pick a template or manually configure, then Start");
+        ImGui::Separator();
+
+        // ── Preset templates (top row buttons) ──
+        ImGui::Text("Templates:");
+        const char* TPL_NAMES[] = {
+            "HeLa Standard",
+            "CTC HeLa (Mitocheck)",
+            "Hypoxia 3% O2",
+            "Starvation",
+            "Rich Medium",
+            "Single Cell Detail",
+            "Dense Colony (400)"
+        };
+        const int TPL_COUNT = sizeof(TPL_NAMES) / sizeof(TPL_NAMES[0]);
+        for (int i = 0; i < TPL_COUNT; i++) {
+            bool active = (i == gSetup.templateIdx);
+            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.55f, 0.85f, 1.0f));
+            if (ImGui::Button(TPL_NAMES[i], ImVec2(175, 0))) {
+                applySetupTemplate(i);
             }
+            if (active) ImGui::PopStyleColor();
+            // 3 buttons per row
+            if ((i % 3) != 2 && i < TPL_COUNT - 1) ImGui::SameLine();
         }
-        if (isSingle) {
-            activeFocusCellIndex();
-            ImGui::Text("Cells: %d", (int)gSim.cells.size());
-            ImGui::Checkbox("Follow cell (F)", &gFollowCell);
+
+        ImGui::Separator();
+        ImGui::Text("Configuration:");
+        ImGui::SliderInt("Initial cells",      &gSetup.initCells,       1, 500);
+        ImGui::SliderFloat("Glucose (mM)",     &gSetup.glucoseMM,       0.0f, 50.0f, "%.2f");
+        ImGui::SliderFloat("Glutamine (mM)",   &gSetup.glutamineMM,     0.0f, 10.0f, "%.2f");
+        ImGui::SliderFloat("AA pool (mM)",     &gSetup.aaPoolMM,        0.0f, 15.0f, "%.2f");
+        ImGui::SliderFloat("O2 (mM)",          &gSetup.o2MM,            0.0f,  0.30f, "%.3f");
+        ImGui::SliderFloat("CO2 (mM)",         &gSetup.co2MM,           0.0f,  5.0f,  "%.2f");
+        ImGui::SliderFloat("pH",               &gSetup.pH,              6.5f,  8.0f,  "%.2f");
+        ImGui::SliderFloat("Growth factors",   &gSetup.growthFactorNgML, 0.0f, 200.0f, "%.1f ng/mL");
+        ImGui::SliderFloat("Initial timeScale",&gSetup.initialTimeScale, 0.1f, 100.0f, "%.1f×");
+
+        ImGui::Separator();
+        if (ImGui::Button("▶  Start simulation", ImVec2(-1, 36))) {
+            applySetupAndStartSimulation();
+            gSetup.showOverlay = false;
+        }
+        ImGui::TextDisabled("(press R anytime to re-open this panel)");
+        ImGui::End();
+        // Don't draw the rest of the UI while setup is open; the user
+        // hasn't picked their conditions yet.
+        return;
+    }
+
+    // ── Cell Mode runtime controls (top-center) ──────────────────────
+    // Replaces the old "Mode [Single Cell | Colony]" switcher. There's
+    // now ONE cell mode, configured at startup via the Setup overlay.
+    {
+        float winW = 240;
+        ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - winW) * 0.5f, 10),
+                                ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Cell Mode", nullptr, ImGuiWindowFlags_NoCollapse);
+        if (ImGui::Button("Re-setup (R)", ImVec2(-1, 0))) {
+            gSetup.showOverlay = true;
+        }
+        activeFocusCellIndex();
+        ImGui::Text("Cells: %d", (int)gSim.cells.size());
+        ImGui::Checkbox("Follow cell (F)", &gFollowCell);
+        ImGui::SameLine();
+        ImGui::Checkbox("Solo focus", &gSoloFocusCell);
+        if (gFollowCell) {
+            ImGui::Text("Zoom: %.2fx  (scroll)", gFollowZoom);
             ImGui::SameLine();
-            ImGui::Checkbox("Solo focus", &gSoloFocusCell);
-            if (gFollowCell) {
-                ImGui::Text("Zoom: %.2fx  (scroll)", gFollowZoom);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Reset zoom")) gFollowZoom = 1.0f;
-                ImGui::TextColored(ImVec4(0.5f,0.7f,1.0f,1.0f),
-                    "WASD = jump to nearest cell in that direction");
-            }
-            if (gSim.cells.size() > 1) {
-                ImGui::SetNextItemWidth(120);
-                int prevSelected = gSelectedCell;
-                ImGui::SliderInt("Cell index", &gSelectedCell, 0, (int)gSim.cells.size()-1);
-                if (gSelectedCell != prevSelected) {
-                    selectCellIndex(gSelectedCell);
-                }
+            if (ImGui::SmallButton("Reset zoom")) gFollowZoom = 1.0f;
+            ImGui::TextColored(ImVec4(0.5f,0.7f,1.0f,1.0f),
+                "WASD = jump to nearest cell in that direction");
+        }
+        if (gSim.cells.size() > 1) {
+            ImGui::SetNextItemWidth(120);
+            int prevSelected = gSelectedCell;
+            ImGui::SliderInt("Cell index", &gSelectedCell, 0, (int)gSim.cells.size()-1);
+            if (gSelectedCell != prevSelected) {
+                selectCellIndex(gSelectedCell);
             }
         }
         ImGui::End();
@@ -7389,18 +7573,22 @@ int main(int argc, char* argv[]) {
         gProteinDir = [protDir UTF8String];
         gProtCache.init(gProteinDir);
 
-        // Init simulation in single cell mode (default)
-        gSim.init(gSimMode);
-        initFluidHaze();                // dark-blue translucent fluid backdrop
-        initMediumChemicals();          // seed the volumetric chemical swarm
+        // Init simulation with a minimal HeLa Standard preset so the
+        // first frame is well-defined; the user will immediately see the
+        // Setup overlay and can re-seed with their chosen template.
+        applySetupTemplate(0);
+        gSim.init(MODE_SINGLE_CELL);
+        // Pause until the user clicks Start on the setup overlay.
+        gSim.paused = true;
+        initFluidHaze();
+        initMediumChemicals();
         gSelectedCell = 0;
         gSelectedCellUid = gSim.cells.empty() ? -1 : gSim.cells[0].cellUid;
         initializeDogmaStatesFromSimulation();
         gPostMitosisPairCameraTimer = 0.0f;
         gPostMitosisPairUidA = -1;
         gPostMitosisPairUidB = -1;
-        if (gSimMode == MODE_SINGLE_CELL)
-            gCamera.setSingleCellView();
+        gCamera.setSingleCellView();
 
         int initCount = (gSimMode == MODE_SINGLE_CELL) ? SINGLE_CELL_COUNT : INIT_CELLS;
         printf("[CellSim] Simulation started: %d cell(s) · %d models loaded · Mode: %s\n",
@@ -7418,6 +7606,13 @@ int main(int argc, char* argv[]) {
             bool pDown = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
             if (pDown && !pWasDown) gSim.paused = !gSim.paused;
             pWasDown = pDown;
+            // R to re-open the startup Setup overlay
+            static bool rWasDown = false;
+            bool rDown = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+            if (rDown && !rWasDown && !ImGui::GetIO().WantCaptureKeyboard) {
+                gSetup.showOverlay = true;
+            }
+            rWasDown = rDown;
 
             float now = (float)glfwGetTime();
             float dt = fminf(now - lastTime, 0.05f);
