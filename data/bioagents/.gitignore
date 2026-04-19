@@ -1,0 +1,6 @@
+# Per-bioagent chemistry caches are regenerable; don't commit.
+chem/
+targets_predicted/
+metabolites/
+admet/
+uncertainty/

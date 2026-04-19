@@ -30,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 // ── Species index ────────────────────────────────────────────────────────
 enum MediumSpecies : int {
@@ -44,15 +45,15 @@ enum MediumSpecies : int {
     MS_IONS        = 8,
     MS_CALCIUM     = 9,
     MS_HPLUS       = 10,   // pH proxy (stored as pH directly, 7.40 default)
-    MS_DRUG        = 11,   // µM
-    MS_WATER       = 12,   // mM (~55 000 in pure water)
-    MS_COUNT       = 13
+    MS_WATER       = 11,   // mM (~55 000 in pure water)
+    MS_COUNT       = 12
+    // MS_DRUG removed 2026-04-19 — pending rewrite
 };
 
 inline const char* mediumSpeciesName(int s) {
     static const char* names[MS_COUNT] = {
         "O2","CO2","glucose","glutamine","pyruvate","lactate",
-        "AA_pool","growthF","ions","Ca2+","pH","drug","water"
+        "AA_pool","growthF","ions","Ca2+","pH","water"
     };
     return (s >= 0 && s < MS_COUNT) ? names[s] : "?";
 }
@@ -60,7 +61,6 @@ inline const char* mediumSpeciesName(int s) {
 inline const char* mediumSpeciesUnit(int s) {
     if (s == MS_GROWTH_F) return "ng/mL";
     if (s == MS_HPLUS)    return "pH";
-    if (s == MS_DRUG)     return "µM";
     return "mM";
 }
 
@@ -76,9 +76,24 @@ struct MediumField {
     // Diffusion coefficient table indexed by MediumSpecies.
     float D_um2_per_s[MS_COUNT];
 
-    // Drug-channel-only knobs (kept for compatibility with existing API).
-    float drugDiffCoeff = 0.0f;
-    float drugDecayRate = 0.0f;
+    // Drug-channel knobs removed 2026-04-19 — pending rewrite.
+
+    // ── Extracellular protease field ───────────────────────────────────
+    // Auxiliary scalar (not a conserved mass species) tracking
+    // cathepsins / MMPs / phospholipases released at cell-lysis events.
+    // Boosts the substrate-availability multiplier for nearby living
+    // cells' R5 translation → they "eat better" in a dying cluster.
+    // Decays with ~2-bio-h half-life (Hibbs 1987 J Clin Inv).
+    float extracellularProteaseLevel[CELLS];
+
+    // ── Bioagent concentration fields (Phase M1 scaffold) ──────────────
+    // Dish-level µM concentrations for each foreign ChemicalEntity
+    // (drugs, viral particles in transit, bacterial secretions). One
+    // float[CELLS] slab per agent, allocated on drug-load. Indexed by
+    // the agent's position in gBioagents registry. Empty by default —
+    // zero footprint until a drug is applied.
+    // See plan Part-One §4.1 and Part-Five M1.
+    std::vector<std::vector<float>> bioagentConcentration_uM;
 
     // Mass-balance bookkeeping. totalAtStart[i] = total moles per species
     // captured at init (in mM·grid-cell-units). The ratio of running total
@@ -100,13 +115,13 @@ struct MediumField {
             DMEM_O2_MM, DMEM_CO2_MM, DMEM_GLUCOSE_MM, DMEM_GLUTAMINE_MM,
             DMEM_PYRUVATE_MM, DMEM_LACTATE_MM, DMEM_AA_POOL_MM,
             DMEM_GROWTH_FACTOR_NG_PER_ML, DMEM_IONS_MM, DMEM_CALCIUM_MM,
-            DMEM_PH, DMEM_DRUG_UM, DMEM_WATER_MM
+            DMEM_PH, DMEM_WATER_MM
         };
         const float diffVals[MS_COUNT] = {
             D_O2_UM2_PER_S, D_CO2_UM2_PER_S, D_GLUCOSE_UM2_PER_S,
             D_GLUTAMINE_UM2_PER_S, D_PYRUVATE_UM2_PER_S, D_LACTATE_UM2_PER_S,
             D_AA_UM2_PER_S, D_GROWTH_F_UM2_PER_S, D_IONS_UM2_PER_S,
-            D_CALCIUM_UM2_PER_S, D_H_UM2_PER_S, /*drug*/ 600.0f,
+            D_CALCIUM_UM2_PER_S, D_H_UM2_PER_S,
             D_WATER_UM2_PER_S
         };
 
@@ -115,8 +130,22 @@ struct MediumField {
             for (int i = 0; i < CELLS; i++) c[s][i] = initVals[s];
             totalAtStart[s] = (double)initVals[s] * (double)CELLS;
         }
-        drugDiffCoeff = 0.0f;
-        drugDecayRate = 0.0f;
+        for (int i = 0; i < CELLS; i++) extracellularProteaseLevel[i] = 0.0f;
+    }
+
+    // ── Extracellular protease accessors ────────────────────────────────
+    void depositProtease(float wx, float wz, float amount) {
+        int ix, iz; worldToGrid(wx, wz, ix, iz);
+        extracellularProteaseLevel[iz * N + ix] += amount;
+    }
+    float proteaseAt(float wx, float wz) const {
+        int ix, iz; worldToGrid(wx, wz, ix, iz);
+        return extracellularProteaseLevel[iz * N + ix];
+    }
+    // First-order decay each biological-second tick (called from diffuse()).
+    void decayProtease(float dt_bio, float per_biosec_rate) {
+        float keep = std::max(0.0f, 1.0f - per_biosec_rate * dt_bio);
+        for (int i = 0; i < CELLS; i++) extracellularProteaseLevel[i] *= keep;
     }
 
     // ── World ↔ grid mapping ────────────────────────────────────────────
@@ -158,10 +187,8 @@ struct MediumField {
         float pH = get(MS_HPLUS, wx, wz);
         return std::max(0.55f, std::min(0.80f, 0.55f + (pH - 6.6f) * 0.25f));
     }
-    float getDrug(float wx, float wz) const { return get(MS_DRUG, wx, wz); }
-
     // ── Per-cell exchange (atomic stoichiometric flux, mM/s × dt) ───────
-    // fluxMmPerS: 12-element array. Negative entries are CONSUMED by the
+    // fluxMmPerS: MS_COUNT-element array. Negative entries are CONSUMED by the
     // cell, positive entries are SECRETED. Limited by available reactant
     // (negative entries clamped so concentrations stay ≥ 0).
     void exchange(float wx, float wz, const float* fluxMmPerS, float dt_bio) {
@@ -175,28 +202,7 @@ struct MediumField {
         }
     }
 
-    // ── Drug API (preserves existing behavior) ──────────────────────────
-    void consumeDrug(float wx, float wz, float amount) {
-        int ix, iz; worldToGrid(wx, wz, ix, iz);
-        c[MS_DRUG][iz * N + ix] = std::max(0.0f, c[MS_DRUG][iz * N + ix] - amount);
-    }
-    void applyDrugUniform(float concentration) {
-        for (int i = 0; i < CELLS; i++) c[MS_DRUG][i] = concentration;
-    }
-    void injectDrug(float wx, float wz, float concentration, float radius) {
-        for (int iz = 0; iz < N; iz++)
-            for (int ix = 0; ix < N; ix++) {
-                float gx = (float)ix / (N - 1) * 2 * SCENE_BOUND - SCENE_BOUND;
-                float gz = (float)iz / (N - 1) * 2 * SCENE_BOUND - SCENE_BOUND;
-                float dx = gx - wx, dz = gz - wz;
-                float dist2 = dx * dx + dz * dz;
-                float sigma2 = radius * radius;
-                c[MS_DRUG][iz * N + ix] += concentration * expf(-dist2 / (2 * sigma2));
-            }
-    }
-    void washOut() {
-        for (int i = 0; i < CELLS; i++) c[MS_DRUG][i] = 0.0f;
-    }
+    // Drug API removed 2026-04-19 — pending rewrite.
 
     // ── Diffusion (zero-flux Neumann boundaries — closed dish) ──────────
     // Each species advances under explicit Euler:
@@ -233,12 +239,10 @@ struct MediumField {
                 std::copy(cNext[s], cNext[s] + CELLS, c[s]);
             }
         }
-        // Drug decay (separate from species diffusion).
-        if (drugDecayRate > 0.0f) {
-            float decay = (1.0f - drugDecayRate * dt_bio);
-            if (decay < 0.0f) decay = 0.0f;
-            for (int i = 0; i < CELLS; i++) c[MS_DRUG][i] *= decay;
-        }
+        // Extracellular protease decay — 2-bio-h half-life. Constant
+        // inlined to avoid circular include of Constants.h (already
+        // pulled in above via "../core/Constants.h").
+        decayProtease(dt_bio, Apoptosis::EP_DECAY_PER_BIOSEC);
     }
 
     // ── Incubator gas exchange ──────────────────────────────────────────
@@ -279,13 +283,13 @@ struct MediumField {
 
     // ── Mass balance check ──────────────────────────────────────────────
     // Returns the maximum relative drift across all species (excluding pH
-    // and drug, which are not conserved by R1–R7). Closed-system invariant
+    // which is not conserved by R1–R7). Closed-system invariant
     // is < 1e-3 in steady operation; the caller flags a red banner above
     // 1e-2 (set by the user as the physics-broken threshold).
     double checkBalance(double drift[MS_COUNT]) const {
         double maxDrift = 0.0;
         for (int s = 0; s < MS_COUNT; s++) {
-            if (s == MS_HPLUS || s == MS_DRUG) { drift[s] = 0.0; continue; }
+            if (s == MS_HPLUS) { drift[s] = 0.0; continue; }
             double sum = 0.0;
             for (int i = 0; i < CELLS; i++) sum += c[s][i];
             double rel = (totalAtStart[s] > 1e-9)

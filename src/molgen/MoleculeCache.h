@@ -2,6 +2,7 @@
 
 #include "PDBParser.h"
 #include "MoleculeLibrary.h"
+#include <dirent.h>
 #include <map>
 #include <string>
 
@@ -16,6 +17,12 @@ public:
         moleculeDir_ = moleculeDir;
         printf("[MoleculeCache] Directory: %s\n", moleculeDir.c_str());
         loadAll();
+        // Also scan any drug SDFs produced by the chemistry worker
+        // (data/bioagents/chem/<id>/ → assets/drugs/<id>.sdf). These
+        // entries aren't in MOLECULE_ENTRIES but still need to be
+        // renderable once applyDrug() spawns particles for them.
+        std::string drugDir = moleculeDir + "/../drugs";
+        loadDirectoryGlob(drugDir);
     }
 
     // Get a cached molecule by ID (e.g., "atp", "glucose")
@@ -41,6 +48,33 @@ public:
     }
 
 private:
+    // Scan a directory for *.sdf files and index each by its stem.
+    // Skips entries already in the cache (so the MOLECULE_ENTRIES
+    // registry remains the primary source of truth).
+    void loadDirectoryGlob(const std::string& dir) {
+        DIR* d = opendir(dir.c_str());
+        if (!d) return;
+        int added = 0;
+        struct dirent* entry;
+        while ((entry = readdir(d)) != nullptr) {
+            std::string name = entry->d_name;
+            if (name.size() < 5) continue;
+            if (name.substr(name.size() - 4) != ".sdf") continue;
+            std::string id = name.substr(0, name.size() - 4);
+            if (cache_.count(id)) continue;  // already loaded
+            std::string path = dir + "/" + name;
+            MoleculeData mol = PDBParser::parseSDF(path);
+            if (mol.valid()) {
+                cache_[id] = std::move(mol);
+                added++;
+            }
+        }
+        closedir(d);
+        if (added > 0) {
+            printf("[MoleculeCache] +%d drug SDFs from %s\n", added, dir.c_str());
+        }
+    }
+
     void loadAll() {
         for (int i = 0; i < MOLECULE_ENTRY_COUNT; i++) {
             const auto& entry = MOLECULE_ENTRIES[i];

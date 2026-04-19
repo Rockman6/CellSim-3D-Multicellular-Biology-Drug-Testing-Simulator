@@ -1,0 +1,18 @@
+# Virus agent catalogue — same chemistry pipeline as drugs, plus
+# cargo (genome) and entry receptor. Each virus has a capsid of one
+# or more protomer proteins, plus a nucleic-acid genome that hijacks
+# host ribosomes after entry.
+#
+# Columns:
+#   id                  — filesystem-safe key
+#   name                — display name
+#   kind                — ssRNA+ | ssRNA- | dsRNA | ssDNA | dsDNA | retrovirus
+#   triangulation_T     — capsid triangulation number (icosahedral)
+#   protomer_protein_id — ProteinMeshCache key of the capsid protein
+#   envelope            — true for enveloped viruses (add MARTINI bilayer)
+#   genome_sequence     — nucleic-acid sequence (FASTA-style, wrapped)
+#   entry_receptor      — ParticleType enum name (which host receptor binds)
+#   notes
+#
+# Empty by default — user seeds via Drug Lab panel or manual edit.
+id,name,kind,triangulation_T,protomer_protein_id,envelope,genome_sequence,entry_receptor,notes

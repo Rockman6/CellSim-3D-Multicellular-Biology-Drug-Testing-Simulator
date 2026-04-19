@@ -31,6 +31,8 @@ static bool gTelemetryOpened = false;
 #include "molgen/ProteinMeshCache.h"
 
 #include <cstdio>
+#include <sys/stat.h>
+#include <errno.h>
 #include <cmath>
 #include <ctime>
 #include <vector>
@@ -1607,8 +1609,6 @@ struct TimeSeriesData {
     std::vector<float> phaseG1, phaseS, phaseG2, phaseM;
     std::vector<float> divisions;   // cumulative
     std::vector<float> deaths;      // cumulative
-    std::vector<float> viability;   // % viable vs pre-drug count
-    std::vector<float> avgDrugDamage;
     float sampleTimer = 0;
 
     void sample(const Simulation& sim) {
@@ -1632,8 +1632,6 @@ struct TimeSeriesData {
         phaseM.push_back(sim.statPhases[3] / total * 100);
         divisions.push_back((float)sim.statDivisions);
         deaths.push_back((float)sim.statDeaths);
-        viability.push_back(sim.statViability);
-        avgDrugDamage.push_back(sim.statAvgDrugDamage);
     }
 
     int count() const { return (int)time.size(); }
@@ -1644,14 +1642,13 @@ struct TimeSeriesData {
         fprintf(f, "bio_time_h,population,proliferating,quiescent,apoptotic,necrotic,"
                    "avg_ATP,avg_stress,glycolytic_pct,"
                    "phase_G1_pct,phase_S_pct,phase_G2_pct,phase_M_pct,"
-                   "cumulative_divisions,cumulative_deaths,"
-                   "viability_pct,avg_drug_damage\n");
+                   "cumulative_divisions,cumulative_deaths\n");
         for (int i = 0; i < count(); i++) {
-            fprintf(f, "%.4f,%g,%g,%g,%g,%g,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%g,%g,%.1f,%.4f\n",
+            fprintf(f, "%.4f,%g,%g,%g,%g,%g,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%g,%g\n",
                     time[i], population[i], proliferating[i], quiescent[i],
                     apoptotic[i], necrotic[i], avgATP[i], avgStress[i], glycolyticPct[i],
                     phaseG1[i], phaseS[i], phaseG2[i], phaseM[i],
-                    divisions[i], deaths[i], viability[i], avgDrugDamage[i]);
+                    divisions[i], deaths[i]);
         }
         fclose(f);
         printf("[Export] Saved %d rows to %s\n", count(), path.c_str());
@@ -2362,6 +2359,36 @@ static void syncCellInstances() {
             inst.color = {0.25f, 0.04f, 0.0f, 0.35f};
             glow = 1.2f;
         }
+        // Multi-threshold apoptosis visual — progress drives
+        // shrinkage, PS-flip warm tint, fresnel ghost fade. No shader
+        // changes required: we bake the effect into the existing
+        // CellInstance color / radius / glowIntensity fields.
+        float apoP = c.apo.state.apoptosis_progress;
+        if (apoP > 0.01f) {
+            // Shrinkage — up to SHRINK_FRAC_AT_COMPLETE (35%) at progress=1.
+            inst.radius *= (1.0f - Apoptosis::SHRINK_FRAC_AT_COMPLETE * apoP);
+            // PS-flip warm tint pulled from the engine (0..1).
+            float ps = c.apo.psExposure();
+            // Blend toward warm red-brown; alpha drops (cell ghosts).
+            inst.color.x = inst.color.x * (1.0f - 0.55f * apoP) + 0.55f * apoP;
+            inst.color.y = inst.color.y * (1.0f - 0.55f * apoP) + 0.18f * apoP;
+            inst.color.z = inst.color.z * (1.0f - 0.55f * apoP) + 0.10f * apoP;
+            // Tint further warmed by PS exposure — MBoC "eat-me" signal.
+            inst.color.x = fminf(1.0f, inst.color.x + 0.20f * ps);
+            inst.color.y = fminf(1.0f, inst.color.y + 0.08f * ps);
+            // Alpha ghost fade from default 0.22 → 0.10 at progress 1.0.
+            inst.color.w = fmaxf(0.10f, inst.color.w * (1.0f - 0.55f * apoP));
+            // Glow drops as mitos depolarise — no ATP left to fluoresce.
+            glow *= (1.0f - 0.60f * apoP);
+            // Caspase-driven blebbing feeds furrow depth so the existing
+            // shader gives it a transient pinch where no mitosis is.
+            // Tie this to an oscillating phase so bleb cycles at ~1 Hz.
+            float blebOsc = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.28f
+                                                + (float)c.cellUid * 0.37f);
+            inst.furrowDepth = fmaxf(inst.furrowDepth,
+                                     Apoptosis::BLEB_AMPLITUDE_FRAC
+                                     * apoP * blebOsc);
+        }
         // NB: previously the renderer blended a warm-brown tint onto cells
         // whose postDivisionRecovery was non-zero. That tint had no biological
         // referent — daughter cells don't turn brown for 6 seconds after
@@ -2810,12 +2837,89 @@ static const MoleculeData* mediumChemMol(const MediumChemSpec& spec) {
     return nullptr;
 }
 
-// Find the MediumChemSpec for a given species id.
+// Dynamic drug-particle specs — one MediumChemSpec per applied drug so
+// drug molecules render through the same ball-and-stick pipeline that
+// handles ATP/glucose. `species` values ≥ 1000 route here instead of
+// the fixed MEDIUM_SPECS table.  Populated by applyDrugVisuals() when
+// Simulation::applyDrug is called.
+static std::vector<MediumChemSpec> gDrugSpecs;
+static constexpr int DRUG_SPECIES_BASE = 1000;
+
+// Find the MediumChemSpec for a given species id. Searches the fixed
+// metabolite table first, then the dynamic drug table.
 static const MediumChemSpec* findMediumSpec(int species) {
+    if (species >= DRUG_SPECIES_BASE) {
+        int idx = species - DRUG_SPECIES_BASE;
+        if (idx >= 0 && idx < (int)gDrugSpecs.size()) return &gDrugSpecs[idx];
+        return nullptr;
+    }
     for (int i = 0; i < MEDIUM_SPEC_COUNT; i++) {
         if (MEDIUM_SPECS[i].species == species) return &MEDIUM_SPECS[i];
     }
     return nullptr;
+}
+
+// Apply a drug from the gBioagents registry AND spawn visible particles
+// in the medium swarm so the user watches the drug drift through the
+// dish, bind cells' membranes, and stream inside. Reuses the existing
+// MediumChemical state machine — no new animation code.
+static void applyDrugVisuals(const std::string& drugId, float conc_uM) {
+    // Look up the drug in the registry (loaded from data/bioagents/drugs.csv).
+    const ChemicalEntity* drug = gBioagents.get(drugId);
+    if (!drug) {
+        printf("[DrugLab] unknown drug '%s'\n", drugId.c_str());
+        return;
+    }
+    // Call the backend to update binding + affinity matrix.
+    gSim.applyDrug(drugId, conc_uM);
+
+    // Register a MediumChemSpec for this drug so rendering can find it.
+    // One spec per drug id; subsequent applies just update the count.
+    int drugSpecIdx = -1;
+    for (int i = 0; i < (int)gDrugSpecs.size(); i++) {
+        if (gDrugSpecs[i].sdfId && drugId == gDrugSpecs[i].sdfId) {
+            drugSpecIdx = i; break;
+        }
+    }
+    if (drugSpecIdx < 0) {
+        MediumChemSpec ds{};
+        ds.species   = DRUG_SPECIES_BASE + (int)gDrugSpecs.size();
+        ds.sdfId     = strdup(drugId.c_str());  // held for sim lifetime
+        ds.radiusUm  = MoleculeRadiusUm::GLUCOSE;
+        ds.visBoost  = MOL_VIS_BOOST_SMALL;
+        ds.tintR     = 1.00f;  // drugs render bright yellow so they're
+        ds.tintG     = 0.85f;  // visually distinct from metabolites
+        ds.tintB     = 0.15f;
+        ds.densityRel = 0.50f;
+        ds.count      = 0;     // count filled below per-application
+        gDrugSpecs.push_back(ds);
+        drugSpecIdx = (int)gDrugSpecs.size() - 1;
+    }
+
+    // Spawn ~120 visible particles for the first 10 µM, scaled linearly.
+    // Capped so extreme concentrations don't blow the particle budget.
+    int nSpawn = (int)fminf(400.0f, fmaxf(30.0f, 12.0f * conc_uM));
+    auto urand = []() { return (float)rand() / (float)RAND_MAX; };
+    for (int n = 0; n < nSpawn; n++) {
+        float r = sqrtf(urand()) * SCENE_BOUND * 0.95f;
+        float theta = urand() * 2.0f * (float)M_PI;
+        float yFrac = 0.35f + (urand() - 0.5f) * 0.50f;
+        yFrac = fmaxf(0.05f, fminf(0.95f, yFrac));
+        MediumChemical mc{};
+        mc.home = {r * cosf(theta),
+                   FLOOR_Y + yFrac * MEDIUM_FLUID_HEIGHT,
+                   r * sinf(theta)};
+        mc.position = mc.home;
+        mc.species  = DRUG_SPECIES_BASE + drugSpecIdx;
+        mc.targetCellIdx = -1;
+        mc.state = MC_FREE;
+        mc.stateTimer = 0.0f;
+        mc.phase = urand() * 6.28318f;
+        mc.bindPoint = {0, 0, 0};
+        gMediumChemicals.push_back(mc);
+    }
+    printf("[DrugLab] Spawned %d visible particles of %s at %.2f µM\n",
+           nSpawn, drugId.c_str(), conc_uM);
 }
 
 // Multi-scale curl-noise XZ-plane current field. Divergence-free, so
@@ -3044,7 +3148,6 @@ static void renderMediumChemicals(std::vector<GPUAtomInstance>& atoms,
         MediumComposition::DMEM_IONS_MM,
         MediumComposition::DMEM_CALCIUM_MM,
         MediumComposition::DMEM_PH,
-        1.0f,
         MediumComposition::DMEM_WATER_MM
     };
 
@@ -3083,7 +3186,7 @@ static void renderMediumChemicals(std::vector<GPUAtomInstance>& atoms,
                               mc.position.x, mc.position.z);
             float init = speciesInit[mc.species] > 1e-6f
                          ? speciesInit[mc.species] : 1.0f;
-            float ratio = (mc.species == MS_LACTATE || mc.species == MS_DRUG)
+            float ratio = (mc.species == MS_LACTATE)
                 ? fminf(1.0f, local / init)
                 : fmaxf(0.50f, fminf(1.30f, local / init));
             bright = 1.0f * ratio;
@@ -3127,6 +3230,471 @@ static void renderMediumChemicals(std::vector<GPUAtomInstance>& atoms,
                             /*bondRadiusMul*/0.20f,
                             /*unfoldAmount*/0.0f, /*repulsionAmount*/0.0f,
                             /*seed*/(int)(mc.phase * 1000.0f));
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Apoptotic bodies — companion object to MediumChemical
+//  -----------------------------------------------------------------------
+//  A dying cell fragments into 5-15 membrane-bound bodies (real 1-5 µm,
+//  CellSim 0.10-0.50 wu radius). Each body:
+//    • drifts with the same curl-noise current as the chemical swarm,
+//    • decomposes its cytosolic / membrane / receptor pools into the
+//      local grid cell via MediumField.exchange(),
+//    • shrinks as it loses mass,
+//    • 6+ bio-h later develops caspase-cleaved plasma-membrane nanopores,
+//      Na⁺ rushes in, water follows, volume rises 20-30 % → osmotic
+//      lysis (secondary necrosis; Silva 2010, Chen 2016).
+//  Bodies within EFFEROCYTOSIS_RADIUS_WU of a live cell can be engulfed
+//  into that cell's lysosomal pool (handled on the SimCell side).
+// ══════════════════════════════════════════════════════════════════════════
+
+enum ApoBodyRenderPhase : uint8_t {
+    ABODY_DRIFT = 0,  // normal decomposition
+    ABODY_SWELL = 1,  // osmotic lysis ramp-up
+    ABODY_BURST = 2   // lysis rupture — dump & despawn
+};
+
+struct ApoptoticBody {
+    simd_float3 position;
+    simd_float3 velocity;
+    float  radius;                // wu
+    float  radius0;               // spawn radius (for shrink ratio)
+    float  remainingBiomass;      // cytosolic-equivalent (biomass units)
+    float  remainingMembrane;     // biomass-equivalent units
+    float  remainingReceptor;     // biomass-equivalent units
+    float  initialBiomass;
+    float  initialMembrane;
+    float  initialReceptor;
+    float  ageBioSec;
+    float  osmoticSwell;          // 0..0.30
+    float  membraneIntegrity;     // 1.0 → 0.0
+    uint8_t kind;                 // 0=body, 1=nuclear frag, 2=mito frag
+    uint8_t phase;                // ApoBodyRenderPhase
+    int    originCellUid;
+    float  spin;
+    float  densityRel;
+    // For DAMP signalling — host cell's position is carried so DAMP
+    // events can flag a radius of neighbours even after the host cell
+    // is gone from gSim.cells.
+    simd_float3 lastBurstPos;     // filled on rupture
+    bool   burstConsumed;
+};
+static std::vector<ApoptoticBody> gApoBodies;
+
+// Pending-DAMP-ring: a transient event emitted at body-burst. Each tick
+// we flag any neighbouring live cell inside DAMP_NEIGHBOR_RADIUS_WU with
+// a short ROS/stress/fasL bump. Events consumed on the next SimCell
+// update call (after dispatch), cleared here at end of each frame.
+struct DampEvent {
+    simd_float3 position;
+    float strength;      // scales trigger bumps (0.5..1.5)
+    float ageBioSec;
+};
+static std::vector<DampEvent> gDampEvents;
+
+// Spawn 5-15 apoptotic bodies from a dying cell. Called by the sim
+// tick when cell.apoPhase first crosses into BODIES.
+static void spawnApoptoticBodies(SimCell& c) {
+    auto urand = []() { return (float)rand() / (float)RAND_MAX; };
+    int N = Apoptosis::BODIES_PER_CELL_MIN +
+            (int)(urand() * (Apoptosis::BODIES_PER_CELL_MAX
+                              - Apoptosis::BODIES_PER_CELL_MIN + 1));
+    // Fragmentation dump: move FRAG fractions of each pool into bodies.
+    float cytoDumpTotal = c.biomass        * Apoptosis::CYTO_FRAG;
+    float memDumpTotal  = c.membraneMass_bm * Apoptosis::MEM_FRAG;
+    float recDumpTotal  = c.receptorMass_bm * Apoptosis::REC_FRAG;
+    c.biomass        -= cytoDumpTotal;
+    c.membraneMass_bm -= memDumpTotal;
+    c.receptorMass_bm -= recDumpTotal;
+    float perBodyCyto = cytoDumpTotal / (float)N;
+    float perBodyMem  = memDumpTotal  / (float)N;
+    float perBodyRec  = recDumpTotal  / (float)N;
+    // Also snap-release the cytosol that *doesn't* go to bodies (the
+    // remaining portion after leak+frag). That's Apoptosis::CYTO_BODY
+    // for the body ledger, plus whatever is still in the cell's own
+    // biomass goes into the field over the body-decomposition phase.
+    // To keep the closed-system invariant exact, we also transfer
+    // everything that's left in c.biomass / membrane / receptor into
+    // the body pool here (any residual not yet released).
+    float residualCyto = c.biomass;
+    float residualMem  = c.membraneMass_bm;
+    float residualRec  = c.receptorMass_bm;
+    c.biomass = 0.0f;
+    c.membraneMass_bm = 0.0f;
+    c.receptorMass_bm = 0.0f;
+    float extraPerBody_cyto = residualCyto / (float)N;
+    float extraPerBody_mem  = residualMem  / (float)N;
+    float extraPerBody_rec  = residualRec  / (float)N;
+
+    for (int i = 0; i < N; i++) {
+        ApoptoticBody b{};
+        // Jittered sphere just outside the cell boundary.
+        float theta = urand() * (float)M_PI * 2.0f;
+        float phi   = acosf(2.0f * urand() - 1.0f);
+        float r0    = c.radius * c.size * 1.05f;
+        simd_float3 dir = {
+            sinf(phi) * cosf(theta),
+            cosf(phi),
+            sinf(phi) * sinf(theta)
+        };
+        b.position = {
+            c.position.x + dir.x * r0,
+            fmaxf(FLOOR_Y + 0.15f, c.position.y + dir.y * r0 * 0.4f),
+            c.position.z + dir.z * r0
+        };
+        // Radial outward burst velocity 0.5-1.0 wu/s.
+        float speed = 0.5f + urand() * 0.5f;
+        b.velocity = {dir.x * speed, dir.y * speed * 0.2f, dir.z * speed};
+        // Size: clamp each body radius into [BODY_RADIUS_MIN, MAX].
+        float rfrac = Apoptosis::BODY_RADIUS_MIN_WU +
+                      urand() * (Apoptosis::BODY_RADIUS_MAX_WU
+                                 - Apoptosis::BODY_RADIUS_MIN_WU);
+        b.radius   = rfrac;
+        b.radius0  = rfrac;
+        b.remainingBiomass  = perBodyCyto + extraPerBody_cyto;
+        b.remainingMembrane = perBodyMem  + extraPerBody_mem;
+        b.remainingReceptor = perBodyRec  + extraPerBody_rec;
+        b.initialBiomass    = b.remainingBiomass;
+        b.initialMembrane   = b.remainingMembrane;
+        b.initialReceptor   = b.remainingReceptor;
+        b.ageBioSec         = 0.0f;
+        b.osmoticSwell      = 0.0f;
+        b.membraneIntegrity = 1.0f;
+        // Kind mixing: ~1 nuclear frag, 1-2 mito frags, rest generic.
+        b.kind = (i == 0) ? 1 : ((i <= 2) ? 2 : 0);
+        b.phase = ABODY_DRIFT;
+        b.originCellUid = c.cellUid;
+        b.spin = urand() * 6.28318f;
+        b.densityRel = 0.65f + urand() * 0.10f;
+        b.lastBurstPos = {0,0,0};
+        b.burstConsumed = false;
+        gApoBodies.push_back(b);
+    }
+    // Mass is now fully partitioned into bodies. When updateApoptosis
+    // next transitions this cell into BODIES it will call
+    // releaseAllMass(c), which is a no-op since c.biomass / membrane /
+    // receptor are already zero.
+}
+
+// Per-frame update (called next to updateMediumChemicals()). Drift,
+// decompose, possibly undergo osmotic lysis. All rates in bio-seconds.
+static void updateApoptoticBodies(float dt) {
+    if (gApoBodies.empty()) return;
+    auto urand = []() { return (float)rand() / (float)RAND_MAX; };
+    float t = (float)glfwGetTime();
+    float bio_dt = bioDt(dt, gSim.timeScale);
+
+    for (size_t i = 0; i < gApoBodies.size(); ) {
+        ApoptoticBody& b = gApoBodies[i];
+        b.ageBioSec += bio_dt;
+        // Advect by curl-noise + self velocity + sink.
+        simd_float2 v = mediumFlow(b.position.x, b.position.z, t);
+        float currentScale = dt * (1.0f + 0.2f * gSim.timeScale);
+        b.position.x += v.x * currentScale + b.velocity.x * dt;
+        b.position.z += v.y * currentScale + b.velocity.z * dt;
+        b.position.y += b.velocity.y * dt;
+        b.velocity.x *= 0.92f;
+        b.velocity.y *= 0.92f;
+        b.velocity.z *= 0.92f;
+        b.position.y -= Apoptosis::BODY_SINK_WU_PER_BIOSEC
+                        * b.densityRel * bio_dt;
+        if (b.position.y < FLOOR_Y + b.radius * 0.5f) {
+            b.position.y = FLOOR_Y + b.radius * 0.5f;
+        }
+        // Wrap XZ inside dish.
+        float r2 = b.position.x*b.position.x + b.position.z*b.position.z;
+        float bound = SCENE_BOUND * 0.95f;
+        if (r2 > bound * bound) {
+            float rNorm = sqrtf(r2);
+            b.position.x *= bound / rNorm;
+            b.position.z *= bound / rNorm;
+        }
+
+        // Decomposition (phase 0): each pool decays at its own rate;
+        // released mass goes to the MediumField via the same partitioning
+        // table the cell's releaseCytosol/Membrane/Receptors helpers use,
+        // plus a small extracellular-protease deposit so nearby cells
+        // "eat better" around dying clusters.
+        auto decomposeFraction = [&](float poolInitial,
+                                     float &poolRemaining,
+                                     float biosec) {
+            if (poolRemaining <= 0.0f) return 0.0f;
+            float dFrac = fminf(1.0f, bio_dt / biosec);
+            float drelease = poolRemaining * dFrac;
+            poolRemaining -= drelease;
+            return drelease;
+        };
+
+        if (b.phase == ABODY_DRIFT) {
+            float dcyto = decomposeFraction(b.initialBiomass,
+                                            b.remainingBiomass,
+                                            Apoptosis::DECOMPOSITION_BIOSEC);
+            float dmem  = decomposeFraction(b.initialMembrane,
+                                            b.remainingMembrane,
+                                            Apoptosis::MEMBRANE_DECOMP_BIOSEC);
+            float drec  = decomposeFraction(b.initialReceptor,
+                                            b.remainingReceptor,
+                                            Apoptosis::RECEPTOR_DECOMP_BIOSEC);
+            if (dcyto > 0 || dmem > 0 || drec > 0) {
+                float flux[MS_COUNT] = {0};
+                flux[MS_AA_POOL]  = dcyto * Apoptosis::REL_AA_PER_BIOMASS
+                                  + dmem  * Apoptosis::REL_AA_PER_MEMBRANE
+                                  + drec  * Apoptosis::REL_AA_PER_RECEPTOR;
+                flux[MS_IONS]     = dcyto * Apoptosis::REL_IONS_PER_BIOMASS;
+                flux[MS_CALCIUM]  = dcyto * Apoptosis::REL_CALCIUM_PER_BIOMASS;
+                flux[MS_PYRUVATE] = dcyto * Apoptosis::REL_PYRUVATE_PER_BIOMASS;
+                flux[MS_LACTATE]  = dcyto * Apoptosis::REL_LACTATE_PER_BIOMASS;
+                flux[MS_GLUCOSE]  = dcyto * Apoptosis::REL_GLUCOSE_PER_BIOMASS
+                                  + dmem  * Apoptosis::REL_GLUCOSE_PER_MEMBRANE
+                                  + drec  * Apoptosis::REL_GLUCOSE_PER_RECEPTOR;
+                flux[MS_WATER]    = dcyto * Apoptosis::REL_WATER_PER_BIOMASS;
+                gSim.nutrients.exchange(b.position.x, b.position.z, flux, 1.0f);
+                gSim.nutrients.depositProtease(b.position.x, b.position.z,
+                    (dcyto + dmem) * Apoptosis::EP_RELEASE_PER_LYSED_BIOMASS * 0.5f);
+            }
+            // Shrink proportional to cube-root of mass.
+            float massFrac = (b.remainingBiomass + b.remainingMembrane
+                              + b.remainingReceptor)
+                            / fmaxf(1e-6f, b.initialBiomass
+                                            + b.initialMembrane
+                                            + b.initialReceptor);
+            b.radius = b.radius0 * cbrtf(fmaxf(0.05f, massFrac));
+
+            // Once old enough, begin osmotic-lysis nanopore formation.
+            if (b.ageBioSec > Apoptosis::SECONDARY_NECROSIS_PORE_START_BIOSEC) {
+                b.phase = ABODY_SWELL;
+            }
+        } else if (b.phase == ABODY_SWELL) {
+            // Integrity decay cascade.
+            float integrityDrop = bio_dt / Apoptosis::PORE_FORM_BIOSEC;
+            b.membraneIntegrity = fmaxf(0.0f, b.membraneIntegrity - integrityDrop);
+            // Osmotic water influx (real Chen 2016 mechanism, here
+            // lumped into a geometric swell coefficient). Internal
+            // osmolarity rises as ions leak — model by pushing swell
+            // up whenever integrity < 0.5.
+            if (b.membraneIntegrity < 0.5f) {
+                float dOsmo = 1.0f;   // saturating internal:external mismatch
+                b.osmoticSwell += Apoptosis::LP_PORE_FAILED
+                                  * dOsmo
+                                  * (1.0f - b.membraneIntegrity)
+                                  * bio_dt
+                                  * (1.0f / Apoptosis::SWELL_COEFFICIENT);
+                // Radius: original × (1 + swell)^(1/3) to preserve
+                // mass/volume relationship as best a simple body can.
+                b.radius = b.radius0 * cbrtf(1.0f + b.osmoticSwell);
+            }
+            if (b.osmoticSwell >= Apoptosis::LYSIS_RUPTURE_SWELL) {
+                b.phase = ABODY_BURST;
+                b.lastBurstPos = b.position;
+            }
+        } else if (b.phase == ABODY_BURST) {
+            if (!b.burstConsumed) {
+                // One-tick 100 % dump of everything remaining.
+                float dcyto = b.remainingBiomass;
+                float dmem  = b.remainingMembrane;
+                float drec  = b.remainingReceptor;
+                b.remainingBiomass = 0;
+                b.remainingMembrane = 0;
+                b.remainingReceptor = 0;
+                float flux[MS_COUNT] = {0};
+                flux[MS_AA_POOL]  = dcyto * Apoptosis::REL_AA_PER_BIOMASS
+                                  + dmem  * Apoptosis::REL_AA_PER_MEMBRANE
+                                  + drec  * Apoptosis::REL_AA_PER_RECEPTOR;
+                flux[MS_IONS]     = dcyto * Apoptosis::REL_IONS_PER_BIOMASS;
+                flux[MS_CALCIUM]  = dcyto * Apoptosis::REL_CALCIUM_PER_BIOMASS
+                                  + Apoptosis::DAMP_CA_BURST_MM;
+                flux[MS_PYRUVATE] = dcyto * Apoptosis::REL_PYRUVATE_PER_BIOMASS;
+                flux[MS_LACTATE]  = dcyto * Apoptosis::REL_LACTATE_PER_BIOMASS;
+                flux[MS_GLUCOSE]  = dcyto * Apoptosis::REL_GLUCOSE_PER_BIOMASS
+                                  + dmem  * Apoptosis::REL_GLUCOSE_PER_MEMBRANE
+                                  + drec  * Apoptosis::REL_GLUCOSE_PER_RECEPTOR;
+                flux[MS_WATER]    = dcyto * Apoptosis::REL_WATER_PER_BIOMASS;
+                gSim.nutrients.exchange(b.position.x, b.position.z, flux, 1.0f);
+                gSim.nutrients.depositProtease(b.position.x, b.position.z,
+                    (dcyto + dmem) * Apoptosis::EP_RELEASE_PER_LYSED_BIOMASS);
+                // Emit DAMP event.
+                gDampEvents.push_back({b.position, 1.0f, 0.0f});
+                b.burstConsumed = true;
+                // Keep a brief visual fade by allowing the body to
+                // stay in ABODY_BURST for LYSIS_DUMP_BIOSEC before
+                // despawning — use ageBioSec offset.
+            }
+            // Hold for LYSIS_DUMP_BIOSEC then despawn.
+            if (b.ageBioSec > Apoptosis::SECONDARY_NECROSIS_PORE_START_BIOSEC
+                            + Apoptosis::OSMO_SWELL_BIOSEC
+                            + Apoptosis::LYSIS_DUMP_BIOSEC) {
+                gApoBodies.erase(gApoBodies.begin() + i);
+                continue;
+            }
+        }
+
+        // Normal despawn when fully decomposed.
+        float massFracNow = (b.remainingBiomass + b.remainingMembrane
+                              + b.remainingReceptor)
+                            / fmaxf(1e-6f, b.initialBiomass
+                                            + b.initialMembrane
+                                            + b.initialReceptor);
+        if (massFracNow < 0.02f && b.phase != ABODY_BURST) {
+            gApoBodies.erase(gApoBodies.begin() + i);
+            continue;
+        }
+        i++;
+    }
+
+    // Decay DAMP events so they don't accumulate forever.
+    for (size_t i = 0; i < gDampEvents.size(); ) {
+        gDampEvents[i].ageBioSec += bio_dt;
+        if (gDampEvents[i].ageBioSec > 60.0f) {
+            gDampEvents.erase(gDampEvents.begin() + i);
+        } else i++;
+    }
+}
+
+// Render apoptotic bodies using the same addStick/addMoleculeGeometry-free
+// atom emitter — bodies are simple translucent spheres (represented as a
+// single "atom" at their position) with warm tints and a size that
+// matches their remainingBiomass. Colour varies by `kind`.
+static void renderApoptoticBodies(std::vector<GPUAtomInstance>& atoms) {
+    if (gApoBodies.empty()) return;
+    float t = (float)glfwGetTime();
+    for (const ApoptoticBody& b : gApoBodies) {
+        float fade = 1.0f;
+        if (b.phase == ABODY_BURST) {
+            // Quick fade over the LYSIS_DUMP window.
+            float u = (b.ageBioSec - Apoptosis::SECONDARY_NECROSIS_PORE_START_BIOSEC
+                                    - Apoptosis::OSMO_SWELL_BIOSEC)
+                      / Apoptosis::LYSIS_DUMP_BIOSEC;
+            fade = fmaxf(0.0f, 1.0f - u);
+        } else {
+            fade = fmaxf(0.2f, fminf(1.0f,
+                         (b.remainingBiomass + b.remainingMembrane
+                          + b.remainingReceptor)
+                         / fmaxf(1e-6f, b.initialBiomass
+                                          + b.initialMembrane
+                                          + b.initialReceptor)));
+        }
+        // Kind → colour (warm for generic; deep red for nuclear;
+        // green-tinged for mito cytochrome-c residue). Alpha is baked
+        // into the RGB via fade — the atom shader caps alpha itself.
+        float rC, gC, bC;
+        switch (b.kind) {
+        case 1: // nuclear fragment — deep red
+            rC = 0.55f; gC = 0.08f; bC = 0.14f; break;
+        case 2: // mito fragment — green cyt-c residue
+            rC = 0.25f; gC = 0.55f; bC = 0.22f; break;
+        default: // generic body — warm brown
+            rC = 0.40f; gC = 0.18f; bC = 0.12f; break;
+        }
+        // When swelling, add a bright flash via the rim — approximate
+        // by boosting saturation proportional to osmoticSwell.
+        if (b.phase == ABODY_SWELL) {
+            float flash = b.osmoticSwell / Apoptosis::LYSIS_RUPTURE_SWELL;
+            rC = fminf(1.0f, rC + 0.35f * flash);
+            gC = fminf(1.0f, gC + 0.12f * flash);
+        }
+        // Bake fade into brightness (~alpha substitute).
+        rC *= fade; gC *= fade; bC *= fade;
+        // Gentle sine wobble so bodies don't look frozen.
+        float wobble = 1.0f + 0.03f * sinf(t * 0.9f + b.spin);
+        GPUAtomInstance ai;
+        ai.position = b.position;
+        ai.radius = b.radius * wobble;
+        ai.color = {rC, gC, bC};
+        ai.pad = 0.0f;
+        atoms.push_back(ai);
+    }
+}
+
+// Each tick, deliver DAMP bumps to live neighbours within the radius.
+// Called from the main sim update after updateApoptoticBodies().
+static void applyDampEventsToNeighbors(float dt) {
+    if (gDampEvents.empty() || gSim.cells.empty()) return;
+    float bio_dt = bioDt(dt, gSim.timeScale);
+    float R = Apoptosis::DAMP_NEIGHBOR_RADIUS_WU;
+    float R2 = R * R;
+    for (DampEvent& e : gDampEvents) {
+        for (SimCell& c : gSim.cells) {
+            if (!c.alive || c.apoPhase != Apoptosis::ALIVE) continue;
+            float dx = c.position.x - e.position.x;
+            float dy = c.position.y - e.position.y;
+            float dz = c.position.z - e.position.z;
+            float d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 > R2) continue;
+            float falloff = 1.0f - sqrtf(d2) / R;
+            float bump = e.strength * falloff * bio_dt / 30.0f; // over 30 bio-s
+            c.ROS = fminf(100.0f, c.ROS
+                + Apoptosis::DAMP_NEIGHBOR_ROS_BOOST * bump);
+            c.stress = fminf(100.0f, c.stress
+                + Apoptosis::DAMP_NEIGHBOR_STRESS_BOOST * bump);
+            c.fasLExposure = fminf(50.0f, c.fasLExposure
+                + Apoptosis::DAMP_NEIGHBOR_FASL_NG_PER_ML * bump);
+            c.damageSensedBioSec = fmaxf(c.damageSensedBioSec, 60.0f);
+        }
+    }
+}
+
+// Efferocytosis: live cells engulf nearby apoptotic bodies.
+static void updateEfferocytosis(float dt) {
+    if (gApoBodies.empty() || gSim.cells.empty()) return;
+    float bio_dt = bioDt(dt, gSim.timeScale);
+    for (SimCell& c : gSim.cells) {
+        if (!c.alive || c.apoPhase != Apoptosis::ALIVE) continue;
+        float cellR = c.radius * c.size;
+        for (ApoptoticBody& b : gApoBodies) {
+            if (b.phase == ABODY_BURST) continue;
+            float dx = c.position.x - b.position.x;
+            float dy = c.position.y - b.position.y;
+            float dz = c.position.z - b.position.z;
+            float d = sqrtf(dx*dx + dy*dy + dz*dz) - cellR - b.radius;
+            if (d > Apoptosis::EFFEROCYTOSIS_RADIUS_WU) continue;
+            if (d < 0) d = 0;
+            float rate = Apoptosis::EFFEROCYTOSIS_RATE_PER_BIOSEC
+                       * c.adhesionStrength
+                       * (1.0f - d / Apoptosis::EFFEROCYTOSIS_RADIUS_WU);
+            float dFrac = fminf(1.0f, rate * bio_dt);
+            float moveCyto = b.remainingBiomass  * dFrac;
+            float moveMem  = b.remainingMembrane * dFrac;
+            float moveRec  = b.remainingReceptor * dFrac;
+            b.remainingBiomass  -= moveCyto;
+            b.remainingMembrane -= moveMem;
+            b.remainingReceptor -= moveRec;
+            c.lysosomalLoad_cyto += moveCyto;
+            c.lysosomalLoad_mem  += moveMem;
+            c.lysosomalLoad_rec  += moveRec;
+        }
+    }
+}
+
+// Lysosomal digestion: each tick, drain cell lysosomal pools back into
+// cell biomass (RECYCLE_EFFICIENCY fraction); the remainder lost to
+// CO2/H2O returning to the field so mass balance still closes.
+static void updateLysosomalDigestion(float dt) {
+    if (gSim.cells.empty()) return;
+    float bio_dt = bioDt(dt, gSim.timeScale);
+    for (SimCell& c : gSim.cells) {
+        if (!c.alive) continue;
+        auto digest = [&](float &pool, float biosec) {
+            if (pool <= 0) return 0.0f;
+            float frac = fminf(1.0f, bio_dt / biosec);
+            float d = pool * frac;
+            pool -= d;
+            return d;
+        };
+        float dCyto = digest(c.lysosomalLoad_cyto, Apoptosis::LYSO_DIGEST_CYTO_BIOSEC);
+        float dMem  = digest(c.lysosomalLoad_mem,  Apoptosis::LYSO_DIGEST_MEM_BIOSEC);
+        float dRec  = digest(c.lysosomalLoad_rec,  Apoptosis::LYSO_DIGEST_REC_BIOSEC);
+        float total = dCyto + dMem + dRec;
+        if (total <= 0) continue;
+        float recycled = total * Apoptosis::RECYCLE_EFFICIENCY;
+        float lost     = total - recycled;
+        c.biomass += recycled;
+        c.ATP     = fminf(100.0f, c.ATP + recycled * Apoptosis::ATP_PER_RECYCLED_BM);
+        // Return oxidative loss to field as CO2 + H2O — closes mass balance.
+        float flux[MS_COUNT] = {0};
+        flux[MS_CO2]   = lost * Apoptosis::CO2_PER_RECYCLED_LOSS;
+        flux[MS_WATER] = lost * Apoptosis::H2O_PER_RECYCLED_LOSS;
+        gSim.nutrients.exchange(c.position.x, c.position.z, flux, 1.0f);
     }
 }
 
@@ -5354,6 +5922,9 @@ static void uploadCellInterior(simd_float3 cellPos, float cellSize, float time, 
     // populates the molecule pipeline with the chemical particles that
     // float inside the fluid.
     renderMediumChemicals(allAtoms, allBonds, gSim, (float)glfwGetTime());
+    // Apoptotic bodies use the same atom-instance pipeline so they are
+    // drawn in the same pass as medium molecules — no extra shader.
+    renderApoptoticBodies(allAtoms);
     bool renderPrimaryInterior = !soloFocusEnabled() || activeFocusCellIndex() == 0;
     int focusCellIdx = activeFocusCellIndex();
 
@@ -6319,15 +6890,21 @@ static void switchMode(SimMode newMode) {
 static void applySetupAndStartSimulation() {
     gSim.timeScale = gSetup.initialTimeScale;
     gSim.init(MODE_SINGLE_CELL);
-    // Seed additional cells to match gSetup.initCells.
+    // Seed additional cells to match gSetup.initCells. Place each cell
+    // at its proper rest-on-floor Y (FLOOR_Y + radius × size × 0.85) so
+    // the lower hemisphere doesn't clip through the substrate on the
+    // first frame before physics has a chance to settle it.
     while ((int)gSim.cells.size() < gSetup.initCells
            && (int)gSim.cells.size() < MAX_CELLS) {
         SimCell c;
         float r = sqrtf((float)rand()/RAND_MAX) * SCENE_BOUND * 0.45f;
         float a = (float)rand()/RAND_MAX * 2.0f * (float)M_PI;
+        // Temporary y; overwritten after init() reads radius/size.
         simd_float3 p = {r*cosf(a), FLOOR_Y, r*sinf(a)};
         c.init(p, (int)gSim.cells.size());
         c.cellUid = gSim.allocateCellUid();
+        // Rest cell on the floor — matches updatePhysics anchor.
+        c.position.y = FLOOR_Y + c.radius * c.size * 0.85f;
         gSim.cells.push_back(c);
     }
     // Override the medium-field initial concentrations with the user's
@@ -6417,6 +6994,202 @@ static void applySetupTemplate(int idx) {
             gSetup.initialTimeScale = 60.0f;
             break;
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Complete-state export — one-click dump of every simulation artifact
+//  to a timestamped folder on disk.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Last-export status, surfaced in the Export panel.
+static std::string gLastExportPath;
+static double      gLastExportWallTime = 0.0;
+
+// Per-grid-cell concentration dump. One row per grid cell, one column per species.
+static void exportMediumFieldCSV(const std::string& path, const Simulation& sim) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "ix,iz,world_x_wu,world_z_wu");
+    for (int s = 0; s < MS_COUNT; s++)
+        fprintf(f, ",%s_%s", mediumSpeciesName(s), mediumSpeciesUnit(s));
+    fprintf(f, ",extracellular_protease\n");
+    const int N = MediumField::N;
+    for (int iz = 0; iz < N; iz++) {
+        for (int ix = 0; ix < N; ix++) {
+            int idx = iz * N + ix;
+            float gx = (float)ix / (N - 1) * 2 * SCENE_BOUND - SCENE_BOUND;
+            float gz = (float)iz / (N - 1) * 2 * SCENE_BOUND - SCENE_BOUND;
+            fprintf(f, "%d,%d,%.3f,%.3f", ix, iz, gx, gz);
+            for (int s = 0; s < MS_COUNT; s++)
+                fprintf(f, ",%.4f", sim.nutrients.c[s][idx]);
+            fprintf(f, ",%.4f\n", sim.nutrients.extracellularProteaseLevel[idx]);
+        }
+    }
+    fclose(f);
+}
+
+// Dump every apoptotic body's pose, mass, and phase state.
+static void exportApoptoticBodiesCSV(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "idx,origin_cell_uid,kind,phase,pos_x,pos_y,pos_z,"
+               "radius_wu,radius0_wu,remaining_biomass_bm,remaining_membrane_bm,"
+               "remaining_receptor_bm,initial_biomass_bm,age_biosec,"
+               "osmotic_swell,membrane_integrity\n");
+    for (size_t i = 0; i < gApoBodies.size(); i++) {
+        const ApoptoticBody& b = gApoBodies[i];
+        const char* phaseN[] = {"DRIFT","SWELL","BURST"};
+        fprintf(f, "%zu,%d,%u,%s,%.3f,%.3f,%.3f,"
+                   "%.4f,%.4f,%.4f,%.4f,"
+                   "%.4f,%.4f,%.2f,"
+                   "%.4f,%.4f\n",
+                i, b.originCellUid, (unsigned)b.kind,
+                (b.phase < 3 ? phaseN[b.phase] : "?"),
+                b.position.x, b.position.y, b.position.z,
+                b.radius, b.radius0,
+                b.remainingBiomass, b.remainingMembrane,
+                b.remainingReceptor, b.initialBiomass,
+                b.ageBioSec,
+                b.osmoticSwell, b.membraneIntegrity);
+    }
+    fclose(f);
+}
+
+// Dump every medium-chemical particle (visual swarm tracked per-state).
+static void exportMediumChemicalsCSV(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    fprintf(f, "idx,species,species_name,state,"
+               "pos_x,pos_y,pos_z,home_x,home_y,home_z,"
+               "target_cell_idx,state_timer_biosec,phase\n");
+    const char* stateN[] = {"FREE","ATTRACTED","BINDING","TRANSPORT","DESPAWN"};
+    for (size_t i = 0; i < gMediumChemicals.size(); i++) {
+        const MediumChemical& mc = gMediumChemicals[i];
+        fprintf(f, "%zu,%d,%s,%s,"
+                   "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,"
+                   "%d,%.2f,%.4f\n",
+                i, mc.species, mediumSpeciesName(mc.species),
+                (mc.state < 5 ? stateN[mc.state] : "?"),
+                mc.position.x, mc.position.y, mc.position.z,
+                mc.home.x, mc.home.y, mc.home.z,
+                mc.targetCellIdx, mc.stateTimer, mc.phase);
+    }
+    fclose(f);
+}
+
+// Run summary + closed-system mass-balance drift for each species.
+static void exportManifest(const std::string& path, const Simulation& sim) {
+    FILE* f = fopen(path.c_str(), "w");
+    if (!f) return;
+    time_t now = ::time(nullptr);
+    char tbuf[64];
+    std::strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S",
+                  std::localtime(&now));
+    fprintf(f, "CellSim Export Manifest\n");
+    fprintf(f, "=======================\n");
+    fprintf(f, "wall_time          : %s\n", tbuf);
+    fprintf(f, "session            : %s\n", gRunSessionTag.c_str());
+    fprintf(f, "mode               : %s\n",
+            sim.mode == MODE_SINGLE_CELL ? "SINGLE_CELL" : "COLONY");
+    fprintf(f, "bio_seconds        : %.0f\n", sim.bioTime);
+    fprintf(f, "bio_hours          : %.3f\n", sim.bioTime / 3600.0f);
+    fprintf(f, "time_scale         : %.2f\n", sim.timeScale);
+    fprintf(f, "\n-- Population --\n");
+    fprintf(f, "cells_alive        : %d\n", sim.statAlive);
+    fprintf(f, "cells_prolif       : %d\n", sim.statProlif);
+    fprintf(f, "cells_quiescent    : %d\n", sim.statQuiescent);
+    fprintf(f, "cells_apoptotic    : %d\n", sim.statApoptotic);
+    fprintf(f, "cells_necrotic     : %d\n", sim.statNecrotic);
+    fprintf(f, "total_divisions    : %d\n", sim.statDivisions);
+    fprintf(f, "total_deaths       : %d\n", sim.statDeaths);
+    fprintf(f, "apoptotic_bodies   : %zu\n", gApoBodies.size());
+    fprintf(f, "medium_chemicals   : %zu\n", gMediumChemicals.size());
+    fprintf(f, "\n-- Phase distribution --\n");
+    float total = fmaxf(1.0f, (float)sim.statAlive);
+    const char* phaseN[4] = {"G1","S","G2","M"};
+    for (int p = 0; p < 4; p++)
+        fprintf(f, "phase_%s           : %d (%.1f%%)\n",
+                phaseN[p], sim.statPhases[p],
+                sim.statPhases[p] / total * 100.0f);
+    fprintf(f, "\n-- Medium (dish-mean, closed system) --\n");
+    for (int s = 0; s < MS_COUNT; s++)
+        fprintf(f, "%-10s         : %.3f %s\n",
+                mediumSpeciesName(s), sim.nutrients.mean(s),
+                mediumSpeciesUnit(s));
+    fprintf(f, "\n-- Mass-balance drift (should be < 1e-3) --\n");
+    double drift[MS_COUNT];
+    double maxDrift = sim.nutrients.checkBalance(drift);
+    for (int s = 0; s < MS_COUNT; s++)
+        fprintf(f, "drift_%-10s    : %+.6e\n",
+                mediumSpeciesName(s), drift[s]);
+    fprintf(f, "MAX_DRIFT          : %.6e %s\n", maxDrift,
+            maxDrift < 1e-3 ? "(OK)" : "(BAD — mass conservation violated)");
+    fprintf(f, "\n-- Files in this bundle --\n");
+    fprintf(f, "population.csv     : time-series (one row per sample)\n");
+    fprintf(f, "cells.csv          : per-cell snapshot at export time\n");
+    fprintf(f, "medium_field.csv   : 64×64 grid × 12 species concentrations\n");
+    fprintf(f, "apo_bodies.csv     : apoptotic-body ledgers\n");
+    fprintf(f, "medium_chems.csv   : floating chemical-particle swarm\n");
+    fclose(f);
+}
+
+// One-click "export everything". Creates a timestamped subfolder inside
+// `destDir` and writes every artifact into it. Updates gLastExportPath so
+// the UI can surface the destination and a "Reveal in Finder" button.
+static void exportAllData(const std::string& destDir) {
+    time_t now = ::time(nullptr);
+    struct tm* t = localtime(&now);
+    char folder[512];
+    snprintf(folder, sizeof(folder),
+             "%s/cellsim_export_%04d%02d%02d_%02d%02d%02d",
+             destDir.c_str(),
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+             t->tm_hour, t->tm_min, t->tm_sec);
+    if (mkdir(folder, 0755) != 0 && errno != EEXIST) {
+        printf("[Export] Failed to create %s (errno=%d)\n", folder, errno);
+        gLastExportPath = std::string("ERROR creating ") + folder;
+        return;
+    }
+    std::string base(folder);
+    gTS.exportCSV(base + "/population.csv");
+    gTS.exportCellSnapshot(base + "/cells.csv", gSim);
+    exportMediumFieldCSV(base + "/medium_field.csv", gSim);
+    exportApoptoticBodiesCSV(base + "/apo_bodies.csv");
+    exportMediumChemicalsCSV(base + "/medium_chems.csv");
+    exportManifest(base + "/manifest.txt", gSim);
+    gLastExportPath = base;
+    gLastExportWallTime = (double)::time(nullptr);
+    printf("[Export] Complete bundle → %s\n", base.c_str());
+}
+
+// Capture an in-RAM snapshot of everything needed for export, so the
+// actual file-write can run on the Cocoa main thread after the native
+// folder-picker closes without racing the sim loop. For now the export
+// is fast enough (< 1 s on a 1000-cell run) that we just dispatch the
+// whole call; `gSim` / `gTS` / bodies vectors are stable during a paused
+// UI tick, matching how the existing CSV/Snapshot export works.
+static void exportAllDataWithPicker() {
+    // Open an NSOpenPanel that lets the user pick a DIRECTORY. Start the
+    // picker at the project's exports/ folder (gExportDir); persist the
+    // chosen dir back into gExportDir so the next export defaults to
+    // the same place.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        [panel setTitle:@"Choose export destination folder"];
+        [panel setCanChooseDirectories:YES];
+        [panel setCanChooseFiles:NO];
+        [panel setAllowsMultipleSelection:NO];
+        [panel setCanCreateDirectories:YES];
+        [panel setPrompt:@"Export Here"];
+        [panel setDirectoryURL:[NSURL fileURLWithPath:
+            [NSString stringWithUTF8String:gExportDir.c_str()]]];
+        if ([panel runModal] == NSModalResponseOK) {
+            NSURL* url = [panel URL];
+            std::string chosen = [[url path] UTF8String];
+            gExportDir = chosen;                   // remember for next time
+            exportAllData(chosen);
+        }
+    });
 }
 
 // ── ImGui UI ────────────────────────────────────────────────────────────
@@ -6515,6 +7288,123 @@ static void drawUI() {
             ImGui::SliderInt("Cell index", &gSelectedCell, 0, (int)gSim.cells.size()-1);
             if (gSelectedCell != prevSelected) {
                 selectCellIndex(gSelectedCell);
+            }
+        }
+        ImGui::End();
+    }
+
+    // ── Drug Lab panel (right side, always visible) ──────────────────────
+    // Emergent drug system: pick a compound from the library (loaded from
+    // data/bioagents/drugs.csv), set a dish-level concentration, apply it
+    // uniformly. The backend runs binding-matcher scoring, pharmacokinetics,
+    // and per-target modulators — phenotype is discovered, not prescribed.
+    {
+        float winW = 310;
+        float px = ImGui::GetIO().DisplaySize.x - winW - 10;
+        float py = 560.0f;   // below Export Data panel
+        ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Drug Lab (chemistry-driven)");
+        ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                           "MOA-free: structure → emergent effect");
+        ImGui::Separator();
+
+        int nDrugs = (int)gBioagents.all().size();
+        if (nDrugs == 0) {
+            ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.3f, 1.0f),
+                               "No drugs loaded. Check data/bioagents/drugs.csv");
+        } else {
+            static int selected = 0;
+            if (selected >= nDrugs) selected = 0;
+            std::vector<const char*> names;
+            names.reserve(nDrugs);
+            for (int i = 0; i < nDrugs; i++) {
+                names.push_back(gBioagents.all()[i].id.c_str());
+            }
+            ImGui::Combo("Compound", &selected, names.data(), nDrugs);
+
+            const ChemicalEntity& d = gBioagents.all()[selected];
+            ImGui::TextColored(ImVec4(0.7f,0.75f,0.8f,1.0f),
+                               "%s  MW=%.0f  logP=%.2f",
+                               d.name.c_str(), d.mw, d.logP);
+            ImGui::TextColored(ImVec4(0.7f,0.75f,0.8f,1.0f),
+                               "TPSA=%.0f  HBD=%d  HBA=%d  rings=%d",
+                               d.tpsa, d.hbd, d.hba, d.aromatic_rings);
+
+            static float logConc_uM = 1.0f;  // log10
+            ImGui::SliderFloat("log[C] µM", &logConc_uM, -2.0f, 3.0f, "%.1f");
+            float conc = powf(10.0f, logConc_uM);
+            ImGui::Text("Concentration: %.3f µM", conc);
+
+            ImGui::Separator();
+            if (ImGui::Button("APPLY UNIFORMLY", ImVec2(-1, 30))) {
+                applyDrugVisuals(d.id, conc);
+            }
+
+            // Show top affinities of the MOST-RECENTLY-APPLIED drug.
+            if (!gSim.appliedDrugs.empty()) {
+                ImGui::Separator();
+                const auto& last = gSim.appliedDrugs.back();
+                const ChemicalEntity& lastDrug =
+                    gBioagents.all()[last.entityIdx];
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
+                                   "Active: %s @ %.2f µM",
+                                   lastDrug.name.c_str(), last.dishConc_uM);
+                ImGui::TextColored(ImVec4(0.6f, 0.75f, 0.9f, 1.0f),
+                                   "Top affinities (score > 0.50):");
+                for (int t = 0; t < (int)last.affinityPerTarget.size(); t++) {
+                    const auto& aff = last.affinityPerTarget[t];
+                    if (aff.score <= 0.50f) continue;
+                    ImGui::Text("  %-22s  Kd=%.2f mM  s=%.2f",
+                                gTargets.idAt(t).c_str(),
+                                aff.Kd_mM, aff.score);
+                }
+            }
+        }
+        ImGui::End();
+    }
+
+    // ── Export Data panel (top-right, always visible) ────────────────────
+    // One-click complete dump of every simulation artifact (time-series,
+    // per-cell state, medium grid, apoptotic bodies, medium particles, and
+    // a manifest with the mass-balance check) to a timestamped folder
+    // inside the project's exports/ directory.
+    {
+        float winW = 280;
+        float px = gSimMode == MODE_COLONY
+            ? (ImGui::GetIO().DisplaySize.x - winW - 10)      // left of Population Stats? no, above
+            : (ImGui::GetIO().DisplaySize.x - winW - 10);
+        // Stack below Population Stats in colony mode, at top-right otherwise.
+        float py = (gSimMode == MODE_COLONY) ? 300.0f : 10.0f;
+        ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Export Data");
+        ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f),
+                           "Dump every artifact to disk");
+        ImGui::Separator();
+        if (ImGui::Button("EXPORT EVERYTHING...", ImVec2(-1, 36))) {
+            exportAllDataWithPicker();
+        }
+        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.6f, 1.0f),
+                           "Bundle: population + cells + medium");
+        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.6f, 1.0f),
+                           "+ apoptotic bodies + chemicals + manifest");
+        ImGui::Separator();
+        ImGui::Text("Default folder (last used):");
+        ImGui::TextWrapped("%s", gExportDir.c_str());
+        if (!gLastExportPath.empty()) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.45f, 1.0f),
+                               "Last export:");
+            // Show just the last folder name for readability.
+            size_t slash = gLastExportPath.rfind('/');
+            const char* leaf = slash == std::string::npos
+                ? gLastExportPath.c_str()
+                : gLastExportPath.c_str() + slash + 1;
+            ImGui::TextWrapped("%s", leaf);
+            if (ImGui::Button("Reveal in Finder", ImVec2(-1, 0))) {
+                std::string cmd = "open \"" + gLastExportPath + "\"";
+                (void)system(cmd.c_str());
             }
         }
         ImGui::End();
@@ -6805,15 +7695,7 @@ static void drawUI() {
             ImGui::Text("  Pressure: %.2f  Hypoxia: %.0fs", c.localPressure, c.hypoxiaTimer);
             ImGui::Text("  ATP danger: %.0f/%.0fs", c.atpDangerTimer, ATP_DANGER_DURATION);
 
-            // Drug response for selected cell
-            if (gSim.activeDrugIdx > 0) {
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1,0.6f,0,1), "DRUG RESPONSE:");
-                ImGui::Text("  Internal: %.3f µM", c.drugInternal);
-                ImGui::ProgressBar(c.drugDamage, ImVec2(-1,8), ""); ImGui::SameLine();
-                ImGui::Text("Damage %.3f", c.drugDamage);
-                ImGui::Text("  Resistant: %s", c.drugResistant ? "YES (MDR)" : "no");
-            }
+            // Drug response readout removed 2026-04-19 — pending rewrite.
         }
         ImGui::End();
     }
@@ -6975,58 +7857,7 @@ static void drawUI() {
         ImGui::End();
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  DRUG TREATMENT PANEL
-    // ══════════════════════════════════════════════════════════════════
-    ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 350), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(280, 0), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Drug Treatment");
-    {
-        // Drug selector
-        static int selectedDrug = 0;
-        const char* drugNames[DRUG_COUNT];
-        for (int i = 0; i < DRUG_COUNT; i++) drugNames[i] = DRUG_LIBRARY[i].name;
-        ImGui::Combo("Drug", &selectedDrug, drugNames, DRUG_COUNT);
-
-        if (selectedDrug > 0) {
-            const Drug& d = DRUG_LIBRARY[selectedDrug];
-            ImGui::TextColored(ImVec4(0.6f,0.8f,1,0.7f), "EC50: %.3f µM  Hill: %.1f", d.EC50, d.hillCoeff);
-            const char* moaNames[] = {"Anti-Prolif","Pro-Apoptosis","DNA Damage","Mito Toxin"};
-            if (d.mechanism >= 0) ImGui::Text("MOA: %s", moaNames[d.mechanism]);
-            if (d.mechanism2 >= 0) ImGui::Text("MOA2: %s", moaNames[d.mechanism2]);
-        }
-
-        // Concentration slider (log scale)
-        static float logConc = 0; // log10(µM)
-        ImGui::SliderFloat("log[C] µM", &logConc, -3.0f, 2.0f, "%.1f");
-        float conc = powf(10.0f, logConc);
-        ImGui::Text("Concentration: %.4f µM", conc);
-
-        ImGui::Separator();
-
-        // Application buttons
-        if (ImGui::Button("Apply Uniform", ImVec2(-1, 28))) {
-            gSim.applyDrugUniform(selectedDrug, conc);
-        }
-        ImGui::TextColored(ImVec4(0.5f,0.7f,0.9f,0.5f), "Click plate to inject (right-click)");
-
-        if (ImGui::Button("WASH OUT", ImVec2(-1, 24))) {
-            gSim.washOutDrug();
-        }
-
-        ImGui::Separator();
-
-        // Drug status
-        if (gSim.activeDrugIdx > 0) {
-            ImGui::TextColored(ImVec4(1,0.8f,0,1), "Active: %s", DRUG_LIBRARY[gSim.activeDrugIdx].name);
-            ImGui::Text("Viability: %.1f%%", gSim.statViability);
-            ImGui::ProgressBar(gSim.statViability / 100.0f, ImVec2(-1, 12), "");
-            ImGui::Text("Avg Drug Damage: %.3f", gSim.statAvgDrugDamage);
-        } else {
-            ImGui::TextColored(ImVec4(0.4f,0.4f,0.4f,1), "No drug active");
-        }
-    }
-    ImGui::End();
+    // Drug Treatment panel removed 2026-04-19 — pending rewrite.
 }
 
 // ── Render frame ────────────────────────────────────────────────────────
@@ -7045,12 +7876,30 @@ static void renderFrame(float time, float dt) {
         gSim.primaryReplicationQuality = gCDogma.replicationQuality;
         gSim.primaryReplicationReady = gCDogma.replicationReadyForM();
         stepBackgroundDogmaStates(dt);
-        gSim.update(dt);
-        // Tick the medium-chemical state machine: drift, attract toward
-        // matching cells, bind at the membrane, stream into the interior.
-        // The chemistry was already balanced by gSim.update via R1–R8;
-        // this is purely the visual transport animation.
-        updateMediumChemicals(dt);
+        // Skip all simulation + chemical-animation updates while the
+        // Setup overlay is open — the user hasn't picked conditions yet,
+        // so nothing should be moving / dividing in the background.
+        if (!gSetup.showOverlay) {
+            gSim.update(dt);
+            updateMediumChemicals(dt);
+            // Apoptotic-body system: spawn bodies from cells that
+            // crossed into FRAGMENTATION/BODIES this tick, then update
+            // the drift/decomposition/lysis state of existing bodies,
+            // then let nearby live cells engulf them (efferocytosis)
+            // and digest lysosomal contents.
+            for (SimCell& c : gSim.cells) {
+                if (c.apoPhase == Apoptosis::FRAGMENTATION
+                    && !c.bodiesSpawned
+                    && c.alive) {
+                    spawnApoptoticBodies(c);
+                    c.bodiesSpawned = true;
+                }
+            }
+            updateApoptoticBodies(dt);
+            updateEfferocytosis(dt);
+            updateLysosomalDigestion(dt);
+            applyDampEventsToNeighbors(dt);
+        }
         // Comprehensive science-grade telemetry — opens on first frame,
         // samples once per bio-minute, captures the full population +
         // per-element environment for cross-validation against real
@@ -7189,8 +8038,11 @@ static void renderFrame(float time, float dt) {
         id<CAMetalDrawable> drawable = [gCtx.metalLayer() nextDrawable];
         if (!drawable) return;
 
+        // DO NOT early-return when cellCount == 0. When the Setup overlay
+        // is showing (no sim inited yet), cellCount is 0 but we still
+        // need to clear the screen to black and draw ImGui on top.
+        // Returning here leaves the drawable unpresented → white screen.
         int cellCount = (int)gCellInstances.size();
-        if (cellCount == 0) return;
 
         Uniforms uni;
         uni.viewProjection = gCamera.getViewProjection();
@@ -7212,6 +8064,12 @@ static void renderFrame(float time, float dt) {
         pass.depthAttachment.clearDepth = 1.0;
 
         id<MTLRenderCommandEncoder> enc = [cmd renderCommandEncoderWithDescriptor:pass];
+
+        // While the Setup overlay is showing, don't draw ANY scene
+        // geometry — substrate, fluid, organelles, cells, molecules all
+        // suppressed. The user sees only the clear-colour background and
+        // the ImGui setup panel on top. Simulation isn't running yet.
+        if (!gSetup.showOverlay) {
 
         // 1. Substrate
         {
@@ -7453,7 +8311,9 @@ static void renderFrame(float time, float dt) {
             }
         }
 
-        // 6. ImGui render
+        } // end if(!gSetup.showOverlay)
+
+        // 6. ImGui render (always draws — this is the Setup overlay too)
         {
             ImGui_ImplMetal_NewFrame(pass);
             ImGui_ImplGlfw_NewFrame();
@@ -7573,18 +8433,13 @@ int main(int argc, char* argv[]) {
         gProteinDir = [protDir UTF8String];
         gProtCache.init(gProteinDir);
 
-        // Init simulation with a minimal HeLa Standard preset so the
-        // first frame is well-defined; the user will immediately see the
-        // Setup overlay and can re-seed with their chosen template.
-        applySetupTemplate(0);
-        gSim.init(MODE_SINGLE_CELL);
-        // Pause until the user clicks Start on the setup overlay.
+        // NO simulation init yet — we show the Setup overlay on the very
+        // first frame and only build the sim when the user clicks Start.
+        // Until then the dish is empty: no cells, no fluid, no molecules.
+        applySetupTemplate(0);            // seed default field values only
         gSim.paused = true;
-        initFluidHaze();
-        initMediumChemicals();
         gSelectedCell = 0;
-        gSelectedCellUid = gSim.cells.empty() ? -1 : gSim.cells[0].cellUid;
-        initializeDogmaStatesFromSimulation();
+        gSelectedCellUid = -1;
         gPostMitosisPairCameraTimer = 0.0f;
         gPostMitosisPairUidA = -1;
         gPostMitosisPairUidB = -1;

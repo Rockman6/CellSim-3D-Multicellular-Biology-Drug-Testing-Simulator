@@ -191,15 +191,15 @@ int main(int argc, char** argv) {
     for (auto& c : sim.cells) {
         if (!c.alive || c.phase != 2) continue;
         if (diagCount++ >= 5) break;
-        printf("  cell uid=%d biomass=%.3f ATP=%.1f damage=%.3f p21=%.3f "
-               "CycA=%.3f CycB=%.3f replProg=%.3f forks=%d chk1=%.3f "
-               "escErr=%d stress=%.1f\n",
-               c.cellUid, c.biomass, c.ATP, c.damageLevel, c.cdk.p21,
-               c.cdk.CycA, c.cdk.CycB,
+        printf("  cell uid=%d bio=%.2f ATP=%.0f p21=%.2f CycB=%.2f "
+               "repl=%.2f fate=%d cookie=%.2f chkG2=%d mitoActive=%d "
+               "cycleTimer=%.2f nbr=%d press=%.2f\n",
+               c.cellUid, c.biomass, c.ATP, c.cdk.p21, c.cdk.CycB,
                (double)c.program.cdogma.replicationProgress,
-               c.program.cdogma.countActiveReplicationForks(),
-               (double)c.program.cdogma.chk1Signal,
-               c.program.cdogma.escapedErrors, c.stress);
+               c.fate, c.divisionCooldown, c.checkpointG2Passed ? 1 : 0,
+               c.program.mitosis.active ? 1 : 0,
+               c.cycleTimer,
+               0, c.localPressure);
     }
     double wall_total = secondsSince(wall0);
     printf("\n[headless] DONE. %.1f bio-h in %.1f wall-s → CSV at "

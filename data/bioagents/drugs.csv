@@ -1,0 +1,20 @@
+# Drug compound library — MOA-free.
+# Only structural + identifying fields. The simulator DISCOVERS MOA
+# from Tier 0-4 chemistry pipelines (see plan, Part One §1.1).
+#
+# Columns:
+#   id            — short alphanumeric key (filesystem-safe)
+#   common_name   — human-readable name
+#   kind          — small_molecule | peptide | nucleic_acid | antibody
+#   smiles        — structure in SMILES (generated to SDF via RDKit)
+#   notes         — free-form reference / source
+#
+# Seed set ships with five well-characterised compounds whose
+# real-world MOAs are KNOWN (so we can verify the sim rediscovers
+# them) but are NEVER told to the simulator.
+id,common_name,kind,smiles,notes
+cisplatin,Cisplatin,small_molecule,N.N.Cl[Pt]Cl,FDA 1978 — DNA cross-linker
+doxorubicin,Doxorubicin,small_molecule,COc1cccc2c1C(=O)c1c(O)c3c(c(O)c1C2=O)C[C@@](O)(C(=O)CO)C[C@H]3O[C@@H]1C[C@H](N)[C@H](O)[C@@H](C)O1,Anthracycline — TopII poison
+paclitaxel,Paclitaxel,small_molecule,CC1=C2[C@@](C(=O)[C@@H]3[C@@]1(CC[C@@H](C3(C)C)O)OC(=O)[C@H](CC4=CC=CC=C4)NC(=O)OC(C)(C)C)(CO)O[C@@H](C5=CC=CC=C5)C(=O)O2,Taxane — tubulin stabiliser
+staurosporine,Staurosporine,small_molecule,CC1OC2CC3(O)OC(C)(CN(C)C1C2)c1c(ccc2c1[nH]c1c(O)ccc3c21),Pan-kinase inhibitor
+methotrexate,Methotrexate,small_molecule,CN(Cc1cnc2nc(N)nc(N)c2n1)c1ccc(C(=O)NC(CCC(=O)O)C(=O)O)cc1,DHFR inhibitor (control — target not yet modelled)

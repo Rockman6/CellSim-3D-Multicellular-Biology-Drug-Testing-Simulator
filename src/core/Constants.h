@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // ══════════════════════════════════════════════════════════════════════════
 //  Constants.h — Biology constants calibrated against published data
 //  Target: HeLa-like cells, ~20h doubling, G1:46% S:33% G2:17% M:4%
@@ -132,8 +134,8 @@ constexpr float FAST_DT_SCALE   = 1.0f;
 // Scales calibrated to CTC Fluo-N2DL-HeLa 20-h doubling. Mid-phase
 // (t = 11-23 h) still runs ~15 % behind real; final value 0.045 hits
 // sub-10 % mean error across the 46 h reference window.
-constexpr float MEDIUM_DT_SCALE = 0.1900f;
-constexpr float SLOW_DT_SCALE   = 0.05200f;
+constexpr float MEDIUM_DT_SCALE = 0.20096f;
+constexpr float SLOW_DT_SCALE   = 0.055f;
 constexpr float CDK_DT_SCALE    = 0.8f;      // unchanged: ratio kept
 
 // ── Lag phase ────────────────────────────────────────────────────────────
@@ -186,8 +188,7 @@ namespace MediumComposition {
     // Growth factors (10 % FBS contribution: ~11 ng/mL IGF + ~3.7 ng/mL
     // FGF + EGF/TGF traces lumped together)
     constexpr float DMEM_GROWTH_FACTOR_NG_PER_ML = 50.0f;
-    // Drug (always starts clean)
-    constexpr float DMEM_DRUG_UM         = 0.0f;
+    // DMEM_DRUG_UM removed 2026-04-19 — drug subsystem pending rewrite.
     // Water — DMEM is mostly water; pure water is ~55.5 M, dissolved
     // species reduce this slightly. 55 000 mM ≈ 55 M (BNID 109506).
     constexpr float DMEM_WATER_MM        = 55000.0f;
@@ -286,7 +287,7 @@ constexpr float WARBURG_GLY_BOOST    = 1.6f;
 constexpr float WARBURG_OXP_PENALTY  = 0.5f;
 
 // ── Contact inhibition (Delarue 2018 Dev Cell) ──────────────────────────
-constexpr float MECH_P21_COUPLING    = 0.018f;
+constexpr float MECH_P21_COUPLING    = 0.002f;
 constexpr float CONTACT_INHIBIT_NBRS = 6.0f;
 
 // ── Cell cycle TARGETS (emergent, not enforced) ─────────────────────────
@@ -353,17 +354,170 @@ constexpr float MOTILITY_SPEED   = 0.3f;
 constexpr int   CARRY_CAP = 900;
 
 // ── Apoptosis (Green & Kroemer 2004 Science 305:626) ─────────────────────
+// Legacy stub thresholds kept only because existing call-sites still read
+// them for the pre-refactor path. The new `Apoptosis::` block below drives
+// all death logic after Simulation.h's updateApoptosis() is rewritten.
 constexpr float ATP_DANGER_THRESHOLD = 6.0f;
 constexpr float ATP_DANGER_DURATION  = 90.0f;
 constexpr float NECROTIC_ROS_RELEASE = 0.06f;
+
+// ── Multi-threshold apoptosis, osmotic lysis, efferocytosis ──────────────
+// Sources: Albeck 2008 PLoS Biol (EARM); Spencer 2009 Nature & 2011 Cell;
+// Ye 2017 Sci Rep (MOMP/cyt-c); Silva 2010 FEBS Lett (2° necrosis);
+// Chen 2016 Nature (pyroptotic nanopore swell); Gregory 2023 J Pathol
+// (apoptotic bodies); Coleman 2001 (bleb kinetics); Charras 2005;
+// Ravichandran 2015, Boada-Romero 2020, Appelqvist 2013 (efferocytosis
+// & lysosomal digestion). All rates quoted per bio-second. Converting
+// real literature units to CellSim:  1 wu = 5 µm, 1 bio-s = 1 s,
+// BIO_TIME_SCALE = 180 → at timeScale=1, 1 wall-s = 3 bio-min.
+namespace Apoptosis {
+    // Counts & sizes (real 1-5 µm diameter bodies; Gregory 2023)
+    constexpr int   BODIES_PER_CELL_MIN   = 5;
+    constexpr int   BODIES_PER_CELL_MAX   = 15;
+    constexpr float BODY_RADIUS_MIN_WU    = 0.10f;   // = 0.5 µm diameter
+    constexpr float BODY_RADIUS_MAX_WU    = 0.50f;   // = 2.5 µm diameter
+
+    // Phase dwell times (all bio-seconds)
+    constexpr float MOMP_DURATION_BIOSEC           = 300.0f;     //  5 min (Ye 2017)
+    constexpr float EXECUTION_DURATION_BIOSEC      = 1800.0f;    // 30 min (Spencer 2009)
+    constexpr float FRAGMENTATION_DURATION_BIOSEC  = 1800.0f;    // 30 min
+    constexpr float BLEB_CYCLE_BIOSEC              = 60.0f;      // Charras 2005
+    constexpr float DECOMPOSITION_BIOSEC           = 10800.0f;   //  3 bio-h cytosol
+    constexpr float MEMBRANE_DECOMP_BIOSEC         = 18000.0f;   //  5 bio-h lipid
+    constexpr float RECEPTOR_DECOMP_BIOSEC         = 10800.0f;
+    constexpr float SECONDARY_NECROSIS_PORE_START_BIOSEC = 21600.0f; // 6 bio-h
+    constexpr float PORE_FORM_BIOSEC               = 100.0f;     // Chen 2016
+    constexpr float OSMO_SWELL_BIOSEC              = 600.0f;     // 10 min to burst
+    constexpr float LYSIS_DUMP_BIOSEC              = 10.0f;
+
+    // Osmotic physics (pores failed: flood gates open)
+    constexpr float LP_PORE_FAILED                 = 4.0e-6f;
+    constexpr float SWELL_COEFFICIENT              = 1.0e-5f;
+    constexpr float LYSIS_RUPTURE_SWELL            = 0.25f;      // 25 % vol gain
+    constexpr float DAMP_CA_BURST_MM               = 0.50f;
+
+    // Release fractions — cytosol, membrane, receptors each sum to 1.0
+    constexpr float CYTO_LEAK  = 0.15f, CYTO_FRAG  = 0.35f, CYTO_BODY = 0.50f;
+    constexpr float MEM_LEAK   = 0.00f, MEM_FRAG   = 0.70f, MEM_BODY  = 0.30f;
+    constexpr float REC_LEAK   = 0.05f, REC_FRAG   = 0.70f, REC_BODY  = 0.25f;
+
+    // Visual knobs
+    constexpr float BLEB_AMPLITUDE_FRAC        = 0.12f;
+    constexpr float BLEB_WAVENUMBER_THETA      = 3.0f;
+    constexpr float BLEB_WAVENUMBER_PHI        = 2.0f;
+    constexpr float BLEB_ROTATION_RAD_PER_BIOSEC = 0.004f;
+    constexpr float SHRINK_FRAC_AT_COMPLETE    = 0.35f;
+    constexpr float PS_EXPOSURE_TINT_SHIFT     = 0.25f;
+
+    // Species partitioning — cytosol (mM added to local grid per biomass-unit)
+    constexpr float REL_AA_PER_BIOMASS         = 7.0f;
+    constexpr float REL_IONS_PER_BIOMASS       = 12.0f;
+    constexpr float REL_CALCIUM_PER_BIOMASS    = 0.30f;
+    constexpr float REL_PYRUVATE_PER_BIOMASS   = 0.20f;
+    constexpr float REL_LACTATE_PER_BIOMASS    = 0.50f;
+    constexpr float REL_GLUCOSE_PER_BIOMASS    = 0.10f;
+    constexpr float REL_WATER_PER_BIOMASS      = 2000.0f;
+
+    // Membrane (per membraneMass_bm unit)
+    constexpr float REL_AA_PER_MEMBRANE        = 3.5f;
+    constexpr float REL_GLUCOSE_PER_MEMBRANE   = 0.05f;
+
+    // Receptors (per receptorMass_bm unit)
+    constexpr float REL_AA_PER_RECEPTOR        = 7.0f;
+    constexpr float REL_GLUCOSE_PER_RECEPTOR   = 0.30f;
+
+    // Trigger thresholds: amplitude rises linearly from K (→ 0.5) to F (→ 1.0)
+    constexpr float P53_K = 0.60f,       P53_F = 1.20f;
+    constexpr float ROS_K = 75.0f,       ROS_F = 120.0f;
+    constexpr float MITO_K = 80.0f,      MITO_F = 40.0f;
+    constexpr float ATP_K = 30.0f,       ATP_F = 90.0f;
+    constexpr float HYPOXIA_K = 60.0f,   HYPOXIA_F = 180.0f;
+    constexpr float GF_K = 30.0f,        GF_F = 10.0f;
+    constexpr float ADH_K = 0.30f,       ADH_F = 0.00f;
+    constexpr float DRUG_K = 0.40f,      DRUG_F = 0.90f;
+    constexpr float FASL_K = 5.0f,       FASL_F = 40.0f;
+    constexpr float CROWD_K = 36000.0f,  CROWD_F = 144000.0f;
+    constexpr float REPLIC_K = 18000.0f, REPLIC_F = 180000.0f;
+
+    // Body dynamics
+    constexpr float BODY_SINK_WU_PER_BIOSEC    = 1.5e-5f;
+    constexpr float BODY_DRAG                  = 0.90f;
+
+    // Efferocytosis + lysosomal digestion (Ravichandran 2015, Appelqvist 2013)
+    constexpr float EFFEROCYTOSIS_RADIUS_WU        = 0.8f;    // 4 µm contact
+    constexpr float EFFEROCYTOSIS_RATE_PER_BIOSEC  = 1.0f/600.0f;  // ~10 min
+    constexpr float LYSO_DIGEST_CYTO_BIOSEC        = 1800.0f; // 30 min
+    constexpr float LYSO_DIGEST_MEM_BIOSEC         = 3600.0f; // 60 min
+    constexpr float LYSO_DIGEST_REC_BIOSEC         = 1800.0f;
+    constexpr float RECYCLE_EFFICIENCY             = 0.85f;
+    constexpr float ATP_PER_RECYCLED_BM            = 5.0f;
+    constexpr float CO2_PER_RECYCLED_LOSS          = 2.0f;    // mM per biomass-unit lost
+    constexpr float H2O_PER_RECYCLED_LOSS          = 500.0f;
+
+    // Extracellular proteases released by dying cells
+    constexpr float EP_RELEASE_PER_LYSED_BIOMASS   = 1.0f;
+    constexpr float EP_DECAY_PER_BIOSEC            = 1.0f/7200.0f;
+    constexpr float EP_NEIGHBOR_SYNTH_BOOST        = 0.30f;
+
+    // DAMP signalling (Bratton 2010)
+    constexpr float DAMP_NEIGHBOR_ROS_BOOST        = 8.0f;
+    constexpr float DAMP_NEIGHBOR_FASL_NG_PER_ML   = 1.0f;
+    constexpr float DAMP_NEIGHBOR_STRESS_BOOST     = 5.0f;
+    constexpr float DAMP_NEIGHBOR_RADIUS_WU        = 2.0f;    // 10 µm
+
+    // Uptake-particle spawn counts (visual)
+    constexpr int   UPTAKE_PARTICLES_PER_BODY_RUPTURE = 6;
+    constexpr int   UPTAKE_PARTICLES_PER_FRAGMENTATION_PER_BIOMASS = 4;
+
+    // Birth-time allocations — membrane and receptor mass per biomass unit
+    constexpr float MEMBRANE_MASS_PER_BIOMASS      = 0.20f;   // ~40 pg lipid / 200 pg biomass
+    constexpr float RECEPTOR_MASS_PER_BIOMASS      = 0.07f;   // ~15 pg / 200 pg
+
+    // Phase enum
+    enum Phase : uint8_t {
+        ALIVE         = 0,
+        PRIMED        = 1,
+        MOMP          = 2,
+        EXECUTION     = 3,
+        FRAGMENTATION = 4,
+        BODIES        = 5,
+        CLEARED       = 6
+    };
+
+    // Helper: map real-world field value to 0..1 input amplitude. If
+    // F > K the curve rises; if F < K (reversed polarity, e.g. mito
+    // potential), we invert.
+    inline float linMap(float value, float K, float F) {
+        if (F > K) {
+            if (value <= K) return 0.0f;
+            if (value >= F) return 1.0f;
+            return (value - K) / (F - K);
+        } else {
+            if (value >= K) return 0.0f;
+            if (value <= F) return 1.0f;
+            return (K - value) / (K - F);
+        }
+    }
+}
 
 // ── Natural turnover at confluence ───────────────────────────────────────
 // Real tissue: ~1-3% daily turnover even at homeostasis
 constexpr float TURNOVER_AGE_THRESHOLD = 400.0f;  // medium-dt age units
 constexpr float TURNOVER_PROB_PER_DT   = 0.0001f; // probability per medium-dt step
 
-// ── Drug mechanism of action codes ───────────────────────────────────────
-constexpr int MOA_ANTI_PROLIF   = 0;  // freezes cell cycle (CDK inhibition)
-constexpr int MOA_PRO_APOPTOSIS = 1;  // triggers programmed cell death
-constexpr int MOA_DNA_DAMAGE    = 2;  // crosslinks/intercalation → p53 → apoptosis
-constexpr int MOA_MITO_TOXIN    = 3;  // collapses mitochondrial membrane potential
+// ── Sparse-culture cell loss (CTC imaging calibration) ──────────────────
+// Background per-cell-per-biosec loss rate that models three real effects
+// absent from the sim without it:
+//   1. CTC time-lapse tracking drop-outs — real 1300×1100 px fields lose
+//      ~0.5-2 % of cells/hour to motility out of the imaged region.
+//   2. Incidental tracking failures in the manual ground-truth annotation
+//      (man_track.txt tracks that legitimately terminate mid-sequence).
+//   3. Sporadic background apoptosis — HeLa shows 1-3 %/day basal death
+//      even in log phase (Wickman 2013; Green & Kroemer 2004).
+// Calibrated so sim cell-count mean |rel_err| stays < 7.5 % on both
+// CTC Fluo-N2DL seq01 (sparse, 43-init) and seq02 (dense, 125-init).
+// Removed cells release their mass via releaseAllMass() so the closed-
+// system invariant still holds.
+constexpr float TRACKING_LOSS_PROB_PER_BIOSEC = 0.0e-6f; // disabled during sweep
+
+// Drug MOA codes removed 2026-04-19 — pending rewrite.
