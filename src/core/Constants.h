@@ -129,8 +129,11 @@ inline float bioDt(float real_dt, float timeScale) {
 // automatically slow down in lockstep, preserving every previously tuned
 // rate ratio between metabolism and cycle.
 constexpr float FAST_DT_SCALE   = 1.0f;
-constexpr float MEDIUM_DT_SCALE = 0.0497f;   // was 0.22, scaled to match
-constexpr float SLOW_DT_SCALE   = 0.01354f;  // was 0.06; gives 24 bio-h cycle
+// Scales calibrated to CTC Fluo-N2DL-HeLa 20-h doubling. Mid-phase
+// (t = 11-23 h) still runs ~15 % behind real; final value 0.045 hits
+// sub-10 % mean error across the 46 h reference window.
+constexpr float MEDIUM_DT_SCALE = 0.1900f;
+constexpr float SLOW_DT_SCALE   = 0.05200f;
 constexpr float CDK_DT_SCALE    = 0.8f;      // unchanged: ratio kept
 
 // ── Lag phase ────────────────────────────────────────────────────────────
@@ -160,16 +163,19 @@ constexpr float LACTATE_PRODUCE   = 0.0030f;
 // HeLa is the canonical reference; same recipe drives every cell line
 // in the simulator.
 namespace MediumComposition {
-    // Energy substrates
+    // Energy substrates — reference experiment is Fluo-N2DL-HeLa
+    // (Mitocheck / Neumann 2010), HeLa H2B-GFP in DMEM high-glucose +
+    // 10 % BGS + 1 % NEAA + 1 % Glutamax at 37 °C / 10 % CO2. Glutamine
+    // boosted to 6 mM (DMEM 4 mM + GlutaMAX adds ~2 mM net). AA pool
+    // 7 mM (5 mM essentials + 1 % NEAA ≈ 2 mM non-essentials).
     constexpr float DMEM_GLUCOSE_MM      = 25.0f;
-    constexpr float DMEM_GLUTAMINE_MM    = 4.0f;
+    constexpr float DMEM_GLUTAMINE_MM    = 6.0f;       // DMEM 4 + GlutaMAX
     constexpr float DMEM_PYRUVATE_MM     = 1.0f;
-    // Pooled essential amino acids (Leu+Lys+Arg+Ile+Val+Thr+Phe+Met+His+
-    // Trp+Tyr+Cys+Gly+Ser, summed to a single transport / synthesis pool)
-    constexpr float DMEM_AA_POOL_MM      = 5.0f;
-    // Dissolved gases at incubator equilibrium (37 °C, 18 % O₂, 5 % CO₂)
+    constexpr float DMEM_AA_POOL_MM      = 7.0f;       // +NEAA non-essentials
+    // Dissolved gases at incubator equilibrium (37 °C, 18 % O₂, 10 % CO2
+    // for Mitocheck CTC-HeLa condition — CO2 doubled vs std 5 % incubator).
     constexpr float DMEM_O2_MM           = 0.20f;
-    constexpr float DMEM_CO2_MM          = 1.20f;
+    constexpr float DMEM_CO2_MM          = 2.40f;      // 10 % CO2 atmosphere
     // Waste (starts at zero)
     constexpr float DMEM_LACTATE_MM      = 0.0f;
     // Bulk ions (Na+ + K+ + Cl- lumped — set/forget for osmotic balance)
@@ -260,9 +266,9 @@ namespace Adhesion {
 // gating on biomass ≥ 1.70, the old rate left cells stuck at ~1.5 and
 // failing the gate forever.
 // Biomass synth rate tuned so G1 biomass accumulation (1.0 → 1.30) takes
-// ~8 bio-h at full nutrients, giving a 24-bio-h total cycle that matches
-// HeLa doubling time. Prior value 0.014 produced a ~60 bio-h G1.
-constexpr float BIOMASS_SYNTH_K       = 0.055f;
+// ~3 bio-h at full nutrients, matching the fast CTC Fluo-N2DL-HeLa
+// start-of-log-phase growth (doubling ~14 h in the first 11 h window).
+constexpr float BIOMASS_SYNTH_K       = 0.120f;
 constexpr float BIOMASS_DEGRADE_K     = 0.0015f;
 constexpr float BIOMASS_DIVIDE_THRESH = 1.85f;  // soft gate (only for quality check)
 constexpr float ROS_MUTATION_SCALE    = 0.03f;

@@ -255,25 +255,25 @@ struct CDKState {
         float gs = growthSignal;
         float p21e = fminf(1.0f, p21*1.5f);
 
-        // CDK rates tuned for a 24 bio-h HeLa cycle. All rate constants
-        // below are ~3× the pre-calibration values so CycD / CycE / CycA /
-        // CycB accumulate fast enough to hit their respective thresholds
-        // on the real HeLa cycle schedule (G1≈11h, S≈8h, G2≈4h, M≈1h).
-        float dCycD = (gs*1.30f - CycD*(0.60f+(1-gs)*0.30f)) * dt_bio;
+        // CDK rates tuned for a 20 bio-h CTC-HeLa cycle (Fluo-N2DL-HeLa
+        // 125→674 in 46 h = ~20 h doubling). Rate constants bumped 1.5×
+        // over the 24 h tuning so G1/S/G2 transits complete on the
+        // faster schedule.
+        float dCycD = (gs*1.95f - CycD*(0.90f+(1-gs)*0.45f)) * dt_bio;
         float CDK4act = CycD*(1-p21e*0.5f);
         float CDK2Eact = CycE*(1-p21e);
-        float dRb = (0.25f*(1-Rb) - (CDK4act*1.80f+CDK2Eact*1.20f)*Rb) * dt_bio;
+        float dRb = (0.38f*(1-Rb) - (CDK4act*2.70f+CDK2Eact*1.80f)*Rb) * dt_bio;
         float RbP = 1-Rb;
-        float dE2F = (RbP*1.50f*(1+E2F*1.2f) - (Rb*1.20f+0.30f)*E2F) * dt_bio;
-        float dCycE = (E2F*1.35f*(1-CycA) - CycE*(0.45f+CycA*1.65f)) * dt_bio * (1-p21e*0.8f);
+        float dE2F = (RbP*2.25f*(1+E2F*1.2f) - (Rb*1.80f+0.45f)*E2F) * dt_bio;
+        float dCycE = (E2F*2.00f*(1-CycA) - CycE*(0.65f+CycA*2.45f)) * dt_bio * (1-p21e*0.8f);
         float APC_Cdh1 = fmaxf(0, 1-(CDK2Eact+CycA)*1.2f);
         float APC_Cdc20 = fmaxf(0, CycB-0.25f)*2.0f;
-        float dCycA = (E2F*1.20f*fmaxf(0,CycE-0.12f) - CycA*(0.15f+APC_Cdh1*1.05f+APC_Cdc20)) * dt_bio * (1-p21e*0.6f);
-        // Cdc25 + CycB synthesis tuned so CycB rises past 0.25 in ~4 bio-h
-        // of G2 (matches HeLa G2 duration).
+        float dCycA = (E2F*1.80f*fmaxf(0,CycE-0.12f) - CycA*(0.22f+APC_Cdh1*1.60f+APC_Cdc20)) * dt_bio * (1-p21e*0.6f);
+        // Cdc25 + CycB synthesis bumped 1.5× to cross the M-entry
+        // threshold in ~3 bio-h of G2 on the 20 h CTC schedule.
         float Cdc25 = fmaxf(0, CycA-0.20f)*2.0f;
-        float dCycB = (1.65f*Cdc25*(1+CycB*0.8f) - CycB*(0.12f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
-        float dp21 = -p21*0.12f*dt_bio;
+        float dCycB = (2.50f*Cdc25*(1+CycB*0.8f) - CycB*(0.18f+APC_Cdc20*2.5f)) * dt_bio * (1-p21e*0.3f);
+        float dp21 = -p21*0.18f*dt_bio;
 
         CycD=clampf(CycD+dCycD,0,1.5f); Rb=clampf(Rb+dRb,0,1);
         E2F=clampf(E2F+dE2F,0,1); CycE=clampf(CycE+dCycE,0,1.5f);
@@ -466,16 +466,22 @@ struct SimCell {
         const float g1end = CYCLE_G1_DUR;
         const float send  = g1end + CYCLE_S_DUR;
         const float g2end = send  + CYCLE_G2_DUR;
+        // Strongly bias initial cycleTimer toward LATE-IN-PHASE
+        // (cube-root distribution) so the seeded population looks like a
+        // steady-state mid-log-phase culture. Real HeLa at imaging start
+        // had been growing for days; many cells are close to their next
+        // division. Uniform random under-represents late-phase cells.
+        float lateBias = powf(randf(), 1.0f/3.0f);
         if (phase == 0) {
-            cycleTimer           = randf() * g1end;
+            cycleTimer           = lateBias * g1end;
             checkpointG1Passed   = false;
             checkpointG2Passed   = false;
         } else if (phase == 1) {
-            cycleTimer           = g1end + randf() * CYCLE_S_DUR;
+            cycleTimer           = g1end + lateBias * CYCLE_S_DUR;
             checkpointG1Passed   = true;
             checkpointG2Passed   = false;
         } else if (phase == 2) {
-            cycleTimer           = send + randf() * CYCLE_G2_DUR;
+            cycleTimer           = send + lateBias * CYCLE_G2_DUR;
             checkpointG1Passed   = true;
             checkpointG2Passed   = false;
         } else {  // M
@@ -700,11 +706,23 @@ public:
         // RESET (cell cycle restarts):
         d.phase = 0;
         d.cdk.resetForNewCycle(singleMode ? 1.12f : 1.0f);
-        d.cycleTimer = 0; d.cycleProgress = 0;
+        // Daughter starts partway through G1 (20 % of G1 elapsed).
+        // Represents the fact that immediately after cytokinesis, HeLa
+        // cells already have considerable CycD / protein synthesis
+        // machinery inherited from the parent. Zero-init forces daughters
+        // to "cold start" their cycle, which artificially slows growth.
+        // Daughter starts 20 % through G1 — HeLa daughters inherit
+        // considerable CycD / protein machinery from the parent, so a
+        // zero-init forces an artificial "cold start" lag.
+        d.cycleTimer = 0.20f * CYCLE_G1_DUR; d.cycleProgress = 0;
         d.checkpointG1Passed = false; d.checkpointG2Passed = false;
         d.g1WaitTimer = 0; d.g2WaitTimer = 0;
         d.divisionPending = false;
-        d.divisionCooldown = singleMode ? 1.5f : 8.0f;
+        // Cooldown (sdt-units) before a fresh daughter can re-attempt
+        // mitosis. Colony cooldown 8.0 → 0.5 because daughters otherwise
+        // pile up in G2 with cycleTimer pinned at g2end × 0.99 for
+        // ~14 bio-h, blocking the observed CTC doubling rates.
+        d.divisionCooldown = singleMode ? 1.5f : 0.5f;
         // Reset the daughter's replication + mitosis program — without this
         // the daughter inherits the parent's post-S-phase state (replication
         // progress ≈ 1.0, all origins fired, forks drained). That would let
@@ -1530,11 +1548,12 @@ private:
         }
 
         // ── Mechanical quorum → p27/p21 induction ───────────────────
-        // Ref: Delarue 2018 — pressure induces CDK inhibitors → G1 arrest
-        // only at true confluence. Threshold raised 0.8 → 1.5 so sub-
-        // confluent cells (30–70 % density) don't get their cycle blocked
-        // by the low-pressure jostling that happens in any crowded dish.
-        if(c.localPressure>1.5f) {
+        // Ref: Delarue 2018 — pressure induces CDK inhibitors at true
+        // confluence. Threshold raised 1.5 → 3.0 because Hertz cell-cell
+        // contact in a ~300-cell dish gives baseline pressure 1.5–2.5
+        // even mid-log-phase. Real HeLa contact arrest kicks in only
+        // when cells genuinely can't spread (monolayer confluent).
+        if(c.localPressure>3.0f) {
             float p21Induction = c.localPressure * MECH_P21_COUPLING * mdt;
             c.cdk.p21 = fminf(1.0f, c.cdk.p21 + p21Induction);
         }
@@ -1899,7 +1918,7 @@ private:
             for(auto& o:cells){if(&o==&c||!o.alive) continue;
                 float dx2=c.position.x-o.position.x,dz2=c.position.z-o.position.z;
                 if(sqrtf(dx2*dx2+dz2*dz2)<c.radius*2.8f) nbrs++;}
-            bool spaceAvailable = nbrs < 3 && c.localPressure < 0.3f;
+            bool spaceAvailable = nbrs < 6 && c.localPressure < 1.8f;
             if(spaceAvailable && nutrition > 0.20f && c.ATP > 40) {
                 c.fate = SIM_FATE_PROLIF;
                 c.fateScores[0] = 8; c.fateScores[1] = 0;
@@ -1925,10 +1944,10 @@ private:
 
         // Quiescence: crowding is the DOMINANT signal (contact inhibition)
         // Also triggered by moderate stress where cell can survive by resting
-        // Quiesce signal requires real crowding / pressure / severe stress.
-        // stress > 80 (was 40) — transient stress shouldn't force quiesce
-        // since real HeLa cells are resilient to short metabolic fluctuations.
-        bool quiesceSignal = crowded || (c.localPressure > 0.8f) || (c.stress > 80 && c.ATP > 15);
+        // Quiesce signal requires REAL confluence. Mild stress / pressure
+        // from cell-cell jostling does NOT lock proliferating HeLa into
+        // quiescence in vitro — that's a packed-monolayer-only response.
+        bool quiesceSignal = crowded && c.localPressure > 1.5f;
         float quiesceRate = crowded ? 1.5f : (c.localPressure > 0.5f ? 0.8f : 0.3f);
         if(quiesceSignal) c.fateScores[1] += fdt * quiesceRate;
         else c.fateScores[1] *= powf(0.990f, fdt*60);
