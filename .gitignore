@@ -58,3 +58,15 @@ __pycache__/
 
 # ── User-private files ──────────────────────────────────────────────────
 "(Human Only, NO AI Approaching, NEVER, d.md"
+
+# ── Bioagent seed catalogues (ship with repo) ──────────────────────────
+!data/bioagents/
+!data/bioagents/*.csv
+!data/bioagents/*.yaml
+!data/bioagents/.gitignore
+# per-bioagent caches stay local (regenerable from chem_worker.py)
+data/bioagents/chem/
+data/bioagents/targets_predicted/
+data/bioagents/metabolites/
+data/bioagents/admet/
+data/bioagents/uncertainty/

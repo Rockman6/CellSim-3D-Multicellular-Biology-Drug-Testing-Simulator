@@ -41,6 +41,8 @@ set(SOURCES
     src/render/Camera.cpp
     src/render/MeshLibrary.mm
     src/render/GLBLoader.mm
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp
 )
 
 # ── Executable ───────────────────────────────────────────────────────────
@@ -136,7 +138,10 @@ message(STATUS "CellSim — Metal compute + render | Target: ${CMAKE_SYSTEM_PROC
 # Runs the Simulation core fast and dumps a cell-count vs bio-time CSV so
 # you can verify cells DO divide and population doubles — without being
 # blocked by the dev-box GPU edge case in the interactive build.
-add_executable(cellsim_headless tests/headless_doubling.cpp)
+add_executable(cellsim_headless
+    tests/headless_doubling.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
 target_include_directories(cellsim_headless PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(cellsim_headless PRIVATE
     -Wall -Wextra -Wno-unused-parameter -O2)

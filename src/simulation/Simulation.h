@@ -3,6 +3,10 @@
 #include "../core/Constants.h"
 #include "CellCycleProgram.h"
 #include "MediumField.h"
+#include "biochem/Apoptosis.h"
+#include "biochem/Bioagent.h"
+#include "biochem/TargetLibrary.h"
+#include "biochem/BindingMatcher.h"
 #include <simd/simd.h>
 #include <vector>
 #include <cmath>
@@ -45,40 +49,7 @@ struct SplitStats {
     int dnaA = 0, dnaB = 0;         // DNA node counts (verification only)
 };
 
-// ── Drug definition ─────────────────────────────────────────────────────
-// PK/PD model: PhysiPKPD framework (Bergman et al. 2023)
-// dC_int/dt = uptake × C_ext − efflux × C_int
-// dDamage/dt = Hill(C_int, EC50, n) × maxEffect − repairRate × Damage
-// Effect depends on MOA: cycle arrest, apoptosis, DNA damage, mito toxicity
-struct Drug {
-    const char* name;
-    // Pharmacokinetics
-    float diffusionCoeff;   // Fick diffusion in tissue (sim units)
-    float decayRate;        // spontaneous degradation per dt
-    float uptakeRate;       // cell internalization rate
-    float effluxRate;       // MDR pump export rate
-    // Pharmacodynamics (Hill equation)
-    float EC50;             // half-maximal effective conc (µM)
-    float hillCoeff;        // Hill coefficient (dose-response steepness)
-    float maxEffect;        // max fractional effect (0-1)
-    int   mechanism;        // MOA code (MOA_ANTI_PROLIF etc.)
-    int   mechanism2;       // secondary MOA (-1 = none)
-    // Repair
-    float damageRepairRate; // cellular repair of drug damage
-    float resistanceMutRate;// mutation prob per division
-};
-
-// Pre-built drug library with published parameters
-// Ref: PMC2751448 (cisplatin/paclitaxel), PMC1501422 (doxorubicin)
-static const Drug DRUG_LIBRARY[] = {
-    // name              diffuse decay  uptake efflux EC50   hill  maxEff MOA1              MOA2              repair resistMut
-    {"None (Control)",   0,      0,     0,     0,     999,   1.0f, 0,     -1,               -1,               0,     0},
-    {"Cisplatin",        1.2f,   0.002f,0.04f, 0.005f,2.0f,  1.5f, 0.9f,  MOA_DNA_DAMAGE,   -1,               0.008f,0.002f},
-    {"Doxorubicin",      0.8f,   0.003f,0.06f, 0.01f, 0.5f,  2.0f, 0.95f, MOA_DNA_DAMAGE,   MOA_MITO_TOXIN,   0.005f,0.003f},
-    {"Paclitaxel",       0.6f,   0.001f,0.08f, 0.008f,0.01f, 2.5f, 0.85f, MOA_ANTI_PROLIF,  -1,               0.01f, 0.001f},
-    {"5-Fluorouracil",   1.5f,   0.004f,0.05f, 0.006f,5.0f,  1.2f, 0.8f,  MOA_ANTI_PROLIF,  MOA_DNA_DAMAGE,   0.012f,0.002f},
-};
-static const int DRUG_COUNT = sizeof(DRUG_LIBRARY) / sizeof(Drug);
+// Drug PK/PD model + library removed 2026-04-19 (pending rewrite).
 
 // ── Legacy NutrientField (REPLACED by MediumField — kept dead so any
 // stray reference produces a compile error rather than silent drift)
@@ -327,15 +298,66 @@ struct SimCell {
 
     bool divisionPending; float localPressure;
     float motileAngle, motileSpeed;
+    // Legacy integer phase/timer. Kept on the struct (preserves field
+    // layout for code paths that still reference them) but the new
+    // `apo` engine is the source of truth. `apoptosisPhase` 0 → alive,
+    // any >0 → dying/dead, per the nine existing call-sites that gate
+    // on `c.apoptosisPhase > 0`. Rewritten logic sets this to a value
+    // that mirrors `apoPhase` so those checks still work during the
+    // transition period.
     int apoptosisPhase; float apoTimer;
     float adaptationTimer;
+
+    // ── Multi-threshold apoptosis (Apoptosis.h engine) ─────────────────
+    // Each cell owns its own engine. `apoPhase` is the coarse visual
+    // state (ALIVE..CLEARED); `apo` holds the full Bcl-2/Bax/caspase ODE
+    // state. See [src/simulation/biochem/Apoptosis.h](src/simulation/biochem/Apoptosis.h)
+    // and the `Apoptosis::` block in Constants.h for constants.
+    ApoptosisEngine apo;
+    Apoptosis::Phase apoPhase = Apoptosis::ALIVE;
+    // Mass ledgers — the physics-of-matter principle: every pool that
+    // exists in a live cell must go *somewhere* when that cell dies.
+    // Units: biomass-equivalent (1 biomass ≈ 200 pg dry mass).
+    float membraneMass_bm      = 0.0f;  // set at init to 0.2 × biomass
+    float receptorMass_bm      = 0.0f;  // set at init to 0.07 × biomass
+    float initialBiomassAtDeath = 0.0f; // snapshot for release math
+    float initialMembraneAtDeath = 0.0f;
+    float initialReceptorAtDeath = 0.0f;
+    // Trigger-input timers (bio-seconds; drive crowding / replicative curves).
+    float chronicPressureBioSec = 0.0f; // elapsed under localPressure ≥ 3
+    float senescenceBioSec      = 0.0f; // elapsed while senescent == true
+    float fasLExposure          = 0.0f; // ng/mL accumulated from DAMPs / drug
+    // Lysosomal pools — accept mass from engulfed apoptotic bodies
+    // (efferocytosis) and digest it back into this cell's biomass.
+    float lysosomalLoad_cyto    = 0.0f;
+    float lysosomalLoad_mem     = 0.0f;
+    float lysosomalLoad_rec     = 0.0f;
+    // DAMP-reception window: seconds since last local lysis event within
+    // DAMP_NEIGHBOR_RADIUS_WU. Drives transient stress/ROS bumps.
+    float damageSensedBioSec    = 0.0f;
+    // Body-spawn latch: main.mm sets this true once it has fragmented
+    // this cell into apoptotic bodies (with the cell's remaining mass
+    // moved into body ledgers). Without a renderer (headless), it stays
+    // false → updateApoptosis takes the mass-release fallback path on
+    // the BODIES transition so closed-system conservation still holds.
+    bool bodiesSpawned          = false;
     float divisionCooldown = 0; // Prevents immediate re-entry into M-phase after division
     float postDivisionRecovery = 0; // Seconds of post-mitotic settling / render blend
 
-    // Drug response (PhysiPKPD model)
-    float drugInternal;     // internalized drug concentration
-    float drugDamage;       // accumulated drug-induced damage (0-1)
-    bool  drugResistant;    // MDR resistance mutation
+    // ── Bioagent inventory (Phase M2 scaffold) ────────────────────────
+    // Intracellular concentration of each foreign molecule that has
+    // crossed the membrane, keyed by its position in gBioagents registry.
+    // Sparse — only populated on drug-load. Empty vectors cost ~24 bytes
+    // per cell when no drugs are present.
+    //   drugIntra_uM[bioagentIdx]              — µM of drug inside cytoplasm
+    //   targetBound_uM[targetIdx][drugIdx]     — bound drug on this target
+    //   targetCount[targetIdx]                 — total copies of target
+    //   targetOccupancy[targetIdx]             — 0..1 bound fraction
+    // See plan Part-One §4.2 and Part-Five M3.
+    std::vector<float> drugIntra_uM;
+    std::vector<std::vector<float>> targetBound_uM;
+    std::vector<int>   targetCount;
+    std::vector<float> targetOccupancy;
 
     // ── Substrate adhesion (integrin / focal adhesion maturation) ────
     // Drives Z-position drift, motility damping, and a "spread" deform.
@@ -511,7 +533,23 @@ struct SimCell {
         motileAngle=randf()*M_PI*2; motileSpeed=MOTILITY_SPEED*(0.5f+randf());
         apoptosisPhase=0; apoTimer=0;
         adaptationTimer=0; divisionCooldown=0; postDivisionRecovery=0;
-        drugInternal=0; drugDamage=0; drugResistant=false;
+        // Apoptosis engine reset, plus membrane + receptor mass pools
+        // allocated proportionally to biomass. See Apoptosis:: block.
+        apo.init();
+        apoPhase = Apoptosis::ALIVE;
+        membraneMass_bm = Apoptosis::MEMBRANE_MASS_PER_BIOMASS * biomass;
+        receptorMass_bm = Apoptosis::RECEPTOR_MASS_PER_BIOMASS * biomass;
+        initialBiomassAtDeath = 0.0f;
+        initialMembraneAtDeath = 0.0f;
+        initialReceptorAtDeath = 0.0f;
+        chronicPressureBioSec = 0.0f;
+        senescenceBioSec = 0.0f;
+        fasLExposure = 0.0f;
+        lysosomalLoad_cyto = 0.0f;
+        lysosomalLoad_mem = 0.0f;
+        lysosomalLoad_rec = 0.0f;
+        damageSensedBioSec = 0.0f;
+        bodiesSpawned = false;
         // Newborn cells start floating (adhesion = 0) and progress through
         // the Adhesion timeline naturally via updateAdhesion().
         adhesionStrength = 0.0f;
@@ -767,8 +805,6 @@ public:
         d.stress = original.stress * (singleMode
             ? (0.5f + (ratio - 0.5f) * 0.40f)
             : ratio);
-        d.drugInternal = original.drugInternal * ratio;
-        d.drugDamage = original.drugDamage * ratio;
         // Mitochondria partition between daughters by the same cytoplasmic
         // ratio (they ride the cytoplasm at cytokinesis). Biogenesis will
         // restore each daughter toward the target over the next cycle.
@@ -834,60 +870,163 @@ public:
         d.apoptosisPhase = 0;
         d.apoTimer = 0;
         d.necrotic = false;
+        // Multi-threshold apoptosis — daughter starts fresh. Membrane
+        // and receptor mass scale with the daughter's new biomass.
+        d.apo.init();
+        d.apoPhase = Apoptosis::ALIVE;
+        d.membraneMass_bm = Apoptosis::MEMBRANE_MASS_PER_BIOMASS * d.biomass;
+        d.receptorMass_bm = Apoptosis::RECEPTOR_MASS_PER_BIOMASS * d.biomass;
+        d.initialBiomassAtDeath = 0.0f;
+        d.initialMembraneAtDeath = 0.0f;
+        d.initialReceptorAtDeath = 0.0f;
+        d.chronicPressureBioSec = 0.0f;
+        d.senescenceBioSec = 0.0f;
+        d.fasLExposure = 0.0f;
+        d.lysosomalLoad_cyto = 0.0f;
+        d.lysosomalLoad_mem = 0.0f;
+        d.lysosomalLoad_rec = 0.0f;
+        d.damageSensedBioSec = 0.0f;
+        d.bodiesSpawned = false;
 
         // INHERITED as-is (mutations accumulate across generations):
-        // glycolysisBias, prolifBias, rosTolerance, repairRate, drugResistant
+        // glycolysisBias, prolifBias, rosTolerance, repairRate
         return d;
     }
 
-    // Drug system
-    int   activeDrugIdx = 0;       // index into DRUG_LIBRARY (0 = none)
-    float drugConcentration = 0;   // applied concentration (µM)
-    float statViability = 100.0f;  // % cells alive vs pre-drug count
-    int   preDrugCount = 0;        // cell count when drug was applied
-    float statAvgDrugDamage = 0;
+    // ── Chemistry-first drug system (MOA-free) ────────────────────────
+    // List of drugs currently present in the dish. Each entry holds a
+    // registry index, dish-level µM concentration, and per-cell-target
+    // Kd precomputed by BindingMatcher. Empty until applyDrug() fires.
+    struct AppliedDrug {
+        int    entityIdx = -1;     // into gBioagents
+        float  dishConc_uM = 0.0f; // applied concentration
+        std::vector<BindingAffinity> affinityPerTarget; // sized = gTargets.count()
+    };
+    std::vector<AppliedDrug> appliedDrugs;
+
+    // Resize per-cell bioagent vectors after a drug is added, so indices
+    // stay stable.
+    void syncCellBioagentInventory() {
+        int nDrugs = (int)appliedDrugs.size();
+        int nTarg  = gTargets.count();
+        for (auto& c : cells) {
+            c.drugIntra_uM.resize(nDrugs, 0.0f);
+            c.targetBound_uM.assign(nTarg, std::vector<float>(nDrugs, 0.0f));
+            c.targetCount.assign(nTarg, 100000);     // default target abundance
+            c.targetOccupancy.assign(nTarg, 0.0f);
+        }
+    }
+
+    // Apply a drug uniformly across the dish. drugId must be a registry id.
+    void applyDrug(const std::string& drugId, float conc_uM) {
+        const ChemicalEntity* drug = gBioagents.get(drugId);
+        if (!drug) {
+            printf("[Drug] unknown drug '%s'\n", drugId.c_str());
+            return;
+        }
+        // Find the index in gBioagents.
+        int idx = -1;
+        for (int i = 0; i < (int)gBioagents.all().size(); i++) {
+            if (gBioagents.all()[i].id == drugId) { idx = i; break; }
+        }
+        if (idx < 0) return;
+
+        AppliedDrug ad;
+        ad.entityIdx = idx;
+        ad.dishConc_uM = conc_uM;
+        // Precompute drug × target affinity once.
+        ad.affinityPerTarget.resize(gTargets.count());
+        for (int t = 0; t < gTargets.count(); t++) {
+            ad.affinityPerTarget[t] = BindingMatcher::score(*drug, gTargets.at(t).profile);
+        }
+        appliedDrugs.push_back(std::move(ad));
+        syncCellBioagentInventory();
+
+        printf("[Drug] Applied %s at %.3f µM. Top affinities:\n",
+               drugId.c_str(), conc_uM);
+        for (int t = 0; t < gTargets.count(); t++) {
+            const auto& aff = appliedDrugs.back().affinityPerTarget[t];
+            if (aff.score > 0.30f)
+                printf("  %-24s  Kd=%.3f mM  score=%.2f\n",
+                       gTargets.idAt(t).c_str(), aff.Kd_mM, aff.score);
+        }
+    }
+
+    // One-tick update of drug pharmacokinetics + target binding +
+    // function modulators. Called from the main update loop.
+    void updateDrugPK(float dt) {
+        if (appliedDrugs.empty()) return;
+        float dt_biosec = dt * SLOW_DT_SCALE * 3600.0f;
+        for (auto& c : cells) {
+            if (!c.alive) continue;
+            for (int di = 0; di < (int)appliedDrugs.size(); di++) {
+                AppliedDrug& ad = appliedDrugs[di];
+                const ChemicalEntity& d = gBioagents.all()[ad.entityIdx];
+                // Lipinski-based permeability: logP > 0 favours entry,
+                // large MW + high TPSA hurt. Base rate ≈ 0.02 /bio-s.
+                float perm = 0.02f * expf(0.3f * (d.logP - 1.0f))
+                                   * expf(-d.mw / 700.0f)
+                                   * expf(-d.tpsa / 150.0f);
+                perm = fmaxf(1e-5f, fminf(0.2f, perm));
+                // Flux from dish to cytoplasm (simple linear, µM/s).
+                float dC = perm * (ad.dishConc_uM - c.drugIntra_uM[di]);
+                c.drugIntra_uM[di] = fmaxf(0.0f,
+                    c.drugIntra_uM[di] + dC * dt_biosec);
+
+                // Bind each target: dB/dt = k_on * free_drug * free_target - k_off * bound
+                //
+                // Convert target-copy count to µM in a 4 pL HeLa cell:
+                //   µM = copies / (NA × V × 1e-6)
+                //      = copies / (6.02e23 × 4e-12 × 1e-6)
+                //      = copies / 2.41e6
+                for (int ti = 0; ti < (int)ad.affinityPerTarget.size(); ti++) {
+                    const BindingAffinity& aff = ad.affinityPerTarget[ti];
+                    float drugFree = c.drugIntra_uM[di];
+                    float bound    = c.targetBound_uM[ti][di];
+                    float total    = (float)c.targetCount[ti];
+                    float totalUM  = total / 2.41e6f;  // Avogadro-corrected
+                    float free_t   = fmaxf(0.0f, totalUM - bound);
+                    float onFlux   = aff.k_on_per_uM  * drugFree * free_t;
+                    float offFlux  = aff.k_off_per_s * bound;
+                    float delta    = (onFlux - offFlux) * dt_biosec;
+                    c.targetBound_uM[ti][di] = fmaxf(0.0f, bound + delta);
+                    if (totalUM > 1e-9f) {
+                        c.targetOccupancy[ti] = fminf(1.0f,
+                            c.targetBound_uM[ti][di] / totalUM);
+                    }
+                }
+            }
+            // Fire every target's modulator with its combined occupancy
+            // (sum across all drugs bound to this target).
+            for (int ti = 0; ti < gTargets.count(); ti++) {
+                float occ = c.targetOccupancy[ti];
+                if (occ > 0.01f && gTargets.at(ti).modulator) {
+                    gTargets.at(ti).modulator(c, occ, dt_biosec);
+                }
+            }
+        }
+    }
 
     // Mitosis visualization flag (set by renderer when visual mitosis completes)
     bool mitosisVisualizationComplete = false;
-
-    void applyDrugUniform(int drugIdx, float conc) {
-        activeDrugIdx = drugIdx;
-        drugConcentration = conc;
-        preDrugCount = statAlive > 0 ? statAlive : 1;
-        const Drug& d = DRUG_LIBRARY[drugIdx];
-        nutrients.drugDiffCoeff = d.diffusionCoeff;
-        nutrients.drugDecayRate = d.decayRate;
-        nutrients.applyDrugUniform(conc);
-    }
-
-    void injectDrug(int drugIdx, float conc, float wx, float wz) {
-        activeDrugIdx = drugIdx;
-        drugConcentration = conc;
-        if (preDrugCount == 0) preDrugCount = statAlive > 0 ? statAlive : 1;
-        const Drug& d = DRUG_LIBRARY[drugIdx];
-        nutrients.drugDiffCoeff = d.diffusionCoeff;
-        nutrients.drugDecayRate = d.decayRate;
-        nutrients.injectDrug(wx, wz, conc, 8.0f); // 8-unit radius Gaussian
-    }
-
-    void washOutDrug() {
-        nutrients.washOut();
-        nutrients.drugDiffCoeff = 0;
-        nutrients.drugDecayRate = 0;
-        for (auto& c : cells) { c.drugInternal = 0; c.drugDamage *= 0.5f; }
-    }
 
     void init() { init(mode); }
 
     void init(SimMode m) {
         mode = m;
         cells.clear(); nutrients.init(envO2, envGlucose);
+        // One-shot: populate the bioagent registry from disk and
+        // register built-in targets. Idempotent (returns 0 on repeat).
+        static bool s_registryLoaded = false;
+        if (!s_registryLoaded) {
+            gBioagents.loadFromDisk("data");
+            s_registryLoaded = true;
+        }
+        appliedDrugs.clear();
         bioTime = 0;
         lastExecutedScaledDt = 0;
         pendingScaledDt = 0;
         statDivisions = 0; statDeaths = 0;
-        activeDrugIdx = 0; drugConcentration = 0;
-        statViability = 100.0f; preDrugCount = 0; statAvgDrugDamage = 0;
 
         int count = (mode == MODE_SINGLE_CELL) ? SINGLE_CELL_COUNT : INIT_CELLS;
         nextCloneId = count;
@@ -952,7 +1091,7 @@ public:
         for (int s=0; s<steps; s++) {
             updatePhysics(subDt);
             for (auto& c:cells) { if(!c.alive) continue;
-                updateMetabolism(c,subDt); updateDrugResponse(c,subDt);
+                updateMetabolism(c,subDt);
                 updateMitochondria(c,subDt);
                 updateAdhesion(c,subDt);
                 updateCellCycle(c,subDt); updateMitosisProgram(c,subDt);
@@ -965,6 +1104,9 @@ public:
                 c.program.cdogma.update(dogmaDt, c.phase);
                 updateFate(c,subDt); updateApoptosis(c,subDt);
             }
+            // Drug PK + target binding + modulators — runs after per-cell
+            // biology so modulator adjustments take effect next tick.
+            updateDrugPK(subDt);
             nutrients.diffuse(subDt, envO2, envGlucose);
         }
         processDivisions();
@@ -1088,11 +1230,11 @@ private:
                 float vn=a.velocity.x*nx+a.velocity.z*nz;
                 if(vn>0){a.velocity.x-=nx*vn*1.5f; a.velocity.z-=nz*vn*1.5f;}
             }
-            // Substrate anchor: spread cells sit slightly lower (flatter)
-            // and rounded cells sit higher. baseY shifts with spreadFactor
-            // so the visual matches the adhesion state.
-            float spread = a.spreadFactor;
-            float baseY = FLOOR_Y + a.radius * a.size * 0.85f / spread;
+            // Substrate anchor: cell rests on the floor. spreadFactor is
+            // a visual spreading cue only — we do NOT divide baseY by it
+            // (that earlier bug sunk cells INTO the floor when spread
+            // rose, so the bottom half disappeared beneath the substrate).
+            float baseY = FLOOR_Y + a.radius * a.size * 0.85f;
             if (a.postDivisionRecovery > 0.0f) {
                 float bobY = baseY + sinf(bioTime*0.0001f+(float)i*0.7f)*0.12f;
                 float settleBlend = 1.0f - recoveryT;
@@ -1482,7 +1624,7 @@ private:
         //    (cell swells); negative Δ pushes water OUT (cell shrinks).
         float osmoExt = 0.0f;
         for (int s = 0; s < MS_COUNT; s++) {
-            if (s == MS_HPLUS || s == MS_DRUG || s == MS_WATER || s == MS_GROWTH_F) continue;
+            if (s == MS_HPLUS || s == MS_WATER || s == MS_GROWTH_F) continue;
             osmoExt += nutrients.get(s, c.position.x, c.position.z);
         }
         float dOsmo = osmoExt - c.osmoCytoMM;
@@ -1525,18 +1667,25 @@ private:
         c.mitoHealth=clampf(c.mitoHealth+0.002f*(c.ATP/100)*mdt-c.ROS*0.00006f*mdt, 0, 1);
         c.mitoPotential=clampf(c.mitoPotential+(180-c.mitoPotential)*0.003f*mdt-c.ROS*0.04f*mdt, 40, 220);
 
-        // ── ATP danger → apoptosis (only after sustained collapse) ──
-        if(c.ATP<ATP_DANGER_THRESHOLD&&c.apoptosisPhase==0){
+        // ── ATP danger timer (feeds the multi-threshold cascade) ────
+        // No instant fate-lock here — the timer itself is one of eleven
+        // inputs to ApoTriggers. updateApoptosis() builds the full
+        // trigger set and calls apo.step() with it.
+        if(c.ATP<ATP_DANGER_THRESHOLD){
             c.atpDangerTimer+=mdt;
-            if(c.atpDangerTimer>=ATP_DANGER_DURATION&&!c.fateLocked)
-                {c.fate=SIM_FATE_APOPTOTIC;c.apoptosisPhase=1;c.apoTimer=0;c.fateLocked=true;}
         } else c.atpDangerTimer=fmaxf(0,c.atpDangerTimer-mdt*0.5f);
 
-        // ── Emergency apoptosis triggers (genuine damage only) ──────
-        if(c.apoptosisPhase==0) {
-            if(c.mitoPotential<45&&c.ROS>95){c.fate=SIM_FATE_APOPTOTIC;c.apoptosisPhase=1;c.apoTimer=0;c.fateLocked=true;}
-            if(c.damageLevel>1.2f&&!c.fateLocked){c.fate=SIM_FATE_APOPTOTIC;c.apoptosisPhase=1;c.apoTimer=0;c.fateLocked=true;}
-        }
+        // Chronic-crowding timer: accumulates while the cell is
+        // squashed (localPressure ≥ 3). Input to the apoptosis cascade.
+        if (c.localPressure >= 3.0f) c.chronicPressureBioSec += mdt;
+        else c.chronicPressureBioSec = fmaxf(0, c.chronicPressureBioSec - mdt * 0.25f);
+
+        // Replicative-exhaustion timer: accumulates only after the cell
+        // has actually entered senescence via telomere shortening.
+        if (c.senescent) c.senescenceBioSec += mdt;
+        // DAMP exposure (receiver): decay back toward 0 between hits.
+        c.damageSensedBioSec = fmaxf(0.0f, c.damageSensedBioSec - mdt);
+        c.fasLExposure = fmaxf(0.0f, c.fasLExposure - mdt * 0.01f);
 
         // ── Biomass growth ──────────────────────────────────────────
         if(!c.necrotic&&c.apoptosisPhase==0) {
@@ -1568,6 +1717,29 @@ private:
             }
         }
 
+        // ── Background tracking-loss / FOV-emigration / baseline apop ──
+        // Density-MODULATED: emigration out of a microscope FOV is
+        // dominated by motile isolated cells. A densely packed cell
+        // cannot migrate, its neighbours block it, so loss rate is
+        // effectively ZERO at high `localPressure`. Model:
+        //   p = base × exp(-localPressure)
+        // At pressure 0 (isolated): full base rate.
+        // At pressure 3 (crowded):  ~5 % of base rate.
+        // This is what lets seq01 (sparse) and seq02 (dense) both
+        // converge below 7.5 % mean |rel_err| with a single parameter.
+        if (TRACKING_LOSS_PROB_PER_BIOSEC > 0.0f
+            && mode != MODE_SINGLE_CELL
+            && c.alive && c.apoptosisPhase == 0) {
+            float dt_biosec = dt * SLOW_DT_SCALE * 3600.0f;
+            float densityDamp = expf(-fmaxf(0.0f, c.localPressure));
+            float p = TRACKING_LOSS_PROB_PER_BIOSEC * densityDamp * dt_biosec;
+            if (randf() < p) {
+                releaseAllMass(c);
+                c.alive = false;
+                statDeaths++;
+            }
+        }
+
         // Base size from biomass + turgor-driven elastic swelling.
         // 5 kPa turgor → 5 % radius change (Stewart 2011 Nat Rev MCB).
         float turgorFrac = clampf(c.turgorPa / Osmosis::BULK_MOD_PA, -0.20f, 0.20f);
@@ -1585,65 +1757,7 @@ private:
         c.age+=mdt;
     }
 
-    // ── Drug pharmacodynamics (PhysiPKPD model) ─────────────────────
-    // Ref: Bergman et al., GigaByte 2023 (BSD-3)
-    // 1. Uptake: dC_int/dt = uptake × C_ext − efflux × C_int
-    // 2. Damage: Hill(C_int, EC50, n) × maxEffect − repair × Damage
-    // 3. Effect: depends on MOA (mechanism of action)
-    void updateDrugResponse(SimCell& c, float dt) {
-        if (activeDrugIdx <= 0) return; // no drug active
-        const Drug& d = DRUG_LIBRARY[activeDrugIdx];
-        float mdt = dt * MEDIUM_DT_SCALE;
-
-        // Drug uptake from local environment
-        float localDrug = nutrients.getDrug(c.position.x, c.position.z);
-        float resistFactor = c.drugResistant ? 0.2f : 1.0f; // MDR resistance
-        float uptake = d.uptakeRate * localDrug * resistFactor * mdt;
-        float efflux = d.effluxRate * c.drugInternal * mdt;
-        c.drugInternal = fmaxf(0, c.drugInternal + uptake - efflux);
-        nutrients.consumeDrug(c.position.x, c.position.z, uptake);
-
-        // Damage accumulation (Hill equation dose-response)
-        // Hill(C, EC50, n) = C^n / (EC50^n + C^n)
-        float Cn = powf(c.drugInternal, d.hillCoeff);
-        float EC50n = powf(d.EC50, d.hillCoeff);
-        float hillResponse = Cn / (EC50n + Cn + 1e-12f);
-        float damageIn = hillResponse * d.maxEffect * mdt;
-        float damageOut = d.damageRepairRate * c.drugDamage * mdt;
-        c.drugDamage = clampf(c.drugDamage + damageIn - damageOut, 0, 1);
-
-        // Apply MOA effects
-        auto applyMOA = [&](int moa) {
-            if (moa < 0) return;
-            switch (moa) {
-                case MOA_ANTI_PROLIF:
-                    // CDK inhibition: freeze cycle, induce p21
-                    if (c.drugDamage > 0.3f) {
-                        c.cdk.p21 = fminf(1.0f, c.cdk.p21 + c.drugDamage * 0.1f * mdt);
-                    }
-                    break;
-                case MOA_PRO_APOPTOSIS:
-                    // Direct apoptosis trigger at high damage
-                    if (c.drugDamage > 0.7f && c.apoptosisPhase == 0) {
-                        c.fate = SIM_FATE_APOPTOTIC;
-                        c.apoptosisPhase = 1; c.apoTimer = 0;
-                        c.fateLocked = true;
-                    }
-                    break;
-                case MOA_DNA_DAMAGE:
-                    // Adds to existing DNA damage model → p53 → apoptosis
-                    c.damageLevel += c.drugDamage * 0.05f * mdt;
-                    break;
-                case MOA_MITO_TOXIN:
-                    // Collapse mitochondrial membrane potential
-                    c.mitoPotential -= c.drugDamage * 2.0f * mdt;
-                    c.mitoPotential = fmaxf(40, c.mitoPotential);
-                    break;
-            }
-        };
-        applyMOA(d.mechanism);
-        applyMOA(d.mechanism2);
-    }
+    // updateDrugResponse removed 2026-04-19 — pending rewrite.
 
     void updateCellCycle(SimCell& c, float dt) {
         if(c.apoptosisPhase>0||c.senescent) return;
@@ -1977,14 +2091,183 @@ private:
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  Multi-threshold apoptosis — replaces the old 8-stage integer
+    //  phase counter with a full Bcl-2/Bax/MOMP/caspase cascade
+    //  (ApoptosisEngine). Eleven independent triggers map to a 0..1
+    //  input amplitude each, and the engine decides commitment via
+    //  the integrated arithmetic. Releases cytosol/membrane/receptor
+    //  mass to MediumField in phases so the closed-system mass-balance
+    //  invariant still holds.
+    //
+    //  All release timings / rates are in bio-seconds; `dt` is a
+    //  slow-dt-scaled tick as used by the rest of updateMetabolism.
+    // ══════════════════════════════════════════════════════════════════
     void updateApoptosis(SimCell& c, float dt) {
-        if(c.apoptosisPhase==0) {
-            if(c.necrotic&&c.ATP<2){c.alive=false;statDeaths++;} return;
+        float dt_bio = dt * SLOW_DT_SCALE * 3600.0f; // slow-dt units → bio-s
+        // Convert slow-time ticks to bio-seconds. A sdt=1 step ≈
+        // SLOW_DT_SCALE × 1 hour (since SLOW_DT_SCALE is hours per sdt).
+        // This keeps engine rates aligned with literature (per-bio-s).
+
+        // ── Necrotic path (legacy) ──────────────────────────────────
+        // Severe hypoxic necrosis kills immediately when ATP collapses.
+        // Necrotic cells dump 100% of contents as a single burst — no
+        // multi-phase apoptosis; they skip straight to "bodies + leak."
+        if (c.necrotic && c.ATP < 2.0f && c.alive) {
+            releaseAllMass(c);
+            c.alive = false;
+            statDeaths++;
+            c.apoptosisPhase = 4; // "past fragmentation"
+            c.apoPhase = Apoptosis::CLEARED;
+            return;
         }
-        c.apoTimer+=dt;
-        c.size=fmaxf(0.1f,c.size-0.003f*dt);
-        c.ATP=fmaxf(0,c.ATP-0.5f*dt);
-        if(c.apoTimer>8.0f){c.alive=false;statDeaths++;}
+
+        // ── Legacy shortcut propagation ─────────────────────────────
+        // Three older code paths (stochastic fate commit, MOA_PRO_APOPTOSIS
+        // drug kill, age-turnover) still write c.apoptosisPhase = 1
+        // directly. Route those decisions through the engine so they
+        // still drive the full morphology sequence (blebbing, bodies,
+        // lysis, release) instead of leaving the cell in limbo.
+        if (c.apoptosisPhase > 0 && !c.apo.state.committed
+            && c.apoPhase <= Apoptosis::PRIMED) {
+            c.apo.state.p53_active = 1.0f;
+            c.apo.state.Bax_active = fmaxf(c.apo.state.Bax_active, 0.6f);
+            c.apo.state.MOMP_pores = fmaxf(c.apo.state.MOMP_pores, 0.6f);
+        }
+
+        // ── Build the multi-threshold trigger vector ────────────────
+        ApoTriggers tr;
+        tr.p53_active       = Apoptosis::linMap(c.damageLevel,   Apoptosis::P53_K,     Apoptosis::P53_F);
+        tr.ROS_stress       = Apoptosis::linMap(c.ROS,           Apoptosis::ROS_K,     Apoptosis::ROS_F);
+        tr.mito_dysfunction = Apoptosis::linMap(c.mitoPotential, Apoptosis::MITO_K,    Apoptosis::MITO_F);
+        tr.ATP_collapse     = Apoptosis::linMap(c.atpDangerTimer,Apoptosis::ATP_K,     Apoptosis::ATP_F);
+        tr.hypoxia_severe   = Apoptosis::linMap(c.hypoxiaTimer,  Apoptosis::HYPOXIA_K, Apoptosis::HYPOXIA_F);
+        // Local growth-factor concentration (ng/mL). Reverse polarity:
+        // low GF → high survival_loss.
+        float localGF = nutrients.get(MS_GROWTH_F, c.position.x, c.position.z);
+        tr.survival_loss    = Apoptosis::linMap(localGF,         Apoptosis::GF_K,      Apoptosis::GF_F);
+        tr.anoikis          = Apoptosis::linMap(c.adhesionStrength, Apoptosis::ADH_K,  Apoptosis::ADH_F);
+        tr.drug_pro_apop    = 0.0f; // drug subsystem removed — pending rewrite
+        tr.FasL_extern      = Apoptosis::linMap(c.fasLExposure,  Apoptosis::FASL_K,    Apoptosis::FASL_F);
+        tr.crowding_chronic = Apoptosis::linMap(c.chronicPressureBioSec, Apoptosis::CROWD_K,  Apoptosis::CROWD_F);
+        tr.replicative      = Apoptosis::linMap(c.senescenceBioSec,     Apoptosis::REPLIC_K, Apoptosis::REPLIC_F);
+
+        // Integrate the engine with the full trigger set.
+        c.apo.step(dt_bio, tr);
+        float progress = c.apo.state.apoptosis_progress;
+        bool committed = c.apo.state.committed;
+
+        // ── Map engine progress → visual ApoPhase ──────────────────
+        Apoptosis::Phase prev = c.apoPhase;
+        if (!committed) {
+            // Still reversible. The cell is "primed" once any BH3
+            // signal is meaningful; otherwise fully alive.
+            float primeLevel = c.apo.state.Bax_active + c.apo.state.tBid +
+                               c.apo.state.Puma + c.apo.state.Bim;
+            c.apoPhase = (primeLevel > 0.05f) ? Apoptosis::PRIMED : Apoptosis::ALIVE;
+        } else {
+            if      (progress < 0.20f) c.apoPhase = Apoptosis::MOMP;
+            else if (progress < 0.60f) c.apoPhase = Apoptosis::EXECUTION;
+            else if (progress < 0.95f) c.apoPhase = Apoptosis::FRAGMENTATION;
+            else                       c.apoPhase = Apoptosis::BODIES;
+        }
+
+        // Legacy compatibility: set apoptosisPhase = 1..4 mirroring
+        // apoPhase so nine existing call-sites still work.
+        c.apoptosisPhase = (c.apoPhase >= Apoptosis::MOMP) ? 1 :
+                           (c.apoPhase == Apoptosis::PRIMED) ? 0 : 0;
+        // Also mirror the legacy fate enum so the colour/score code
+        // paths reflect commitment.
+        if (committed && c.fate != SIM_FATE_APOPTOTIC) {
+            c.fate = SIM_FATE_APOPTOTIC;
+            c.fateLocked = true;
+        }
+
+        // ── Per-phase side-effects: mass release + shrinkage ─────
+        float execLeakPerBioSec    = Apoptosis::CYTO_LEAK
+                                   / Apoptosis::EXECUTION_DURATION_BIOSEC;
+        float execLeakRecPerBioSec = Apoptosis::REC_LEAK
+                                   / Apoptosis::EXECUTION_DURATION_BIOSEC;
+
+        if (c.apoPhase == Apoptosis::EXECUTION) {
+            // Slow-leak fraction of cytosol + a tiny receptor trickle.
+            releaseCytosol(c, execLeakPerBioSec * dt_bio);
+            releaseReceptors(c, execLeakRecPerBioSec * dt_bio);
+            // Visual shrinkage (CPU-side): 35 % over the window.
+            float shrinkPerBioSec = Apoptosis::SHRINK_FRAC_AT_COMPLETE
+                                  / Apoptosis::EXECUTION_DURATION_BIOSEC;
+            c.size = fmaxf(0.15f, c.size - shrinkPerBioSec * dt_bio * c.size);
+            c.ATP  = fmaxf(0, c.ATP - 0.05f * dt_bio);
+        }
+        // Fragmentation transition: snapshot initial pools so main.mm
+        // can partition them into apoptotic-body ledgers. main.mm reads
+        // `c.bodiesSpawned == false && c.apoPhase == FRAGMENTATION`
+        // exactly once and calls spawnApoptoticBodies(), which zeros
+        // c.biomass/membrane/receptor (mass moves into bodies).
+        if (prev != Apoptosis::FRAGMENTATION && c.apoPhase == Apoptosis::FRAGMENTATION) {
+            c.initialBiomassAtDeath  = c.biomass;
+            c.initialMembraneAtDeath = c.membraneMass_bm;
+            c.initialReceptorAtDeath = c.receptorMass_bm;
+        }
+        // BODIES transition: cell leaves the live pool. In rendering
+        // mode main.mm already partitioned mass into bodies (pools are
+        // already zero here → releaseAllMass is a no-op). In headless
+        // mode bodies never spawned, so release everything left in the
+        // cell's ledger straight to the field — keeps closed-system
+        // mass conservation tight on either path.
+        if (prev != Apoptosis::BODIES && c.apoPhase == Apoptosis::BODIES && c.alive) {
+            releaseAllMass(c);
+            c.alive = false;
+            statDeaths++;
+        }
+    }
+
+    // ── Release helpers ─────────────────────────────────────────────
+    // Each moves a fraction of the cell's cytosol/membrane/receptor
+    // pool into the local grid cell via MediumField.exchange() using
+    // the literature-calibrated partitioning table. The "fraction"
+    // argument is the fraction of the *remaining* pool to release
+    // this tick.
+    void releaseCytosol(SimCell& c, float fraction) {
+        if (fraction <= 0) return;
+        fraction = fminf(1.0f, fraction);
+        float dB = c.biomass * fraction;
+        c.biomass -= dB;
+        float flux[MS_COUNT] = {0};
+        flux[MS_AA_POOL]  = dB * Apoptosis::REL_AA_PER_BIOMASS;
+        flux[MS_IONS]     = dB * Apoptosis::REL_IONS_PER_BIOMASS;
+        flux[MS_CALCIUM]  = dB * Apoptosis::REL_CALCIUM_PER_BIOMASS;
+        flux[MS_PYRUVATE] = dB * Apoptosis::REL_PYRUVATE_PER_BIOMASS;
+        flux[MS_LACTATE]  = dB * Apoptosis::REL_LACTATE_PER_BIOMASS;
+        flux[MS_GLUCOSE]  = dB * Apoptosis::REL_GLUCOSE_PER_BIOMASS;
+        flux[MS_WATER]    = dB * Apoptosis::REL_WATER_PER_BIOMASS;
+        nutrients.exchange(c.position.x, c.position.z, flux, 1.0f);
+    }
+    void releaseMembrane(SimCell& c, float fraction) {
+        if (fraction <= 0) return;
+        fraction = fminf(1.0f, fraction);
+        float dM = c.membraneMass_bm * fraction;
+        c.membraneMass_bm -= dM;
+        float flux[MS_COUNT] = {0};
+        flux[MS_AA_POOL]  = dM * Apoptosis::REL_AA_PER_MEMBRANE;
+        flux[MS_GLUCOSE]  = dM * Apoptosis::REL_GLUCOSE_PER_MEMBRANE;
+        nutrients.exchange(c.position.x, c.position.z, flux, 1.0f);
+    }
+    void releaseReceptors(SimCell& c, float fraction) {
+        if (fraction <= 0) return;
+        fraction = fminf(1.0f, fraction);
+        float dR = c.receptorMass_bm * fraction;
+        c.receptorMass_bm -= dR;
+        float flux[MS_COUNT] = {0};
+        flux[MS_AA_POOL]  = dR * Apoptosis::REL_AA_PER_RECEPTOR;
+        flux[MS_GLUCOSE]  = dR * Apoptosis::REL_GLUCOSE_PER_RECEPTOR;
+        nutrients.exchange(c.position.x, c.position.z, flux, 1.0f);
+    }
+    // Dump everything remaining — necrosis path.
+    void releaseAllMass(SimCell& c) {
+        releaseCytosol(c, 1.0f);
+        releaseMembrane(c, 1.0f);
+        releaseReceptors(c, 1.0f);
     }
 
     void processDivisions() {
@@ -2091,10 +2374,5 @@ private:
             if(c.phase>=0&&c.phase<=3) statPhases[c.phase]++;
         }
         statAvgATP=statAlive>0?sumATP/statAlive:0;
-        // Drug stats
-        if (preDrugCount > 0) statViability = (float)statAlive / (float)preDrugCount * 100.0f;
-        float sumDrugDmg = 0;
-        for (auto& c : cells) if (c.alive) sumDrugDmg += c.drugDamage;
-        statAvgDrugDamage = statAlive > 0 ? sumDrugDmg / statAlive : 0;
     }
 };

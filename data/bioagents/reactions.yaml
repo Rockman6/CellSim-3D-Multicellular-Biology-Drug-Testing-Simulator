@@ -1,0 +1,39 @@
+# Reaction rules — SMARTS-based substrate patterns + product
+# templates + rate model. Consumed by Phase I ReactionEngine.
+# Each reaction fires on any ChemicalEntity matching `substrate`.
+#
+# Rate models (see src/simulation/biochem/ReactionEngine.h):
+#   - sn2_arrhenius                 — A exp(-Ea/RT)
+#   - p450_michaelis                — Vmax·[S]/(Km+[S])
+#   - bimolecular_saturable         — k_on·[A]·[B]/(1+[A]/K_A+[B]/K_B)
+#   - michaelis_menten              — standard MM for enzyme-catalysed
+#
+# Seed rules document the reactive chemistry the simulator should
+# *discover* rather than hardcode. Populated progressively in Phase I.
+- id: glutathione_conjugation
+  substrate: "[C,N]-Cl"
+  co_substrate: "gsh"
+  product_template: "[S:gsh]-[C,N]  +  [Cl-]"
+  rate_model: "sn2_arrhenius"
+  Ea_kJ_per_mol: 75
+  pre_exp: 1e9
+  targets: ["TGT_GSH"]
+  references: ["Armstrong 1997 Adv Enz Reg"]
+
+- id: dna_adduct_crosslink
+  substrate: "[Pt]"
+  co_substrate: "dna_guanine_N7"
+  product_template: "[Pt] bridges 2 guanines"
+  rate_model: "bimolecular_saturable"
+  kon: 1e4
+  targets: ["TGT_DNA_INTERCALATION", "TGT_REPLICATION_FORK"]
+  references: ["Jamieson 1999 Chem Rev"]
+
+- id: p450_oxidation
+  substrate: "[c;H1]"
+  co_substrate: "nadph"
+  product_template: "add -OH; consume NADPH"
+  rate_model: "p450_michaelis"
+  Km_uM: 40
+  Vmax_umol_per_min: 2.5
+  references: ["Guengerich 2008 Chem Res Tox"]

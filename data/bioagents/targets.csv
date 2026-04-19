@@ -1,0 +1,33 @@
+# Druggable target catalogue — one row per cellular component that
+# drugs can bind. Each row binds (via C++ registration) to a
+# function_modulator callback that adjusts existing cell biology.
+#
+# Columns:
+#   id                      — TGT_* short key
+#   kind                    — enzyme | ion_channel | receptor | structural | nucleic_acid | cofactor
+#   protein_pdb             — optional PDB file (src/simulation/biochem/TargetLibrary.h registers pharmacophore)
+#   function_modulator      — C++ callback name
+#   default_occupancy       — baseline fraction bound (usually 0)
+#   prefer_logP_min         — ideal drug logP range
+#   prefer_logP_max
+#   prefer_mw_min
+#   prefer_mw_max
+#   prefer_hbd              — expected H-bond donor count
+#   prefer_hba              — expected H-bond acceptor count
+#   prefer_aromatic_rings   — min aromatic rings for good binding
+#
+# Seed set covers existing cell-biology components. Users extend.
+id,kind,protein_pdb,function_modulator,default_occupancy,prefer_logP_min,prefer_logP_max,prefer_mw_min,prefer_mw_max,prefer_hbd,prefer_hba,prefer_aromatic_rings
+TGT_CDK1,enzyme,,modCdkB,0,1.0,4.5,250,500,1,4,2
+TGT_CDK2,enzyme,,modCdkE,0,1.0,4.5,250,500,1,4,2
+TGT_RB,structural,,modRb,0,1.0,4.0,300,600,2,5,1
+TGT_TOPO2,enzyme,,modTopo2,0,-1.0,3.5,400,800,2,8,3
+TGT_TUBULIN,structural,,modTubulin,0,3.0,6.0,500,900,2,10,2
+TGT_BCL2,structural,,modBcl2,0,2.0,5.5,400,800,3,6,2
+TGT_DNA_INTERCALATION,nucleic_acid,,modDnaIntercalate,0,-2.0,2.0,150,500,2,6,1
+TGT_HDAC,enzyme,,modHdac,0,1.0,4.0,250,500,1,5,1
+TGT_KINASE_EGFR,enzyme,,modKinaseEgfr,0,2.0,5.0,350,600,1,5,2
+TGT_PROTEASOME,enzyme,,modProteasome,0,1.0,4.0,300,700,2,6,1
+TGT_RIBOSOME,enzyme,,modRibosome,0,0.0,3.5,400,1000,3,8,1
+TGT_POL2,enzyme,,modPol2,0,1.0,4.0,300,700,2,6,1
+TGT_MITO_COMPLEX_I,enzyme,,modMitoCmplxI,0,2.0,5.0,250,600,1,4,1

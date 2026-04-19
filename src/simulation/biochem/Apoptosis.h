@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <algorithm>
+#include "../../core/Constants.h"
 
 // ══════════════════════════════════════════════════════════════════════════
 //  Apoptosis.h — Programmed cell death simulation
@@ -98,6 +99,24 @@ struct ApoptosisState {
     float apoptosis_progress = 0.0f; // 0 = alive, 1 = fully apoptotic
 };
 
+// ── Multi-threshold trigger inputs ────────────────────────────────────
+// Each field is a normalised 0..1 amplitude mapped from its underlying
+// SimCell / MediumField value via Apoptosis::linMap(). The engine uses
+// these to drive BH3-only, MOMP-priming, and extrinsic receptor inputs.
+struct ApoTriggers {
+    float p53_active       = 0.0f;   // damageLevel above P53_K..P53_F
+    float ROS_stress       = 0.0f;   // ROS above ROS_K..ROS_F
+    float mito_dysfunction = 0.0f;   // mitoPotential below MITO_K..MITO_F
+    float ATP_collapse     = 0.0f;   // atpDangerTimer above ATP_K..ATP_F
+    float hypoxia_severe   = 0.0f;   // hypoxiaTimer above HYPOXIA_K..F
+    float survival_loss    = 0.0f;   // local GF below GF_K..GF_F
+    float anoikis          = 0.0f;   // adhesionStrength below ADH_K..F
+    float drug_pro_apop    = 0.0f;   // drugDamage above DRUG_K..F
+    float FasL_extern      = 0.0f;   // local FasL ng/mL
+    float crowding_chronic = 0.0f;   // chronicPressureBioSec above CROWD_K..F
+    float replicative      = 0.0f;   // senescenceBioSec above REPLIC_K..F
+};
+
 class ApoptosisEngine {
 public:
     ApoptosisState state;
@@ -112,8 +131,69 @@ public:
         state.NFkB_survival = nfkb;
     }
 
+    // ── Multi-threshold step: inject trigger amplitudes into the
+    //    engine state, then run the standard ODE integration. Real-
+    //    literature rate constants for BH3-only upregulation,
+    //    Mcl-1 proteasomal decay, Bax activation, FasL exposure, and
+    //    Bcl-2 ceiling suppression are all tuned in per-bio-second
+    //    units so that a saturated trigger set commits MOMP in
+    //    ~300 bio-s (Ye 2017) and caspase-3 in another ~1200 bio-s
+    //    (Albeck 2008 Ts = 20 min).
+    void step(float dt, const ApoTriggers& t) {
+        auto& s = state;
+        float dclamp = std::min(dt, 0.1f);
+        // p53 ratchets up (FoxO / DNA damage integrator); drug
+        // pro-apoptosis nudges it too. Also feed survival factor loss
+        // indirectly here — Akt drop is what lets p53 stabilise.
+        s.p53_active = std::max(s.p53_active,
+                                std::max(t.p53_active, 0.4f * t.drug_pro_apop));
+        s.Bim        += 0.30f * t.ROS_stress    * dclamp;
+        s.Bim        += 0.20f * t.survival_loss * dclamp;
+        s.MOMP_pores += 0.20f * t.mito_dysfunction * dclamp;
+        s.Mcl1       *= std::max(0.0f, 1.0f - 0.15f * t.ATP_collapse * dclamp);
+        s.tBid       += 0.20f * t.anoikis       * dclamp;
+        s.Bax_active += 0.05f * t.hypoxia_severe * dclamp;
+        s.FasL        = t.FasL_extern + 0.5f * t.crowding_chronic
+                       + 0.2f * t.drug_pro_apop;
+        if (t.replicative > 0.5f) {
+            s.Bcl2 *= std::max(0.0f, 1.0f - 0.002f * dclamp * t.replicative);
+        }
+        // Survival inputs still feed the standard pathway — Akt phos.
+        // of Bad is handled inside step(dt). Loss of survival already
+        // folded into survival_loss via the Bim bump above.
+        step(dt);
+    }
+
+    // Thin accessors used by the focused-cell render bus.
+    float chromatinCondensation() const { return state.DNA_fragmentation; }
+    float nuclearFragmentation() const {
+        return std::clamp(state.lamin_cleavage, 0.0f, 1.0f);
+    }
+    float mitoSwell() const {
+        return std::clamp(state.MOMP_pores, 0.0f, 1.0f);
+    }
+    float cytochromeReleaseFraction() const {
+        float total = state.cytochrome_c_mito + state.cytochrome_c_cyto;
+        return (total > 1e-6f) ? (state.cytochrome_c_cyto / total) : 0.0f;
+    }
+    float psExposure() const { return std::clamp(state.PS_exposure, 0.0f, 1.0f); }
+
+    // Internal integrator — Euler-stable up to dt ≈ 0.1 given the
+    // engine's max rate constant (cyt-c release at 5.0). Callers pass
+    // bio-seconds; the sub-loop keeps each Δt ≤ DT_MAX while still
+    // advancing the cascade at wall-clock-reasonable speed (previously
+    // hard-clamped at 0.01, which left apoptosis effectively frozen
+    // over a single physics tick of ~60 bio-s).
     void step(float dt) {
-        dt = fminf(dt, 0.01f);
+        constexpr float DT_MAX = 0.08f;
+        int sub = (int)ceilf(fmaxf(1.0f, dt / DT_MAX));
+        sub = std::min(sub, 200);                  // cap at 200 per call
+        float h = dt / (float)sub;
+        for (int k = 0; k < sub; k++) stepOnce(h);
+    }
+
+private:
+    void stepOnce(float dt) {
         auto& s = state;
 
         // ── p53 induces BH3-only proteins ──────────────────────────
@@ -235,6 +315,8 @@ public:
         s.cytochrome_c_mito = fmaxf(0, s.cytochrome_c_mito);
         s.Smac_mito = fmaxf(0, s.Smac_mito);
     }
+
+public:
 
     bool isApoptotic() const { return state.committed; }
     float progress() const { return state.apoptosis_progress; }

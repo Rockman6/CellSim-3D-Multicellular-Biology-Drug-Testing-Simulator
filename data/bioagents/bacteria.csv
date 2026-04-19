@@ -1,0 +1,15 @@
+# Bacterial agent catalogue — unified chemistry pipeline.
+#
+# Columns:
+#   id                     — filesystem-safe key
+#   name                   — display name
+#   gram                   — positive | negative
+#   radius_um              — approximate cell radius
+#   secreted_toxin_ids     — drugs.csv ids released into medium
+#   adhesin_protein_ids    — surface adhesin proteins for host attachment
+#   metabolite_profile     — comma-separated species consumed/produced
+#   antibiotic_resistance  — list of antibiotic drug ids this species resists
+#   notes
+#
+# Empty by default — user seeds manually.
+id,name,gram,radius_um,secreted_toxin_ids,adhesin_protein_ids,metabolite_profile,antibiotic_resistance,notes

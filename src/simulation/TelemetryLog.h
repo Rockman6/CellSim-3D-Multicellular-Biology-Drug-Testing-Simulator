@@ -120,7 +120,7 @@ public:
             // Medium (dish-mean concentrations)
             "med_O2_mM,med_CO2_mM,med_glucose_mM,med_glutamine_mM,"
             "med_pyruvate_mM,med_lactate_mM,med_AAPool_mM,"
-            "med_growthF_ngmL,med_ions_mM,med_Ca_mM,med_pH,med_drug_uM,"
+            "med_growthF_ngmL,med_ions_mM,med_Ca_mM,med_pH,"
             "med_water_mM"
             "\n");
     }
@@ -231,7 +231,7 @@ public:
             sim.nutrients.mean(MS_PYRUVATE), sim.nutrients.mean(MS_LACTATE),
             sim.nutrients.mean(MS_AA_POOL),  sim.nutrients.mean(MS_GROWTH_F),
             sim.nutrients.mean(MS_IONS),     sim.nutrients.mean(MS_CALCIUM),
-            sim.nutrients.mean(MS_HPLUS),    sim.nutrients.mean(MS_DRUG),
+            sim.nutrients.mean(MS_HPLUS),
             sim.nutrients.mean(MS_WATER));
         fflush(popF_);
     }
