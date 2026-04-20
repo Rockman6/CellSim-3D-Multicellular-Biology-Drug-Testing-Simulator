@@ -13,10 +13,12 @@ from .sobol import (
     SobolResult,
     sobol_dock,
 )
+from .sobol_viewer import render_sobol_result
 
 __all__ = [
     "DockingMCResult",
     "monte_carlo_dock",
     "SobolResult",
     "sobol_dock",
+    "render_sobol_result",
 ]
