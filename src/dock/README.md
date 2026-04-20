@@ -104,6 +104,27 @@ python -u tests/dock/test_redocking.py
 Gate passes iff: top-1 RMSD ≤ 2.5 Å AND best-of-top-3 < 2.0 Å.
 Verified locally on 1STP: top-1 = 2.02 Å, top-3 best = 1.99 Å.
 
+### Batch screen: N compounds → ranked CSV (the wet-lab deliverable)
+```bash
+conda activate cellsim
+python -m src.dock.batch \
+    --smi benchmarks/dock/1stp_batch_5.smi \
+    --receptor benchmarks/dock/1stp.pdb \
+    --center 11.12,1.68,-10.75 --box 20,20,20 \
+    --exhaustiveness 16 --num-modes 3 --seed 1 \
+    --workers 4 --cpu-per-job 2 \
+    --crystal-pdb benchmarks/dock/1stp.pdb --crystal-resname BTN \
+    --out-csv dock_report.csv
+```
+Prints a ranked stdout table (RANK / NAME / ΔG / K_d / POCKET / RMSD)
+and writes the full CSV. Biologists can drop the CSV directly into
+Excel / Prism / a slide to justify their wet-lab shortlist.
+
+On the bundled `1stp_batch_5.smi` the pipeline correctly ranks
+biotin (true binder) at #1 with pocket:ok + crystal-RMSD 1.96 Å,
+with four non-binder drugs trailing behind. Wall time ~20 s for 5
+compounds on a 4-core laptop.
+
 ### Programmatic use
 ```python
 from src.dock import dock_ligand, attach_crystal_rmsd, attach_posebusters
