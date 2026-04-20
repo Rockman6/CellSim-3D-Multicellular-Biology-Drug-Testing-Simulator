@@ -8,10 +8,12 @@ on:
       - "src/md/**"
       - "src/dock/**"
       - "src/quantum/**"
+      - "src/uq/**"
       - "tests/chem/**"
       - "tests/md/**"
       - "tests/dock/**"
       - "tests/quantum/**"
+      - "tests/uq/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
       - "benchmarks/dock/**"
@@ -24,10 +26,12 @@ on:
       - "src/md/**"
       - "src/dock/**"
       - "src/quantum/**"
+      - "src/uq/**"
       - "tests/chem/**"
       - "tests/md/**"
       - "tests/dock/**"
       - "tests/quantum/**"
+      - "tests/uq/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
       - "benchmarks/dock/**"
@@ -101,6 +105,9 @@ jobs:
 
       - name: SoM smoke (Layer 1.4, CYP3A4 BDE on 3 drugs)
         run: python -u tests/quantum/test_som_smoke.py
+
+      - name: UQ MC-dock smoke (Layer 1.6, 4 seeds on 1STP biotin)
+        run: python -u tests/uq/test_mc_dock_smoke.py
 
   scale:
     name: scale (workflow_dispatch only)
