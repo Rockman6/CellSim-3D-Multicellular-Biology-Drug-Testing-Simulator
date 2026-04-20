@@ -39,13 +39,19 @@ python -m src.dock.batch \
 Output:
 
 ```
-RANK  NAME                    ΔG(kcal)   K_d       POCKET  RMSD    Ro5  QED   logS
-   1  biotin_TRUE_BINDER        -7.44    3.5 µM    ✓       1.96 Å  ✓    0.49  -1.53
-   2  ibuprofen_negative        -7.36    4.1 µM    ?       -       ✓    0.82  -3.09
-   3  aspirin_negative          -6.66   13.0 µM    ✓       -       ✓    0.55  -1.99
-   4  acetaminophen_negative    -6.31   23.8 µM    ?       -       ✓    0.59  -1.97
-   5  caffeine_negative         -5.48   95.7 µM    ?       -       ✓    0.54  -0.87
+RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STRAIN       Ro5  QED   logS
+   1  biotin_TRUE_BINDER       follow_up         -7.44    3.5 µM    ✓       acceptable  ✓    0.49  -1.53
+   2  ibuprofen_negative       deprioritise      -7.36    4.1 µM    ?       good        ✓    0.82  -3.09
+   3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
+   4  acetaminophen_negative   drop              -6.31   23.8 µM    ?       acceptable  ✓    0.59  -1.97
+   5  caffeine_negative        drop              -5.48   95.7 µM    ?       good        ✓    0.54  -0.87
 ```
+
+The `TRIAGE` column (`follow_up` / `review` / `deprioritise` /
+`drop`) is the one-decision column: CellSim synthesises ΔG +
+pose-strain + PoseBusters + ADMET into one verdict with a
+paste-ready reason string. Wet-lab users read one column, not
+five booleans.
 
 Plus `profile_01_biotin_TRUE_BINDER.png`, `profile_02_...png`,
 `profile_03_...png` — one-page dashboards showing 3D + charges,
