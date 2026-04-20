@@ -119,6 +119,9 @@ jobs:
       - name: dock vina cache smoke (cache hit speed-up)
         run: python -u tests/dock/test_vina_cache.py
 
+      - name: dock pose export smoke (SDF + PDB for PyMOL/ChimeraX)
+        run: python -u tests/dock/test_export_smoke.py
+
       - name: quantum smoke (Layer 1.4, xTB GFN2 on 10 drugs, 8/10)
         run: python -u tests/quantum/test_xtb_smoke.py --gate 8
 
