@@ -56,6 +56,9 @@ usage: cellsim <subcommand> [args...]
   som         CYP3A4 site-of-metabolism prediction (BDE)
                 -> src/quantum/metabolism.py
 
+  som-validate  check SoM predictor against literature sites
+                -> src/quantum/som_validation.py
+
   md-ligand   vacuum Langevin MD on a SMILES
                 -> src/md/simulate.py
 
@@ -139,6 +142,7 @@ case "${1:-}" in
     xtb)         shift; exec python -m src.quantum.xtb "$@" ;;
     dft)         shift; exec python -m src.quantum.dft "$@" ;;
     som)         shift; exec python -m src.quantum.metabolism "$@" ;;
+    som-validate) shift; exec python -m src.quantum.som_validation "$@" ;;
     md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
     md-protein)  shift; exec python -m src.md.protein "$@" ;;
     md-view)     shift; exec python -m src.md.protein_viewer "$@" ;;
