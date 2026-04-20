@@ -193,8 +193,18 @@ def parametrize_smiles(
     try:
         off_mol.assign_partial_charges(partial_charge_method=charge_method)
     except Exception as e:
-        # Truncate the very long OpenFF diagnostic to the first line.
+        # Truncate the very long OpenFF diagnostic to the first line
+        # and surface the #1 user-level cause: running outside an
+        # activated conda env so AMBERHOME is unset and the
+        # AmberToolsToolkitWrapper never registers.
         reason = str(e).splitlines()[0]
+        import os
+
+        if (charge_method.startswith("am1") and
+                not os.environ.get("AMBERHOME")):
+            reason += (
+                " [likely cause: AMBERHOME is unset — run under "
+                "`conda activate cellsim` or `mamba run -n cellsim`]")
         return _rdkit_fallback(
             f"{charge_method} charge assignment failed: {reason}")
 

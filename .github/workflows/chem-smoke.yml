@@ -1,0 +1,81 @@
+name: chem-smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/chem/**"
+      - "tests/chem/**"
+      - "benchmarks/chembl/**"
+      - "environment.yml"
+      - ".github/workflows/chem-smoke.yml"
+  pull_request:
+    paths:
+      - "src/chem/**"
+      - "tests/chem/**"
+      - "benchmarks/chembl/**"
+      - "environment.yml"
+      - ".github/workflows/chem-smoke.yml"
+  workflow_dispatch:
+    inputs:
+      scale_n:
+        description: "Run the scale test with N compounds (0 = skip)"
+        required: false
+        default: "0"
+
+jobs:
+  smoke:
+    name: smoke_10 (full tier, conda)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mambaforge + cache env
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: cellsim
+          miniforge-version: latest
+          use-mamba: true
+
+      - name: Env report
+        run: |
+          python -c "import rdkit, openff.toolkit, openmm; \
+            print('rdkit', rdkit.__version__); \
+            print('openff-toolkit', openff.toolkit.__version__); \
+            print('openmm', openmm.__version__)"
+
+      - name: smoke_10 (10 canonical drugs, full tier ≥ 8/10)
+        run: python tests/chem/test_parametrize_smoke.py
+
+  scale:
+    name: scale (workflow_dispatch only)
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.scale_n != '0'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mambaforge + cache env
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: cellsim
+          miniforge-version: latest
+          use-mamba: true
+
+      - name: Fetch ChEMBL subset
+        run: python scripts/fetch_chembl_sample.py --n ${{ github.event.inputs.scale_n }}
+
+      - name: Scale parametrise (gate 99 %)
+        run: |
+          python tests/chem/test_parametrize_scale.py \
+            --smi data/chembl/chembl_${{ github.event.inputs.scale_n }}.smi \
+            --workers $(nproc) --charge am1bcc --gate 99.0
