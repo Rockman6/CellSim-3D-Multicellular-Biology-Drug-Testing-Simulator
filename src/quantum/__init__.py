@@ -9,8 +9,16 @@ from .xtb import (
     XtbResult,
     xtb_single_point,
 )
+from .metabolism import (
+    SoMCandidate,
+    SoMResult,
+    predict_cyp_som_bde,
+)
 
 __all__ = [
     "XtbResult",
     "xtb_single_point",
+    "SoMCandidate",
+    "SoMResult",
+    "predict_cyp_som_bde",
 ]
