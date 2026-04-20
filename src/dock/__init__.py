@@ -8,10 +8,20 @@ from .vina import (
     DockingResult,
     DockingPose,
     dock_ligand,
+    attach_reference_rmsd,
+)
+from .pose_rmsd import (
+    attach_crystal_rmsd,
+    extract_hetatm_ligand,
+    pose_rmsd_symmetry_aware,
 )
 
 __all__ = [
     "DockingResult",
     "DockingPose",
     "dock_ligand",
+    "attach_reference_rmsd",
+    "attach_crystal_rmsd",
+    "extract_hetatm_ligand",
+    "pose_rmsd_symmetry_aware",
 ]
