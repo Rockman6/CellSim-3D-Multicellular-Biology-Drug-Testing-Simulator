@@ -101,6 +101,64 @@ class BatchConfig:
                                       # (slower, tighter ratio CI)
 
 
+def _triage_call(record: dict) -> tuple[str, str]:
+    """Synthesise a per-compound triage verdict for a wet-lab user.
+
+    Combines the ΔG tier with the pose-trust signals (strain band,
+    PoseBusters pocket flag) and the critical ADMET safety flags
+    (mutagenicity and hERG) into one actionable call:
+
+        follow_up     ΔG strong, pose trustworthy, ADMET clean
+        review        one signal is ambiguous — needs human judgement
+        deprioritise  ΔG weak or pose questionable, but not disqualified
+        drop          ΔG too weak OR pose non-physical OR known-bad ADMET
+
+    Returns `(call, reason)`. The reason is a short human-readable
+    string biologists can paste into lab notes.
+    """
+    dG = record.get("dG_kcalmol")
+    if dG is None:
+        return "drop", "no ΔG"
+
+    strain = record.get("strain_band")
+    pocket_ok = record.get("pocket_ok")
+    mut = record.get("mutagenic_risk")
+    herg = record.get("herg_risk")
+    ro5 = record.get("ro5_violations")
+
+    # Drop criteria — any one is disqualifying.
+    if strain == "reject":
+        return "drop", "non-physical pose (strain)"
+    if mut == "high":
+        return "drop", "high mutagenicity (Ames SMARTS hit)"
+    if dG > -6.0:
+        return "drop", "ΔG > -6 (too weak to triage)"
+    if ro5 is not None and ro5 >= 3:
+        return "drop", f"{ro5} Ro5 violations"
+
+    # Review flags (ambiguity).
+    reasons: list[str] = []
+    if strain == "suspicious":
+        reasons.append("suspicious pose strain")
+    if pocket_ok is False:
+        reasons.append("PoseBusters pocket-fail")
+    if herg == "high":
+        reasons.append("hERG alert")
+    if mut == "medium":
+        reasons.append("medium mutagenicity")
+    if reasons:
+        # Weak ΔG + any review flag → deprioritise; strong ΔG with
+        # a flag is worth a biologist's time → review.
+        if dG > -7.5:
+            return "deprioritise", "; ".join(reasons)
+        return "review", "; ".join(reasons)
+
+    # Deprioritise vs follow_up purely on ΔG tier.
+    if dG > -7.5:
+        return "deprioritise", f"ΔG {dG:+.2f} borderline"
+    return "follow_up", f"ΔG {dG:+.2f}, pose trustworthy"
+
+
 def _kd_label(kd_nM: float) -> str:
     if kd_nM < 1.0:
         return f"{kd_nM * 1000:.1f} pM"
@@ -299,6 +357,9 @@ def _worker(task: tuple) -> dict:
         **_mc_fields(),
         **_strain_fields(),
     )
+    call, why = _triage_call(record)
+    record["triage"] = call
+    record["triage_reason"] = why
     return record
 
 
@@ -387,7 +448,8 @@ def _progress_line(i: int, n: int, rec: dict) -> None:
 
 def _write_csv(records: list[dict], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    cols = ["rank", "name", "smiles", "formula", "inchi_key",
+    cols = ["rank", "name", "triage", "triage_reason",
+            "smiles", "formula", "inchi_key",
             "dG_kcalmol", "dG_kJmol", "Kd_nM", "Kd_human",
             "dG_mean_kcalmol", "dG_std_kcalmol",
             "dG_ci95_lo", "dG_ci95_hi",
@@ -557,13 +619,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Biologist-friendly summary table on stdout.
     print()
-    print("RANK  NAME                       ΔG(kcal)   K_d        "
-          "POCKET  RMSD      Ro5  QED   logS   class")
-    print("-" * 104)
+    print("RANK  NAME                       TRIAGE        "
+          "ΔG(kcal)   K_d        "
+          "POCKET  STRAIN       Ro5  QED   logS")
+    print("-" * 112)
     for r in records[:20]:
         if r.get("ok"):
-            rmsd = (f"{r['crystal_rmsd_A']:.2f} Å"
-                    if r.get("crystal_rmsd_A") is not None else "-")
             pocket = ("✓" if r.get("pocket_ok")
                       else "✗" if r.get("pocket_ok") is False
                       else "?")
@@ -573,11 +634,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                    else "-")
             logs = (f"{r['logS']:+.2f}" if r.get("logS") is not None
                     else "-")
-            sol = (r.get("solubility") or "-")[:15]
+            triage = r.get("triage") or "-"
+            strain = r.get("strain_band") or "-"
             print(f"{r['rank']:>4d}  {r['name']:<25s}  "
+                  f"{triage:<12s}  "
                   f"{r['dG_kcalmol']:>8.2f}   {r['Kd_human']:<9s}  "
-                  f" {pocket}      {rmsd:<8s}  {ro5:<4s} "
-                  f"{qed:<5s} {logs:<6s} {sol}")
+                  f" {pocket}      {strain:<11s} "
+                  f"{ro5:<4s} {qed:<5s} {logs:<6s}")
         else:
             print(f" -    {r['name']:<25s}  FAIL  "
                   f"{(r.get('reason') or '')[:50]}")
