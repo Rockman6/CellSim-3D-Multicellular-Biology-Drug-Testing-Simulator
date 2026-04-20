@@ -6,6 +6,13 @@ potential) removed per the non-AI / physics-only commitment in
 
 **Scope horizon:** 1–2 years, 1 → 3–5 FTE.
 
+**Current progress (April 2026):** Layers 1.1 / 1.2 / 1.4 / 1.6
+shipped MVP, Layer 1.3 docking-side shipped with triage / strain /
+shortlist / off-target / DDI-risk surfaces (FEP integration open),
+Layer 1.5 scaffolded, Layer 1.7 harness partial (PoseBusters
+integrated). See `ROADMAP.md` for the current status table and
+`BENCHMARKS.md` for the numbers being enforced by the 34-gate CI.
+
 **Single-sentence deliverable:** `cellsim-chem`, a transparent,
 physics-first chemistry engine that screens 10⁴–10⁵ compounds for
 protein–ligand binding and basic reactivity, emits uncertainty-
@@ -40,11 +47,12 @@ relative binding free energies. SQLite + HDF5 pose / ΔG cache keyed
 by `(ligand_hash, receptor_hash, method, ff_version)`. Viewer:
 receptor Cα ribbon + top-pose overlay + ΔG bar with Monte-Carlo CI.
 
-**Optional fast-guess mode:** GNINA CNN-scored docking may ship as
-an explicitly labeled "fast-guess" option alongside Vina. The CNN
-score is displayed next to the Vina score, never as the sole value
-for final predictions. Fast-guess mode is off by default; production
-pipelines run Vina primary.
+**No CNN-scored mode.** Per the 2026-04-20 non-AI amendment in
+`MISSION.md`, GNINA CNN scoring is excluded from Campaign 1.
+AutoDock Vina's empirical function is the only scoring path;
+pose trust is enforced by the UFF-ensemble strain gate
+(`src/dock/strain.py`) and PoseBusters geometry checks, both of
+which are physics/rule-based.
 
 ### 1.4 Quantum — `src/quantum/`
 `xtb` GFN2-xTB semi-empirical for reactive fragments, geometry
@@ -89,7 +97,7 @@ red-team leaderboard.
 ## Exit criteria (hard pass/fail)
 
 1. PDBBind refined-set blind pose recovery ≥ 75 % within 2 Å RMSD,
-   using AutoDock Vina primary (CNN-scored mode disabled).
+   using AutoDock Vina (no CNN scoring; see MISSION.md).
 2. ChEMBL held-out IC50 ranking Pearson r ≥ 0.7 on 5 kinase panels.
 3. PoseBusters physical-validity pass rate ≥ 95 %.
 4. UQ calibration error ≤ 10 % on held-out set via MAPIE conformal
