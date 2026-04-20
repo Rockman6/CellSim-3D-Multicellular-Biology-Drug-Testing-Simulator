@@ -86,8 +86,16 @@ def parametrize_smiles(
     charge_method: str = "am1bcc",
     ff_name: str = "openff-2.1.0.offxml",
     random_seed: int = 1,
+    cache: Optional["object"] = None,
 ) -> ParametrizeResult:
     """Return a ParametrizeResult for the given SMILES.
+
+    If `cache` (an `src.cache.Cache` instance) is supplied, an
+    identical-physics cache hit short-circuits the expensive
+    AM1-BCC + OpenFF path (~20 s → ~ms). Only `ok=True` results
+    are cached, so transient failures don't poison future runs.
+    Cache key is content-addressed: `(compound_hash(smiles),
+    method=parametrize|ff|charge|seed)`.
 
     Never raises for recoverable failures (unparsable SMILES, missing
     parameters, etc.) — the failure is captured in `result.ok = False`
@@ -96,6 +104,29 @@ def parametrize_smiles(
     """
 
     versions = _tool_versions()
+
+    # -------- cache lookup ------------------------------------
+    cache_key = None
+    cache_method = None
+    if cache is not None:
+        try:
+            from src.cache.hashing import compound_hash, method_key
+            cache_key = compound_hash(smiles)
+            cache_method = method_key(
+                "parametrize", ff_name,
+                {"charge": charge_method, "seed": random_seed})
+            if cache_key is not None:
+                hit = cache.get(cache_key, cache_method)
+                if hit is not None:
+                    logger.debug("cache HIT for %s / %s",
+                                 cache_key, cache_method)
+                    return ParametrizeResult(**{
+                        k: v for k, v in hit.value.items()
+                        if k in ParametrizeResult.__dataclass_fields__
+                    })
+        except Exception as e:
+            logger.debug("cache lookup failed: %s", e)
+            cache_key = None  # fall through to compute path
 
     try:
         from rdkit import Chem
@@ -237,7 +268,7 @@ def parametrize_smiles(
     # Sanity: the generated System should at least construct.
     _ = system.getNumParticles()
 
-    return ParametrizeResult(
+    result = ParametrizeResult(
         smiles=smiles,
         ok=True,
         inchi=inchi,
@@ -253,6 +284,14 @@ def parametrize_smiles(
         elements=elements,
         bonds=bonds,
     )
+
+    # -------- cache put (only on ok=True) ---------------------
+    if cache is not None and cache_key is not None:
+        try:
+            cache.put(cache_key, cache_method, result.as_dict())
+        except Exception as e:
+            logger.debug("cache put failed: %s", e)
+    return result
 
 
 def dump_json(result: ParametrizeResult) -> str:
