@@ -249,7 +249,9 @@ def write_csv(result: OffTargetResult, path: str | Path) -> None:
             "strain_band", "strain_kcalmol", "strain_ratio",
             "pocket_center_x", "pocket_center_y", "pocket_center_z",
             "wall_s"]
-    with path.open("w", newline="") as fo:
+    # UTF-8 BOM so Excel on Windows auto-detects encoding (µM in
+    # Kd_human column; same reasoning as src/dock/batch.py).
+    with path.open("w", newline="", encoding="utf-8-sig") as fo:
         w = csv.writer(fo)
         w.writerow(cols)
         for rank, e in enumerate(result.sorted_by_affinity(), 1):

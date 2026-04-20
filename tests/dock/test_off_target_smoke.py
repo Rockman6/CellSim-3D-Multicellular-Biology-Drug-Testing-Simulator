@@ -72,7 +72,9 @@ def test_off_target_biotin():
         csv_path = Path(tmp) / "out.csv"
         write_csv(r, csv_path)
         assert csv_path.exists()
-        with csv_path.open() as f:
+        # utf-8-sig so the BOM cellsim writes is stripped before
+        # DictReader sees the header.
+        with csv_path.open(encoding="utf-8-sig") as f:
             rows = list(csv.DictReader(f))
         # 3 rows (one per receptor), with the expected header keys.
         assert len(rows) == 3

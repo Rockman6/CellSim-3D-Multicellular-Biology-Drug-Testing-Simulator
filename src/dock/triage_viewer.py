@@ -54,7 +54,9 @@ STRAIN_COLOURS = {
 
 def _load_records(csv_path: Path) -> list[dict]:
     records: list[dict] = []
-    with csv_path.open() as fp:
+    # utf-8-sig handles both BOM-prefixed CSVs (our own
+    # cellsim dock outputs) and plain UTF-8 without breaking.
+    with csv_path.open(encoding="utf-8-sig") as fp:
         for row in csv.DictReader(fp):
             records.append(row)
     return records
