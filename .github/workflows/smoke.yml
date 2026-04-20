@@ -9,7 +9,9 @@ on:
       - "src/dock/**"
       - "src/quantum/**"
       - "src/uq/**"
+      - "src/cache/**"
       - "tests/chem/**"
+      - "tests/cache/**"
       - "tests/md/**"
       - "tests/dock/**"
       - "tests/quantum/**"
@@ -27,7 +29,9 @@ on:
       - "src/dock/**"
       - "src/quantum/**"
       - "src/uq/**"
+      - "src/cache/**"
       - "tests/chem/**"
+      - "tests/cache/**"
       - "tests/md/**"
       - "tests/dock/**"
       - "tests/quantum/**"
@@ -120,6 +124,9 @@ jobs:
 
       - name: UQ conformal smoke (Layer 1.6, synthetic calibration)
         run: python -u tests/uq/test_conformal_smoke.py
+
+      - name: cache smoke (content-addressed SQLite store)
+        run: python -u tests/cache/test_cache_smoke.py
 
   scale:
     name: scale (workflow_dispatch only)
