@@ -269,35 +269,57 @@ def render_profile(
     ax_call.axis("off")
     if admet.ok:
         # Big coloured badge.
-        y = 0.92
+        y = 0.96
         if admet.ro5_pass:
             ax_call.text(0.5, y, "Ro5 ✓", ha="center",
-                         fontsize=30, color="#2a9d3a", weight="bold")
+                         fontsize=26, color="#2a9d3a", weight="bold")
         else:
             ax_call.text(0.5, y, f"Ro5 ✗ ×{admet.ro5_violations}",
-                         ha="center", fontsize=26, color="#c62828",
+                         ha="center", fontsize=22, color="#c62828",
                          weight="bold")
-        ax_call.text(0.5, 0.76,
+        ax_call.text(0.5, 0.82,
                      f"QED = {admet.qed:.2f}",
-                     ha="center", fontsize=18,
+                     ha="center", fontsize=16,
                      color=("#2a9d3a" if admet.qed >= 0.6
                             else "#e6a82a" if admet.qed >= 0.4
                             else "#c62828"))
-        ax_call.text(0.5, 0.60,
+        # Safety row (BBB + hERG) — biologist-critical glance.
+        bbb_label = ("BBB ✓" if admet.bbb_permeable
+                     else "BBB ✗" if admet.bbb_permeable is False
+                     else "BBB ?")
+        bbb_color = ("#2a9d3a" if admet.bbb_permeable
+                     else "#c62828" if admet.bbb_permeable is False
+                     else "#888888")
+        herg_label = (f"hERG {admet.herg_risk}"
+                      if admet.herg_risk else "hERG ?")
+        herg_color = ("#2a9d3a" if admet.herg_risk == "low"
+                      else "#e6a82a" if admet.herg_risk == "medium"
+                      else "#c62828" if admet.herg_risk == "high"
+                      else "#888888")
+        ax_call.text(0.26, 0.68, bbb_label, ha="center",
+                     fontsize=16, color=bbb_color, weight="bold")
+        ax_call.text(0.74, 0.68, herg_label, ha="center",
+                     fontsize=16, color=herg_color, weight="bold")
+        ax_call.text(0.5, 0.54,
                      f"logS = {admet.logS_ESOL:+.2f}",
-                     ha="center", fontsize=16)
-        ax_call.text(0.5, 0.50, admet.solubility_class, ha="center",
-                     fontsize=13, style="italic")
+                     ha="center", fontsize=14)
+        ax_call.text(0.5, 0.46, admet.solubility_class, ha="center",
+                     fontsize=11, style="italic")
         ax_call.text(0.5, 0.32,
                      f"MW {admet.MW:.0f}  logP {admet.logP:+.2f}",
-                     ha="center", fontsize=14)
+                     ha="center", fontsize=13)
         ax_call.text(0.5, 0.20,
                      f"TPSA {admet.tpsa:.1f} Å²",
-                     ha="center", fontsize=12)
-        ax_call.text(0.5, 0.08,
+                     ha="center", fontsize=11)
+        ax_call.text(0.5, 0.10,
                      f"HBA {admet.hba}  HBD {admet.hbd}  "
                      f"rotb {admet.rotb}",
-                     ha="center", fontsize=11)
+                     ha="center", fontsize=10)
+        if admet.herg_alerts:
+            ax_call.text(0.5, 0.02,
+                         "hERG: " + ",".join(admet.herg_alerts[:2]),
+                         ha="center", fontsize=7,
+                         color="#888888", style="italic")
 
     fig.suptitle(f"CellSim drug profile  —  {name}   "
                  f"{admet.formula or smiles}",
