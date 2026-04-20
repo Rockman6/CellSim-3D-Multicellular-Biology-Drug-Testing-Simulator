@@ -58,14 +58,30 @@ What happens:
 Expected stdout:
 
 ```
-RANK  NAME                    ΔG(kcal)   K_d       POCKET  RMSD    Ro5  QED   logS
-   1  biotin_TRUE_BINDER        -7.45    3.5 µM    ✓       1.96 Å  ✓    0.49  -1.53
-   2  ibuprofen_negative        -7.36    4.1 µM    ?       -       ✓    0.82  -3.09
-   3  aspirin_negative          -6.66   13.0 µM    ✓       -       ✓    0.55  -1.99
+RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STRAIN       Ro5  QED   logS
+   1  biotin_TRUE_BINDER       follow_up         -7.45    3.5 µM    ✓       acceptable  ✓    0.49  -1.53
+   2  ibuprofen_negative       deprioritise      -7.36    4.1 µM    ?       good        ✓    0.82  -3.09
+   3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
 ```
 
-Biotin correctly ranks #1 with a 1.96 Å crystal RMSD, `pocket:ok`,
-and soluble classification.
+The `TRIAGE` column is the one-decision column for wet-lab
+handoff. Four verdicts:
+
+| verdict | what to do |
+|---|---|
+| `follow_up` | strong ΔG, trustworthy pose, ADMET clean — synthesise |
+| `review` | strong ΔG but one flag (strain / pocket / hERG / Ames) needs a chemist's eye |
+| `deprioritise` | borderline ΔG or a flag on a borderline hit — skip unless scaffold-important |
+| `drop` | too weak (ΔG > −6), non-physical pose, ≥3 Ro5 violations, or high-risk Ames |
+
+The CSV carries a `triage_reason` column with a paste-ready
+string (`"ΔG -7.23 borderline"`, `"suspicious pose strain; hERG
+alert"`). Biologist reads one column, not five booleans.
+
+The `STRAIN` column bands the UFF-ensemble strain ratio of the
+top pose (Buttenschoen 2024 Chem Sci 15:3130): `good` / `acceptable`
+/ `suspicious` / `reject`. A `reject` here force-drops the
+compound regardless of ΔG because the pose isn't physical.
 
 ## 3. Reading a drug-profile PNG
 
@@ -244,6 +260,8 @@ Sobol sensitivity — which Vina knob moves ΔG most?
 | Column | Meaning |
 |---|---|
 | `rank` | Rank within successful compounds (best ΔG = 1). |
+| `triage` | Synthesised verdict: `follow_up` / `review` / `deprioritise` / `drop`. One decision column for wet-lab handoff. |
+| `triage_reason` | Paste-ready explanation (e.g. "ΔG -7.23 borderline", "high mutagenicity (Ames SMARTS hit)"). |
 | `dG_kcalmol` | Vina top-pose ΔG, kcal/mol. More negative = tighter. |
 | `dG_kJmol` | Same in SI. |
 | `Kd_nM` | Implied K_d = exp(ΔG / RT). |
@@ -255,6 +273,9 @@ Sobol sensitivity — which Vina knob moves ΔG most?
 | `pocket_ok` | PoseBusters: pose placed in pocket, no protein clashes. Triage signal. |
 | `geometry_ok` | PoseBusters: bonds/angles/chirality all sane. Required for FEP. |
 | `pb_all_ok` | All PoseBusters tests pass including RMSD ≤ 2 Å. |
+| `strain_band` | UFF-ensemble strain ratio band (good / acceptable / suspicious / reject) — Buttenschoen 2024 Chem Sci. |
+| `strain_kcalmol` | Absolute strain energy = E(bound) − E(relaxed) for the docked top pose. |
+| `strain_ratio` | E(bound) / E(ensemble_avg). Ratio > 7 means the pose is almost certainly non-physical. |
 | `MW`, `logP`, `TPSA`, `HBA`, `HBD`, `rotb` | Lipinski Ro5 inputs + PSA. |
 | `ro5_pass` / `ro5_violations` | Rule-of-five flag. |
 | `QED` | Bickerton 2012 drug-likeness score in [0,1]. |
