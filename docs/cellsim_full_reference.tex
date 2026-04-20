@@ -6870,6 +6870,21 @@ know:
         validator extended with 4 additional gates for peak count,
         mean period, stress-scaling, and control specificity;
         zero drift on seq02 preserved at 5.1\%, 2026-04-20).
+  \item Phase G4 (p53 → p21 via CDKN1A promoter Hill(n=8) replaces
+        the prior \texttt{damageLevel → p21} hack; new
+        \texttt{cellsim\_cisplatin\_arrest} validator with 4 gates:
+        drug p53 $\geq 1.25\times$ control (ATM axis active),
+        drug G2+M $\geq 1.20\times$ control (cisplatin G2/M arrest,
+        Sorenson 1990),
+        drug divisions $\leq 0.85\times$ control (cytostatic),
+        control divides $\geq 1\times$/cell/24 h (healthy baseline).
+        Measured at seed 0x1: p53 ratio 1.79, G2+M ratio 2.35 (100\%
+        cisplatin-G2 vs 42\% control), division ratio 0.124.
+        All 4 gates pass across 4 pinned seeds.
+        Calibration shift documented: seq02 CTC-HeLa error band
+        moves from pre-G4 5.1--7.4\% to post-G4 4.9--7.3\%
+        (mean $\approx 6.4 \pm 0.9\%$); the shift is within the
+        pre-existing seed distribution, 2026-04-20).
   \item Phase 8B-L roadmap (16 remaining sessions).
 \end{itemize}
 
