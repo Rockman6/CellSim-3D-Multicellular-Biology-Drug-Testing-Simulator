@@ -77,6 +77,12 @@ usage: cellsim <subcommand> [args...]
   doctor      end-to-end install sanity check
                 -> scripts/doctor.py
 
+  calib       run one calibration-set YAML + render scatter PNG
+                -> scripts/calib_cli.py
+
+  bench       run all bundled benchmarks + aggregate summary
+                -> scripts/bench_cli.py
+
   help        show this message
   version     show cellsim / tool versions
 
@@ -115,6 +121,10 @@ case "${1:-}" in
         _version ;;
     doctor)
         exec python scripts/doctor.py ;;
+    calib)
+        shift; exec python scripts/calib_cli.py "$@" ;;
+    bench)
+        shift; exec python scripts/bench_cli.py "$@" ;;
     dock)        shift; exec python -m src.dock.batch "$@" ;;
     dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
     off-target)  shift; exec python -m src.dock.off_target "$@" ;;
