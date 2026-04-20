@@ -796,6 +796,42 @@ def main(argv: Optional[list[str]] = None) -> int:
                   f"{(r.get('reason') or '')[:50]}")
     if len(records) > 20:
         print(f"... ({len(records) - 20} more; see CSV)")
+
+    # "Next steps" guidance: tell the biologist what to do with
+    # each verdict bucket. This is the paste-ready wet-lab handoff
+    # block — biologist reads this paragraph, not Vina thresholds.
+    from collections import Counter
+    verdict_counts = Counter(
+        r.get("triage") for r in records if r.get("ok"))
+    if verdict_counts:
+        print()
+        print("Next steps")
+        print("-" * 50)
+        n_follow = verdict_counts.get("follow_up", 0)
+        n_review = verdict_counts.get("review", 0)
+        n_dep = verdict_counts.get("deprioritise", 0)
+        n_drop = verdict_counts.get("drop", 0)
+        if n_follow:
+            print(f"  • Send {n_follow} follow_up compound(s) to "
+                  "wet lab.")
+        if n_review:
+            print(f"  • Re-examine {n_review} review compound(s) "
+                  "— one flag (strain/hERG/Ames/pocket) needs a "
+                  "chemist's eye before committing.")
+        if n_dep:
+            print(f"  • {n_dep} deprioritise compound(s): ignore "
+                  "unless scaffold-important; if they matter, "
+                  "rescore with FEP before triage.")
+        if n_drop:
+            print(f"  • {n_drop} drop compound(s): too weak / "
+                  "non-physical pose / known-bad ADMET. Do not "
+                  "synthesise.")
+        if n_follow == 0 and n_review == 0:
+            print("  ⚠  No compounds qualify for wet-lab "
+                  "follow-up in this batch. Either the library "
+                  "has no hits against this target, the ΔG "
+                  "threshold is too strict, or the target isn't "
+                  "a Vina-friendly class (see TUTORIAL §8).")
     return 0
 
 
