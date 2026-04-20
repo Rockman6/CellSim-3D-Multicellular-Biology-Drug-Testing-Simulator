@@ -269,6 +269,43 @@ Reproducer: `cellsim off-target --ligand-smiles "…" --receptors "…"`.
 
 ---
 
+## 1.3 Pose-trust signal: UFF-ensemble strain as a cross-cutting gate
+
+[`src/dock/strain.py`](src/dock/strain.py) computes a per-pose
+strain ratio via PoseBusters' UFF-ensemble protocol (Buttenschoen
+et al 2024 Chem Sci 15:3130) and bands it:
+
+| Band | Ratio | Interpretation |
+|---|:-:|---|
+| `good` | < 1.5 | crystal-like |
+| `acceptable` | 1.5–3 | plausible for flexible drugs |
+| `suspicious` | 3–7 | likely Vina scoring artefact |
+| `reject` | > 7 | non-physical pose |
+
+CellSim uses this one signal across every pose-producing surface
+so a biologist gets consistent trust calls:
+
+| Surface | How strain is used |
+|---|---|
+| `cellsim dock` (batch) | Top-pose column; `strain_band=reject` auto-downgrades `triage` to `drop`. If the best-ΔG pose is rejected, `strain_gate` promotes the best-ΔG pose whose strain is good/acceptable; the `strain_promoted_from_rank` column records which Vina rank was picked. |
+| `cellsim dock-one` | Title-line badge next to ΔG / K_d / crystal-RMSD. |
+| `cellsim off-target` | Per-receptor column + annotated alongside ΔG in the bar chart (biotin-in-trypsin flags `suspicious` → honest no-selectivity-concern call). |
+| `cellsim cyp-inhibit` | Attached to the result; a `reject` pose auto-downgrades high/medium DDI risk to `low` with a reason string. |
+| `cellsim som` (heme-access) | Recorded alongside the top catalytically-productive pose's dock ΔG so site-of-metabolism predictions built on strained poses can be discounted. |
+
+Rationale: Vina's empirical score does not include an intra-
+molecular strain term, so any Vina pipeline can "tighten" a hit
+by accepting a high-energy ligand conformation. Strain-as-trust
+is the non-AI, physics-legitimate counter: a good ΔG on a
+conformation above the UFF ensemble mean is not a real hit.
+
+Smoke gates: [`tests/dock/test_strain_smoke.py`](tests/dock/test_strain_smoke.py)
+(3 real cocrystals), [`tests/dock/test_strain_gate_smoke.py`](tests/dock/test_strain_gate_smoke.py)
+(5-case promotion rule table), [`tests/dock/test_cyp_strain_downgrade_smoke.py`](tests/dock/test_cyp_strain_downgrade_smoke.py)
+(6-case DDI-risk downgrade table).
+
+---
+
 ## x-cut Cache hit speed-up (on cellsim conda env)
 
 | Operation | Cold wall | Warm wall | Speed-up |
