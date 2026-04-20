@@ -13,13 +13,15 @@ platforms via OpenMM.
 - **TIP3P** water, PME electrostatics.
 - **GROMACS** (LGPL) — wrapped for independent-engine blind cross-check
   only, not primary.
-- **MACE / MACE-OFF23** (MIT) — ML-potential via `openmm-ml` plugin.
-  Deep-ensemble of 3–5 replicas for force-level UQ (Layer 1.5).
+
+CellSim is non-AI (see `MISSION.md`). ML potentials (MACE / NequIP /
+Allegro / OrbNet) are explicitly **not** used as the force path.
+UQ comes from Layer 1.6 (parameter sweeps + Sobol + Monte-Carlo),
+not from neural ensembles.
 
 ## What we write
 - OpenMM driver that consumes `src/chem/` output.
 - Trajectory reporter → shared-memory ring buffer for viewer.
-- Ensemble wrapper for ML-potential UQ.
 
 ## Exit tests
 - **Layer 1.2 MVP (shipped):** ≥ 8/10 canonical drugs from

@@ -3,10 +3,14 @@
 **Campaign 1, cross-cutting.**
 
 ## Scope
-Memoise everything expensive. Every docking pose, FEP ΔG, xTB
-energy, MACE force, partial-charge table is written here keyed by
-content hashes and force-field / method versions. Invalidates on FF
-bump.
+Memoise everything expensive. Every docking pose (AutoDock Vina),
+FEP ΔG (perses), xTB / PySCF energy, classical-FF force table,
+partial-charge table is written here keyed by content hashes and
+force-field / method versions. Invalidates on FF bump.
+
+Per the non-AI commitment (see `MISSION.md`), no ML-potential
+outputs are cached here — the force path is physics or empirical
+force fields only.
 
 No existing open-source tool provides this exact schema, so this is
 a BUILD item — but it's thin glue over mature storage.

@@ -1,68 +1,75 @@
-**The best way to approach the closest possible cell simulation is a multi-scale hybrid system that pushes every layer of physics and biology as far as current (and near-future) compute allows.**
+**Yes — you can build a strong, non-AI cell simulator that meaningfully approaches real cell behavior.**
+It will never reach "exact perfect" replacement for novel drugs or unknown viruses (the scale gap and open-ended biology make that physically impossible), but you can build the best physics-first, interpretable, uncertainty-aware hybrid simulator possible. This is exactly what leading non-AI groups (Covert lab, Karr lab, and others) have done successfully for minimal cells and specific pathways.
 
-No one will ever reach “exact perfect” replacement for real cell experiments on novel molecules or unknown viruses. The gap is fundamental: a living cell has ~10¹⁴ atoms, quantum effects matter at the reactive core, biology is open-ended (new mechanisms keep appearing), and full atomic simulation over biological timescales is computationally intractable by many orders of magnitude. Your thousand-doctor team cannot change physics or exponential complexity.
+This is the **best non-AI approach** — a clean, hierarchical, physics-grounded roadmap tailored to a "no black-box" discipline and the existing CellSim foundation. Deterministic / mechanistic methods, rule-based integration, rigorous validation. No neural nets, no end-to-end learned surrogates.
 
-But you **can** build the world’s best open-source, multi-scale, uncertainty-aware cell simulator that dramatically reduces triage-stage wet-lab work, surfaces calibrated uncertainty, and accelerates discovery. This is already the strategy used by leading groups (Schrödinger, Recursion, Insitro, Covert lab, Karr lab, etc.). Your team size gives you a unique chance to do it faster, more openly, and with stronger clinical integration.
+> Amendment: 2026-04-20. This non-AI roadmap supersedes the earlier 5-campaign roadmap which included an ML-potential layer (archived at `docs/goal_v1_2026-04-20.txt`). Layer 1.5 MACE-OFF23 has been removed. Campaign 1 has 7 layers. All UQ is Sobol / Monte-Carlo / parameter sweeps + MAPIE conformal as post-hoc statistical wrapper. Docking uses AutoDock Vina as primary.
 
-### The only credible roadmap: Hierarchical Multi-Scale Hybrid Simulator
+### Core Philosophy (non-AI only)
+- **Physics-first at every scale**: quantum mechanics → classical MD → coarse-grained models → agent-based rules → PDEs. Never replace a module with a black-box predictor.
+- **Modular hybrid integration**: each biological process gets its own mathematical representation (ODEs for metabolism / signaling, stochastic simulation for gene expression, agent-based for cytoskeleton / traffic, PDE for diffusion). Link them through shared state variables and time-step synchronisation (Covert / Karr style).
+- **Strict interpretability and mass conservation**: every rate constant must cite literature or physics-derived priors. Enforce mass-balance invariants at every integration step.
+- **Uncertainty via ensembles and sensitivity**: parameter sweeps, Monte-Carlo sampling, and Sobol analysis (SALib) instead of neural uncertainty.
 
-Build it in **five overlapping campaigns** (not strictly sequential). Each campaign ships a usable deliverable. Total realistic timeline with a thousand-doctor team + serious compute budget: **4–7 years** to a production-grade triage engine (not a fantasy 48-month perfect simulator).
+### Recommended Non-AI Roadmap (5 Campaigns)
 
-**Campaign 1: Atomic → Molecular Foundation (Years 1–2)**  
-Goal: Accurate physics for small reactive systems and protein–ligand interactions.  
-- Quantum layer (DFT / xTB / GFN2) for reactive fragments and metabolite prediction.  
-- Classical MD (OpenMM + MACE or OrbNet ML potentials) for proteins, lipids, small molecules (up to ~10⁶ atoms, microsecond timescales).  
-- Coarse-grained (Martini 3) for membranes and large complexes.  
-- Aggressive caching of pre-computed docking poses, binding free energies (FEP), and partial charges.  
-Deliverable: Tier-4 chemistry engine that can screen 10⁴–10⁵ compounds for binding and basic reactivity with calibrated uncertainty bars.  
-Validation: Blind PDBBind pose recovery + ChEMBL IC50 ranking on held-out compounds (target r ≥ 0.7).
+**Campaign 1: Atomic → Molecular Foundation (Years 1–2)**
+Accurate small-system physics without AI shortcuts. Seven layers:
 
-**Campaign 2: Mesoscale Cellular Modules (Years 2–4)**  
-Goal: Connect physics to real biology at the pathway level.  
-- Central Dogma at scale: import 5 000–10 000 real genes (GENCODE + ReMap GRN edges + miRNA targets + chromatin states + methylation). Full transcription/translation with pausing, splicing, IRES, frameshifting, chaperone competition.  
-- Genome-scale metabolism (full Recon3D/4 with dynamic FBA, compartmental redox, lipidomics, one-carbon, ferroptosis).  
-- Signalling cascades as hybrid ODE/agent models (MAPK, PI3K/AKT, Wnt, TGF-β, JAK/STAT, Notch, Hedgehog, Rho GTPases).  
-- Apoptosis, cell cycle, DNA repair, vesicular traffic, cytoskeleton as agent-based systems with physics-informed forces.  
-- 8–10 cell types (HeLa, fibroblast, iPSC, macrophage, T-cell subsets, neuron, hepatocyte) with RNA-seq → initial-condition mapper.  
-Deliverable: A functioning virtual cell that reproduces dozens of literature phenotypes across multiple pathways and cell types.  
-Validation: External blind tests on 200+ compounds from partner labs; ≥60 % of predictions within 3× of measured values.
+- **1.1 Chem foundation**: RDKit for parsing + 3D embedding + OpenFF/AMBER force fields for parametrisation (AM1-BCC charges where possible, MMFF fallback). Cache all parameters.
+- **1.2 Classical MD**: OpenMM with ff14SB / ff19SB + TIP3P (or better AMBER/CHARMM variants). Langevin integrator with fixed seeds for reproducibility. Support vacuum, solvated boxes, and short trajectories (10–100 ns on GPU).
+- **1.3 Docking + free energy**: AutoDock Vina for poses (empirical, auditable scoring). Alchemical FEP (perses) for ΔG on small sets. Cache poses and energies. GNINA CNN-scored mode may ship only as an explicitly labeled "fast-guess" option alongside Vina, never as the sole value.
+- **1.4 Quantum basics**: xTB or PySCF for reactive fragments, transition states, small-molecule electronics (HOMO / LUMO, partial charges). Use for parametrising unusual chemistries.
+- **1.5 Coarse-grained**: Martini 3 for membranes, lipids, and large complexes. Run 1–10 µs trajectories.
+- **1.6 UQ without AI**: parameter sweeps, Sobol global sensitivity (SALib), Monte-Carlo ensembles over rate constants. Every output gets mean ± SD or confidence intervals from sampling. MAPIE conformal prediction acceptable only as a post-hoc non-parametric wrapper around physics predictions.
+- **1.7 Validation harness**: PDBBind pose recovery, CASF benchmarks, ChEMBL IC50 ranking on held-out sets. Mass-balance and energy-conservation gates.
 
-**Campaign 3: Whole-Cell Integration + 3D Tissue (Years 3–5)**  
-Goal: Put the pieces together in 3D.  
-- Hybrid solver: quantum/MD for reactive hotspots, coarse-grained MD for organelles/membranes, agent-based for large-scale behaviour, PDE for medium diffusion and gradients.  
-- 3D spheroid/organoid layer with ECM fibres, cell–cell junctions, mechanotransduction (YAP/TAZ), focal adhesions.  
-- Hypoxic cores, angiogenesis, immune co-culture (macrophages, T-cells, NK cells).  
-- Full immune sensing (TLR, RIG-I/MAVS, cGAS-STING, inflammasomes, antibody secretion, TCR/BCR).  
-Deliverable: Virtual 3D co-culture/spheroid that can run realistic drug/virus screens and report spatially resolved phenotypes with uncertainty.  
-Validation: Blind spheroid experiments from partner labs (growth curves, drug response, immune infiltration).
+Exit criteria: reproduce known ligand / protein MD equilibration, docking poses within 2 Å RMSD on ≥ 75 % of test set, basic ΔG trends, UQ calibration error ≤ 10 %.
 
-**Campaign 4: Adversarial Validation + Active Learning Loop (Years 4–6)**  
-Goal: Make the system honest about its limits and improve itself.  
-- Continuous red-team challenges (external chemists design compounds to break the model).  
-- Active-learning loop: simulator proposes the single most informative wet-lab experiment (information gain); your doctors run it; result feeds back.  
-- Patient variability sampling from 1000 Genomes + GTEx + real clinical cohorts.  
-- Conformal prediction + deep ensembles so every output has calibrated uncertainty bars.  
-Deliverable: A self-improving system that measurably reduces the number of wet-lab experiments needed over time.  
-Validation: Published blind-test results showing X % reduction in wet-lab compounds while maintaining or improving hit rate.
+**Campaign 2: Mesoscale Cellular Modules (Years 2–4)**
+Connect physics to biology using mechanistic rules (no learned models).
 
-**Campaign 5: Production, Open Deployment, Regulatory Path (Years 5–7+)**  
-- Docker/K8s service + community extension marketplace (YAML pathways, gene modules, cell types).  
-- SBML export, GxP audit path, first MIDD-style regulatory submission for a narrow use case.  
-- Cross-lab reproducibility study with ≥3 independent academic labs.  
-Deliverable: An open tool any lab can run, with demonstrated real-world triage impact and regulatory acceptance as supportive evidence.
+- Central Dogma at scale: 2 000–5 000 real genes (GENCODE + ReMap GRN). Gillespie / tau-leaping stochastic simulation for transcription / translation with pausing, splicing, ribosome competition. Deterministic fallback for reproducibility.
+- Metabolism: full Recon3D / 4 core with dynamic flux-balance analysis (COBRApy, no ML). Compartmental redox (cytosol vs mito NADH / GSH), lipid metabolism, one-carbon, nucleotide pools.
+- Signalling & cell cycle: hybrid ODE + stochastic modules for MAPK, PI3K / AKT, Wnt, TGF-β, JAK / STAT, Notch, Hedgehog, Rho GTPases. p53-MDM2-PUMA-BAX axis with real delay topology (Geva-Zatorsky).
+- Apoptosis & DNA repair: rule-based cascades with mass-action kinetics, stochastic bursts for single-cell variability. Fix caspase-3 execution so real cell death occurs.
+- Vesicular traffic, cytoskeleton, membrane transport: agent-based rules with physics-informed forces (Hertz contact, Langevin).
+- 5–8 cell types: parameter files per type loaded from `data/`.
 
-### Critical Principles That Must Be Followed (or the project fails)
-- **Radical honesty on uncertainty**: Every prediction must come with calibrated error bars. Never hide when the model is extrapolating.  
-- **Continuous external blind testing**: Partner with labs that run experiments the model has never seen. This is the only way to fight circular validation.  
-- **Open science**: All data, models, benchmarks, and extension formats must be public. This accelerates community contributions and forces rigor.  
-- **Measurable impact metric**: Track “wet-lab compounds avoided per year” via partner labs. This is the only metric that matters for your humanitarian goal.  
-- **No hype**: Never claim “replacement.” Claim “triage reduction with honest uncertainty.” This survives peer review and regulatory scrutiny.
+Validation: reproduce literature phenotypes (p53 pulsing period 5–6 h, cisplatin G2/M arrest, apoptosis commitment) across multiple cell types with external blind tests.
 
-### Realistic Impact Your Team Can Achieve
-With a thousand doctors + serious compute, you can build the best open-source cell simulator on Earth. You can reduce early discovery wet-lab burden by 10–50× on the pathways you model well. You can accelerate therapies, cut costs, and save lives through faster, smarter triage.
+**Campaign 3: Whole-Cell Integration + 3D Tissue (Years 3–5)**
+- Hybrid solver: synchronise modules with shared state variables and adaptive time-stepping (RK45 with error control for stiff ODEs).
+- 3D spatial model: lattice or off-lattice agent-based for cell shape, ECM fibres, focal adhesions, mechanotransduction (YAP / TAZ via force input).
+- Hypoxic cores, angiogenesis, immune co-culture (macrophages, T-cells).
+- Mass conservation and energy balance enforced globally at every step.
 
-You will **not** eliminate the final wet-lab validation step for novel entities. That is the honest ceiling.
+Validation: spheroid growth curves, drug response in 3D, immune infiltration benchmarks from partner labs.
 
-This is the best way to approach it. It respects physics, respects biology’s open-endedness, and maximizes real-world good.  
+**Campaign 4: Adversarial Validation + Active Learning (Years 4–6)**
+- Red-team suite: external chemists design compounds to break the model; add failures as new benchmarks.
+- Active-learning loop (non-AI): use sensitivity analysis to propose the most informative wet-lab experiment (e.g., "measure this rate under these conditions"). Partner labs run it; result refines parameters.
+- Patient variability: sample from 1000 Genomes + GTEx for genetic backgrounds.
+- Uncertainty: full ensembles + Sobol indices for every prediction.
 
-If you want the next level of detail (exact PR list for Campaign 1, compute estimates, team allocation, benchmark definitions, literature citations for each module), tell me which campaign or module to expand first. Your team has the resources to do this right. Do it honestly, do it openly, and it will matter.
+**Campaign 5: Production & Regulatory (Years 5–7+)**
+- Open Docker / K8s service + YAML extension marketplace for community pathways.
+- SBML export for interoperability.
+- First MIDD-style package for a narrow use case (e.g., p53-axis ranking).
+- Cross-lab reproducibility study.
+
+### Key Non-AI Techniques
+- **Stochastic simulation**: Gillespie SSA or tau-leaping for gene expression, replication, apoptosis bursts.
+- **Rule-based / hybrid integration**: Covert / Karr style — each process has its own math (ODE, Boolean, agent), linked by shared variables.
+- **Flux-balance analysis**: deterministic LP for metabolism (COBRApy).
+- **Agent-based modelling**: cytoskeleton, vesicular traffic, cell migration, immune interactions.
+- **PDE solvers**: nutrient / oxygen diffusion, pH gradients, morphogen fields.
+- **Parameter sweeps & sensitivity**: Sobol, Monte-Carlo for uncertainty instead of neural ensembles.
+
+### Practical Discipline
+- Start with Campaign 1 layers (chem + MD + docking). Add rigorous gates: mass conservation, energy conservation, reproduction of known short MD trajectories.
+- For every new module, require a literature-cited mechanistic representation and at least one external blind validation point.
+- Use the team for curation (literature rates, pathway rules) and wet-lab validation, not for writing AI code.
+- Keep everything interpretable: every rate must have a PMID or physics derivation.
+
+This approach yields a simulator that is **transparent, physics-grounded, and useful for triage**. It will not replace the dish for novel entities, but it can dramatically reduce wasted experiments and focus wet-lab effort on the hardest cases.

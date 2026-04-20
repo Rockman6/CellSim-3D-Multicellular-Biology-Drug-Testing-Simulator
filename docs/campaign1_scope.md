@@ -1,86 +1,134 @@
-# Campaign 1 — Atomic → Molecular Foundation
+# Campaign 1 — Atomic → Molecular Foundation (non-AI)
+
+**Amendment:** 2026-04-20. Original Layer 1.5 (MACE-OFF23 ML
+potential) removed per the non-AI / physics-only commitment in
+`MISSION.md`. Campaign 1 now has 7 layers.
 
 **Scope horizon:** 1–2 years, 1 → 3–5 FTE.
 
-**Single-sentence deliverable:** `cellsim-chem`, a Tier-4 chemistry
-engine that screens 10⁴–10⁵ compounds for protein–ligand binding and
-basic reactivity, emits calibrated-uncertainty predictions, and
-passes PDBBind / ChEMBL / PoseBusters blind validation at r ≥ 0.7.
+**Single-sentence deliverable:** `cellsim-chem`, a transparent,
+physics-first chemistry engine that screens 10⁴–10⁵ compounds for
+protein–ligand binding and basic reactivity, emits uncertainty-
+quantified predictions via parameter-sweep + Sobol + Monte-Carlo
+methods, and passes PDBBind / ChEMBL / PoseBusters blind validation
+at Pearson r ≥ 0.7.
 
 ## Layers
 
 Each layer pairs a numeric harness with a minimal real-time viewer
-(see `src/render/README.md` and `src/viewer/README.md`).
+(see `src/render/README.md` and `src/viewer/README.md`). Every
+method is auditable end-to-end. No learned surrogates.
 
 ### 1.1 Chem foundation — `src/chem/`
-RDKit + OpenFF + AM1-BCC partial charges. Round-trip 10 k ChEMBL
-compounds into OpenMM systems. Viewer: ligand ball-and-stick with
-per-atom charge colouring.
+RDKit + OpenFF Sage 2.1.0 + AM1-BCC partial charges (via
+AmberTools `antechamber` / `sqm`). Round-trip 10 k ChEMBL compounds
+into OpenMM systems. Every result carries method + force-field +
+tool versions. Viewer: ligand ball-and-stick with per-atom charge
+colouring.
 
 ### 1.2 Classical MD — `src/md/`
-OpenMM driver (CUDA + Metal + CPU), ff14SB / ff19SB, TIP3P, PME,
-equilibration protocols. Viewer: live protein ribbon + solvent
-skin + RMSD gauge.
+OpenMM driver (CUDA + OpenCL + CPU), AMBER ff14SB / ff19SB for
+proteins, TIP3P or TIP3P-FB water, PME electrostatics, Langevin
+NVT at seeded temperature, HBonds constraints, rigid water,
+equilibration protocols. GROMACS as optional independent-engine
+cross-check. Viewer: live protein Cα trace + T / E / Cα-RMSD panel.
 
-### 1.3 Docking + FEP — `src/chem/`, `src/md/`, `src/cache/`
-GNINA pose prediction, `perses` relative FEP, pose/ΔG cache.
-Viewer: receptor + pose overlay, ΔG bar with 95 % CI.
+### 1.3 Docking + FEP — `src/dock/`, `src/cache/`
+**AutoDock Vina as primary docking engine** (empirical, auditable
+scoring function). `perses` + `openmmtools` alchemical FEP for
+relative binding free energies. SQLite + HDF5 pose / ΔG cache keyed
+by `(ligand_hash, receptor_hash, method, ff_version)`. Viewer:
+receptor Cα ribbon + top-pose overlay + ΔG bar with Monte-Carlo CI.
+
+**Optional fast-guess mode:** GNINA CNN-scored docking may ship as
+an explicitly labeled "fast-guess" option alongside Vina. The CNN
+score is displayed next to the Vina score, never as the sole value
+for final predictions. Fast-guess mode is off by default; production
+pipelines run Vina primary.
 
 ### 1.4 Quantum — `src/quantum/`
-`xtb` GFN2 + PySCF DFT hook for reactive fragments. Reactive-
-metabolite site prediction. Viewer: ESP isosurface + HOMO/LUMO.
+`xtb` GFN2-xTB semi-empirical for reactive fragments, geometry
+optimisation, HOMO/LUMO, ESP. PySCF DFT hook for cases where xTB
+is insufficient. Reactive-metabolite site prediction against 20
+marketed CYP3A4 substrates. Viewer: ESP isosurface + HOMO/LUMO
+density clouds on the ligand.
 
-### 1.5 ML potential — `src/md/` (extended)
-MACE-OFF23 via `openmm-ml`. Deep-ensemble of 3–5 replicas for
-force-level UQ. Viewer: side-by-side MACE vs classical + residual
-heatmap.
+### 1.5 Coarse-grained — `src/cg/`
+Martini 3 lipid bilayer + protein elastic network via
+`martinize2 / vermouth`. 10 µs of a 200 nm² POPC bilayer; area-per-
+lipid within 2 % of literature. Viewer: lipid heads colour-coded +
+live area-per-lipid time-series.
 
-### 1.6 Coarse-grained — `src/cg/`
-Martini 3 bilayer + protein elastic network. Viewer: lipid heads
-colour-coded + live area-per-lipid plot.
+### 1.6 UQ scaffold — `src/uq/`
+Non-AI uncertainty quantification:
 
-### 1.7 UQ scaffold — `src/uq/`
-MAPIE conformal prediction around docking ΔG; deep-ensemble around
-ML-potential forces. Viewer: calibration curve + reliability
-diagram.
+- **Primary: mechanistic / statistical sampling.** Parameter sweeps
+  (grid + Latin hypercube) over rate constants and force-field
+  parameters; Monte-Carlo ensembles over charges; Sobol global
+  sensitivity indices via `SALib` to identify which parameters
+  actually move which predictions.
+- **Secondary: post-hoc distribution-free statistical bounds.**
+  MAPIE conformal prediction is acceptable only as a non-parametric
+  wrapper that maps a held-out calibration set to distribution-free
+  CI bounds on any physics prediction. It provides *statistical*
+  bounds, not *mechanistic* insight, and is documented as such on
+  every predictor it wraps.
 
-### 1.8 Blind-validation harness — `benchmarks/` + `src/viewer/`
+No deep ensembles of learned potentials. No neural UQ. Viewer:
+sensitivity tornado plot + Sobol index bars + calibration curve.
+
+### 1.7 Blind-validation harness — `benchmarks/` + `src/viewer/`
 `cellsim-chem --benchmark` drives PDBBind, CASF-2016, PoseBusters,
-ChEMBL held-out panels. GitHub Actions CI with rented H100 for FEP;
-refuses merge on pass-rate regression. Quarterly red-team slot.
-Viewer: dashboard of per-benchmark tiles + r-scatter + red-team
-leaderboard.
+ChEMBL held-out panels. GitHub Actions CI runs smoke gates on every
+PR; longer FEP gates run on rented GPU via `workflow_dispatch`.
+Quarterly red-team slot where external chemists submit compounds
+designed to break the model; every failure becomes a new regression
+benchmark. Viewer: per-benchmark pass/fail tiles + r-scatter +
+red-team leaderboard.
 
 ## Exit criteria (hard pass/fail)
 
-1. PDBBind refined-set blind pose recovery ≥ 75 % within 2 Å RMSD.
+1. PDBBind refined-set blind pose recovery ≥ 75 % within 2 Å RMSD,
+   using AutoDock Vina primary (CNN-scored mode disabled).
 2. ChEMBL held-out IC50 ranking Pearson r ≥ 0.7 on 5 kinase panels.
 3. PoseBusters physical-validity pass rate ≥ 95 %.
-4. Conformal UQ calibration error ≤ 10 % on held-out set.
+4. UQ calibration error ≤ 10 % on held-out set via MAPIE conformal
+   wrapper; Sobol sensitivity indices documented for every headline
+   prediction.
 5. Reactive-metabolite prediction matches literature on ≥ 15/20
    marketed CYP3A4 substrates.
-6. Every prediction carries a calibrated uncertainty bar and
-   method provenance (enforced by `src/uq/Prediction`).
+6. Every prediction carries a calibrated uncertainty bar + method
+   provenance (enforced by `src/uq/Prediction`). Every rate constant
+   cites a PMID or a cached physics-calculation ID.
 7. Everything reproducible from a fresh clone +
    `docker compose up`.
-8. Every layer's viewer renders correctly on the layer's
-   reference scene (gate alongside numeric gates).
+8. Every layer's viewer renders correctly on the layer's reference
+   scene (gate alongside numeric gates).
 
 Failing any → extend Campaign 1. Do not advance to Campaign 2.
 
-## Build-vs-buy
+## Build-vs-buy (non-AI)
 
-See the plan file
-(`.claude-plans/make-this-plan-into-virtual-key.md`) for the full
-tool table. Core rule: we integrate mature open-source stacks
-(RDKit, OpenMM, OpenFF, GNINA, perses, xtb, PySCF, MACE, Martini 3,
-MAPIE, Snakemake). We only write the glue, the physics-prior cache,
-the blind harness, the UQ envelope, and the Campaign-1 → Campaign-2
-bridge.
+Open-source integrations (BUY):
+RDKit, OpenFF Toolkit / Sage, OpenMM, AMBER ff14SB/ff19SB, CHARMM36m,
+TIP3P-FB, PDBFixer, PROPKA, DimorphiteDL, AmberTools (antechamber,
+sqm), AutoDock Vina, perses + openmmtools + openff-evaluator,
+Martini 3 + martinize2 / vermouth, xtb, PySCF, SALib, MAPIE,
+Snakemake, Docker, HDF5, SQLite, Parquet, PDBBind, CASF-2016,
+ChEMBL, BindingDB, PoseBusters.
+
+Glue we write (BUILD): pipeline orchestrator, physics-prior cache,
+deterministic blind-benchmark harness, UQ envelope + sensitivity
+infra, Campaign-1 → Campaign-2 rate-law bridge.
+
+Explicitly excluded: MACE / MACE-OFF23 / NequIP / Allegro / OrbNet /
+any ML potential as a drop-in force path; AlphaFold retraining;
+end-to-end learned docking; neural scoring as sole evidence; deep
+ensembles for UQ.
 
 ## Compute
 
-Tier 1–3 (RDKit, OpenFF, docking, xTB, short MD) run locally on the
-user's 64 GB Apple-silicon machine. Tier 4 (microsecond FEP, MACE
-ensembles) rent NVIDIA H100 at ~$2/h; planned budget ~$10 k over
-Campaign 1 for blind-validation runs.
+Tier 1–3 (RDKit, OpenFF, docking, xTB, short MD) run locally on a
+64 GB Apple-silicon laptop. Tier 4 (µs FEP, long ubiquitin MD,
+10 k ChEMBL full gate) run on rented NVIDIA H100 at ~$2/h; planned
+budget ~$10 k over Campaign 1 for blind-validation and scale runs.
