@@ -18,6 +18,7 @@ from .protein import (
     load_protein_pdb,
     short_protein_md,
 )
+from .protein_viewer import render_protein_trajectory
 
 __all__ = [
     "TrajectoryResult",
@@ -26,4 +27,5 @@ __all__ = [
     "ProteinTrajectoryResult",
     "load_protein_pdb",
     "short_protein_md",
+    "render_protein_trajectory",
 ]

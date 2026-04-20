@@ -313,10 +313,21 @@ def short_protein_md(
     sim.context.setVelocitiesToTemperature(
         temperature_K * unit.kelvin, int(random_seed))
 
-    # Identify Cα indices once.
-    ca_indices = [a.index for a in result._topology.atoms() if a.name == "CA"]
-    all_indices = list(range(result.n_atoms_total or
-                             sum(1 for _ in result._topology.atoms())))
+    # Identify Cα indices once. Also capture per-residue chain/name
+    # metadata so the viewer can label residues without re-walking
+    # the topology.
+    ca_indices: list[int] = []
+    ca_residues: list[dict] = []
+    for atom in result._topology.atoms():
+        if atom.name == "CA":
+            ca_indices.append(atom.index)
+            res = atom.residue
+            ca_residues.append({
+                "name": res.name,
+                "id": int(res.id) if res.id and res.id.strip().lstrip("-").isdigit()
+                      else None,
+                "chain": res.chain.id,
+            })
 
     def _record(step: int):
         state = sim.context.getState(getEnergy=True, getPositions=True)
@@ -335,12 +346,14 @@ def short_protein_md(
     temps: list = []
     rmsds_ca: list = []
     rmsds_all: list = []
+    ca_positions_frames: list = []  # (n_frames, n_ca, 3) in Å
 
     t0, pe0, ke0, T0, pos0 = _record(0)
     pos0_ca = pos0[ca_indices]
     times_ps.append(t0)
     pes.append(pe0); kes.append(ke0); temps.append(T0)
     rmsds_ca.append(0.0); rmsds_all.append(0.0)
+    ca_positions_frames.append(pos0_ca.tolist())
 
     steps_run = 0
     while steps_run < n_steps:
@@ -358,6 +371,7 @@ def short_protein_md(
         c0a = pos0.mean(axis=0); ca = pos.mean(axis=0)
         da = (pos - ca) - (pos0 - c0a)
         rmsds_all.append(float(np.sqrt((da * da).sum(axis=1).mean())))
+        ca_positions_frames.append(pc.tolist())
 
     ok = True
     reason = ""
@@ -388,6 +402,8 @@ def short_protein_md(
         temperatures_K=temps,
         rmsd_ca_A=rmsds_ca,
         rmsd_all_A=rmsds_all,
+        ca_positions_A_frames=ca_positions_frames,
+        ca_residues=ca_residues,
     )
 
 
@@ -410,6 +426,10 @@ class ProteinTrajectoryResult:
     temperatures_K: list = field(default_factory=list)
     rmsd_ca_A: list = field(default_factory=list)
     rmsd_all_A: list = field(default_factory=list)
+    # Per-frame Cα positions (Å). Shape (n_frames, n_ca, 3).
+    ca_positions_A_frames: list = field(default_factory=list)
+    # Per-Cα residue metadata: [{name, id, chain}, …]
+    ca_residues: list = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.ok:
