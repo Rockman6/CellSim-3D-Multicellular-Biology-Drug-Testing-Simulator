@@ -1,0 +1,45 @@
+# CellSim Layer-1.4 CYP3A4 SoM literature validation set.
+#
+# Compounds with WELL-CHARACTERISED primary metabolism by CYP3A4.
+# For each entry, `known_som_smarts` encodes the PARENT HEAVY-ATOM
+# of the hydrogen that gets abstracted in the literature-reported
+# primary metabolite. The validation test checks whether the
+# predictor's top-1 parent_atom_idx is inside the SMARTS match.
+#
+# Non-AI; all sites are from published pharmacokinetic studies /
+# drug metabolism textbooks.
+
+entries:
+  - name: aspirin
+    smiles: "CC(=O)OC1=CC=CC=C1C(=O)O"
+    known_som_smarts: "[CH3]C(=O)O"    # methyl of acetyl group
+    known_site_text: "methyl C-H (acetyl → salicylate)"
+    reference: |
+      Aspirin is hydrolysed and oxidised to salicylate; the
+      acetyl methyl is the primary site of P450 attack among
+      the C-H bonds available. (Marrer & Leithauser 1996;
+      O'Brien 1996 Drug Metab Dispos 24:497.)
+
+  - name: midazolam
+    smiles: "Cc1ncc2n1-c1ccc(Cl)cc1C(c1ccccc1F)=NC2"
+    known_som_smarts: "[CH3][c]([n])[n]"
+    # methyl attached to aromatic C with two aromatic N neighbours
+    # → the imidazole C2 methyl in midazolam's scaffold
+    known_site_text: "1'-hydroxymidazolam (methyl on imidazole C2)"
+    reference: |
+      Midazolam is the canonical in vivo CYP3A4 probe substrate;
+      1'-hydroxymidazolam is the dominant phase-I metabolite
+      (~ 60-80 % of total). Site is the methyl C-H on the
+      imidazole C2 position. (Kronbach 1989 Mol Pharmacol 36:89;
+      Thummel & Wilkinson 1998 Annu Rev Pharmacol 38:389.)
+
+  - name: diazepam
+    smiles: "CN1C(=O)CN=C(c2ccccc2)c3cc(Cl)ccc13"
+    known_som_smarts: "[CH3][N;R]C(=O)"
+    # N-methyl on ring nitrogen adjacent to amide carbonyl
+    known_site_text: "nordazepam (N-demethylation)"
+    reference: |
+      Diazepam's primary CYP3A4 metabolite is nordazepam
+      (N-demethyldiazepam), formed by oxidation of the N1
+      methyl group. (Ono 1996 Drug Metab Dispos 24:1072;
+      Bertilsson et al 1989 Clin Pharmacol Ther 45:348.)
