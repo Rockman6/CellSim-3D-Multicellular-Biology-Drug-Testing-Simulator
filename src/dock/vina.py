@@ -81,8 +81,24 @@ class DockingPose:
     rmsd_ub_A: float = 0.0          # Vina "rmsd ub" vs top pose
     rmsd_vs_reference_A: Optional[float] = None  # filled if caller
                                                  # supplied a reference
-    posebusters_ok: Optional[bool] = None        # filled if PoseBusters
-                                                 # runs (stub for now)
+    # PoseBusters flags (filled by src/dock/validity.attach_posebusters).
+    # The split matters for biologists:
+    #   posebusters_pocket_ok — pose is in-pocket with no clashes
+    #                           against protein / ions / waters.
+    #                           Trustworthy for triage ranking.
+    #   posebusters_geometry_ok — bond lengths, angles, chirality,
+    #                           internal clash, internal energy all
+    #                           pass. Required for downstream FEP.
+    #                           Vina poses routinely fail this one
+    #                           because Vina uses approximate sterics;
+    #                           fix = run a short MD minimisation
+    #                           (future Layer 1.3 PR).
+    #   posebusters_ok        — every PB test passes, including the
+    #                           strict rmsd_≤_2Å. Strictest gate.
+    posebusters_ok: Optional[bool] = None
+    posebusters_pocket_ok: Optional[bool] = None
+    posebusters_geometry_ok: Optional[bool] = None
+    posebusters_flags: Optional[dict] = None
     # Coordinates (Å) — per-atom positions in the same atom ordering
     # as the prep step produced.
     positions_A: list = field(default_factory=list)
@@ -99,7 +115,14 @@ class DockingPose:
             else:
                 rmsd_tag = f"  ✗ crystal-RMSD {self.rmsd_vs_reference_A:.2f} Å"
         pb = ""
-        if self.posebusters_ok is True:
+        # Prefer the biologist-relevant pocket flag for the summary
+        # line (geometry noise from Vina's approximate sterics is
+        # not an interesting triage signal).
+        if self.posebusters_pocket_ok is True:
+            pb = "  pocket:ok"
+        elif self.posebusters_pocket_ok is False:
+            pb = "  pocket:fail"
+        elif self.posebusters_ok is True:
             pb = "  PB:ok"
         elif self.posebusters_ok is False:
             pb = "  PB:fail"
