@@ -25,6 +25,7 @@ from .off_target import (
     OffTargetResult,
     off_target_screen,
 )
+from .off_target_viewer import render_off_target_result
 
 __all__ = [
     "DockingResult",
@@ -45,4 +46,5 @@ __all__ = [
     "OffTargetEntry",
     "OffTargetResult",
     "off_target_screen",
+    "render_off_target_result",
 ]
