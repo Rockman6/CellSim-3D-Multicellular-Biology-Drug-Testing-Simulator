@@ -96,6 +96,9 @@ jobs:
       - name: quantum smoke (Layer 1.4, xTB GFN2 on 10 drugs, 8/10)
         run: python -u tests/quantum/test_xtb_smoke.py --gate 8
 
+      - name: SoM smoke (Layer 1.4, CYP3A4 BDE on 3 drugs)
+        run: python -u tests/quantum/test_som_smoke.py
+
   scale:
     name: scale (workflow_dispatch only)
     if: >
