@@ -131,6 +131,9 @@ jobs:
       - name: UQ conformal smoke (Layer 1.6, synthetic calibration)
         run: python -u tests/uq/test_conformal_smoke.py
 
+      - name: UQ calibration (Layer 1.7, streptavidin vs K_d)
+        run: python -u tests/uq/test_calibration_smoke.py
+
       - name: cache smoke (content-addressed SQLite store)
         run: python -u tests/cache/test_cache_smoke.py
 
