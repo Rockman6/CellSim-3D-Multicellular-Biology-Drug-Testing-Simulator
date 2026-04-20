@@ -155,6 +155,30 @@ Reproducer: `cellsim uq ... ` (see `src/uq/calibration.py`).
 
 ---
 
+## 1.3 CYP3A4 inhibition / DDI-risk screen
+
+`src/dock/cyp_inhibition.py` docks a compound into 1TQN (CYP3A4
+with heme) and classifies DDI risk from top-pose ΔG + minimum
+ligand-atom-to-Fe distance.
+
+| Compound | ΔG (kcal/mol) | Fe-atom (Å) | Risk | Truth |
+|---|:-:|:-:|:-:|---|
+| **ketoconazole** | **−9.85** | **2.13** | **HIGH** | canonical CYP3A4 inhibitor; 2.13 Å = textbook Fe-N coord |
+| aspirin | −7.13 | 6.64 | medium | mild inhibition only at very high dose |
+| caffeine | −6.29 | 4.01 | medium | weak interaction (primarily CYP1A2) |
+
+The ketoconazole 2.13 Å distance is the scientific smoking gun:
+CellSim discovers Fe-N imidazole coordination geometry from
+plain-vanilla Vina docking + geometric post-filter — no metal-
+aware scoring needed.
+
+Reproducer:
+```bash
+cellsim cyp-inhibit "CC(=O)N1CCN(CC1)c2ccc(cc2)OCC3OC(CN4C=CN=C4)(OC3)c5ccc(cc5)Cl"
+```
+
+---
+
 ## 1.3 Off-target / selectivity screen
 
 One compound vs N receptors, auto-pocket each.
