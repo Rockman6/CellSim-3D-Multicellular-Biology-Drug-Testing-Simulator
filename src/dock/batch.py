@@ -51,6 +51,7 @@ from src.dock import (  # noqa: E402
     attach_posebusters,
     dock_ligand,
 )
+from src.uq import monte_carlo_dock  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,8 @@ class BatchConfig:
     crystal_resname: Optional[str] = None
     run_posebusters: bool = True
     run_admet: bool = True            # Lipinski / QED / logP / logS
+    mc_samples: int = 0               # 0 = single-seed; N>=2 = MC over
+                                      # seeds [seed, seed+N) → ΔG ± CI
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -99,12 +102,34 @@ def _worker(task: tuple) -> dict:
         except Exception as e:
             logger.debug("ADMET failed on %s: %s", name, e)
 
+    # If MC sampling requested, run multiple seeds up front to
+    # get the ΔG distribution. The pose geometry is taken from the
+    # *best* seed (the one that found the lowest ΔG), which is what
+    # biologists intuitively want to see.
+    mc_stats = None
+    dock_seed = cfg.seed
+    if cfg.mc_samples >= 2:
+        try:
+            mc_stats = monte_carlo_dock(
+                receptor_pdb=cfg.receptor_pdb,
+                ligand_smiles=smiles,
+                center_A=cfg.center_A, box_size_A=cfg.box_size_A,
+                n_samples=cfg.mc_samples, base_seed=cfg.seed,
+                exhaustiveness=cfg.exhaustiveness,
+                num_modes=cfg.num_modes,
+                cpu_per_job=cfg.cpu_per_job, workers=1,
+                timeout_s=cfg.timeout_s)
+            if mc_stats.ok and mc_stats.best_seed is not None:
+                dock_seed = mc_stats.best_seed
+        except Exception as e:
+            logger.debug("MC failed on %s: %s", name, e)
+
     try:
         r = dock_ligand(
             cfg.receptor_pdb, smiles,
             center_A=cfg.center_A, box_size_A=cfg.box_size_A,
             exhaustiveness=cfg.exhaustiveness,
-            num_modes=cfg.num_modes, seed=cfg.seed,
+            num_modes=cfg.num_modes, seed=dock_seed,
             cpu=cfg.cpu_per_job, timeout_s=cfg.timeout_s)
         if r.ok and cfg.crystal_pdb and cfg.crystal_resname:
             try:
@@ -144,10 +169,22 @@ def _worker(task: tuple) -> dict:
             solubility=admet.solubility_class,
         )
 
+    def _mc_fields() -> dict:
+        if mc_stats is None or not mc_stats.ok:
+            return {}
+        return dict(
+            dG_mean_kcalmol=round(mc_stats.dG_mean_kcalmol, 3),
+            dG_std_kcalmol=round(mc_stats.dG_std_kcalmol, 3),
+            dG_ci95_lo=round(mc_stats.dG_ci95_lo_kcalmol, 3),
+            dG_ci95_hi=round(mc_stats.dG_ci95_hi_kcalmol, 3),
+            mc_n_ok=mc_stats.n_ok,
+            mc_n_samples=mc_stats.n_samples,
+        )
+
     if not r.ok:
         return dict(name=name, smiles=smiles, ok=False,
                     reason=r.reason, wall_s=wall,
-                    **_admet_fields())
+                    **_admet_fields(), **_mc_fields())
 
     top = r.poses[0]
     record = dict(
@@ -168,6 +205,7 @@ def _worker(task: tuple) -> dict:
         seed=r.seed, exhaustiveness=r.exhaustiveness,
         wall_s=round(wall, 1),
         **_admet_fields(),
+        **_mc_fields(),
     )
     return record
 
@@ -240,6 +278,9 @@ def run_batch(
 def _progress_line(i: int, n: int, rec: dict) -> None:
     if rec.get("ok"):
         tag = f"ΔG={rec['dG_kcalmol']:>6.2f} Kd={rec['Kd_human']:<10s}"
+        if rec.get("dG_mean_kcalmol") is not None:
+            tag += (f" MC={rec['dG_mean_kcalmol']:+.2f}"
+                    f"±{rec['dG_std_kcalmol']:.2f}")
         pb = ("pocket:ok" if rec.get("pocket_ok") else
               "pocket:fail" if rec.get("pocket_ok") is False else
               "pocket:n/a")
@@ -254,6 +295,9 @@ def _write_csv(records: list[dict], out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     cols = ["rank", "name", "smiles", "formula", "inchi_key",
             "dG_kcalmol", "dG_kJmol", "Kd_nM", "Kd_human",
+            "dG_mean_kcalmol", "dG_std_kcalmol",
+            "dG_ci95_lo", "dG_ci95_hi",
+            "mc_n_ok", "mc_n_samples",
             "crystal_rmsd_A", "pocket_ok", "geometry_ok", "pb_all_ok",
             "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
             "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
@@ -289,6 +333,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--no-admet", action="store_true",
                     help="skip ADMET descriptors (Lipinski / QED / "
                          "logP / logS) in the output")
+    ap.add_argument("--mc", type=int, default=0, metavar="N",
+                    help="run N Monte-Carlo seeds per compound "
+                         "(adds ΔG mean ± SD + 95%% CI per row; "
+                         "0 = disable, >=2 = enable)")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -305,6 +353,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         crystal_resname=args.crystal_resname,
         run_posebusters=not args.no_posebusters,
         run_admet=not args.no_admet,
+        mc_samples=args.mc,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
