@@ -33,8 +33,17 @@ AM1-BCC (fast) or xTB (accurate) partial charges.
 ### One-time env setup
 ```bash
 conda env create -f environment.yml       # or `mamba env create ...`
-conda activate cellsim
+conda activate cellsim                     # REQUIRED — sets AMBERHOME
 ```
+
+**Always run inside an activated env.** `conda activate cellsim`
+sets `AMBERHOME`, which OpenFF needs to discover the AmberTools
+wrapper for AM1-BCC. A bare `/opt/.../envs/cellsim/bin/python ...`
+invocation will silently fail every compound with
+"No registered toolkits can provide assign_partial_charges" because
+the AmberTools wrapper refuses to register without `AMBERHOME`. If
+you need a non-interactive wrapper, use `mamba run -n cellsim ...`
+or source `conda activate` first.
 
 If you want just Layer 1.1 (minimum footprint):
 ```bash
@@ -64,9 +73,29 @@ python tests/chem/test_parametrize_smoke.py
 ```
 
 Expected: at least 8/10 canonical drugs parameterise cleanly
-(`benchmarks/chembl/smoke_10.smi`). The full Layer-1.1 exit
-criterion is 10 k ChEMBL compounds with ≥ 99 % success; the
-10-compound gate keeps CI runnable in seconds.
+(`benchmarks/chembl/smoke_10.smi`).
+
+### Scale test (1 k / 10 k ChEMBL)
+Fetch a drug-like subset from ChEMBL (`data/` is gitignored):
+```bash
+python scripts/fetch_chembl_sample.py --n 1000
+```
+Parametrise all N with multiprocessing, gate at 99 %:
+```bash
+python tests/chem/test_parametrize_scale.py \
+    --smi data/chembl/chembl_1000.smi --workers $(sysctl -n hw.ncpu) \
+    --charge am1bcc --gate 99.0
+```
+The 10 k gate takes hours on CPU (AM1-BCC dominates). Run locally
+with `--n 10000` or trigger the `scale` job manually via
+`gh workflow run chem-smoke.yml -f scale_n=10000`.
+
+### GitHub Actions CI
+`.github/workflows/chem-smoke.yml` runs the `smoke_10` test on
+every PR touching `src/chem/**`, `tests/chem/**`, or
+`environment.yml`. Uses `conda-incubator/setup-miniconda@v3` to
+provision the `cellsim` env, so the full OpenFF tier runs in CI,
+not just the RDKit-only tier.
 
 ## Exit criteria (two-tier gate)
 - **RDKit-only tier** (no conda on the box): ≥ 9/10 RDKit-embed
