@@ -6870,6 +6870,26 @@ know:
         validator extended with 4 additional gates for peak count,
         mean period, stress-scaling, and control specificity;
         zero drift on seq02 preserved at 5.1\%, 2026-04-20).
+  \item Phase G5 (\texttt{ApoTriggers.p53\_active} re-routed from
+        raw \code{damageLevel} to the real \code{p53\_protein} pool
+        via \code{linMap}$(0.12, 0.35)$; p53 pulses now drive the
+        existing 11-trigger apoptosis cascade through PUMA $\to$ BAX
+        $\to$ MOMP $\to$ caspase commitment;
+        \texttt{cellsim\_cisplatin\_apoptosis} validator with 5 gates:
+        control PUMA $\leq 1.0$,
+        cisplatin PUMA $\geq 3.0$,
+        PUMA ratio drug/ctl $\geq 5\times$,
+        engine p53\_active $\geq 0.55$,
+        Bax ratio drug/ctl $\geq 1.3\times$.
+        Measured at damage 0.35 (physiologic cisplatin-equivalent),
+        seed 0x1: PUMA ratio $20.7\times$, Bax ratio $1.79\times$,
+        engine p53\_active 0.746.
+        All 5 gates pass across 5 pinned seeds.
+        Scope footer: the cell-kill execution step is gated by
+        XIAP/Smac balance in the pre-existing cascade (caspase-3 stays
+        at $\approx 0.04$ under saturated MOMP); that calibration is
+        its own PR and does not change G5's commitment-signature claim.
+        Zero seq02 drift, 2026-04-20).
   \item Phase G4 (p53 → p21 via CDKN1A promoter Hill(n=8) replaces
         the prior \texttt{damageLevel → p21} hack; new
         \texttt{cellsim\_cisplatin\_arrest} validator with 4 gates:
