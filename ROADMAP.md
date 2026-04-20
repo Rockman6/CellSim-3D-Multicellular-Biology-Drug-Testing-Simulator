@@ -38,8 +38,12 @@ renumbered accordingly.
   cross-cutting pose-trust gate, triage verdict column,
   strain-gate top-pose promotion, shortlist CSV, triage-PNG
   dashboard, kinase-receptor heads-up, "next steps" paste-ready
-  guidance. **FEP integration via openmmtools/perses is the
-  open Layer 1.3 work item** (blocks kinase rank-order fix).
+  guidance. **FEP integration is the open Layer 1.3 work item**
+  (blocks kinase rank-order fix). Scaffold landed at `src/fep/`
+  with an `alchemical_state_smoke()` sanity gate pinning the
+  openmmtools alchemy primitives in CI; next pieces are
+  `ligand_hydration_fep` (FreeSolv validation) and
+  `relative_binding_fep` (EGFR-series rescoring).
 - **1.4 Quantum (xtb + PySCF)** — DONE (MVP). GFN2 single-point,
   homolytic C-H BDE ranking for CYP3A4 SoM, optional DFT top-N
   rescore, CYP3A4 heme-accessibility pose-SoM with ensemble pose

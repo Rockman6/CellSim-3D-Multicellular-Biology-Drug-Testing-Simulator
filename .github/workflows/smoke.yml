@@ -137,6 +137,9 @@ jobs:
       - name: dock cyp-inhibit strain-downgrade smoke (Layer 1.3, DDI risk rules)
         run: python -u tests/dock/test_cyp_strain_downgrade_smoke.py
 
+      - name: fep scaffold smoke (Layer 1.3, openmmtools alchemy primitives)
+        run: python -u tests/fep/test_fep_scaffold_smoke.py
+
       - name: dock vina cache smoke (cache hit speed-up)
         run: python -u tests/dock/test_vina_cache.py
 
