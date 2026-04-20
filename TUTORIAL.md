@@ -62,7 +62,21 @@ RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STR
    1  biotin_TRUE_BINDER       follow_up         -7.45    3.5 µM    ✓       acceptable  ✓    0.49  -1.53
    2  ibuprofen_negative       deprioritise      -7.36    4.1 µM    ?       good        ✓    0.82  -3.09
    3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
+
+Next steps
+--------------------------------------------------
+  • Send 1 follow_up compound(s) to wet lab.
+  • 1 deprioritise compound(s): ignore unless scaffold-important;
+    if they matter, rescore with FEP before triage.
+  • 1 drop compound(s): too weak / non-physical pose / known-bad
+    ADMET. Do not synthesise.
 ```
+
+The **Next steps** block is the paste-ready wet-lab handoff
+summary. If a batch has zero `follow_up` or `review` compounds,
+CellSim prints a warning pointing at the target-class reliability
+table (§8) so biologists can check whether the receptor is in
+Vina's comfort zone before blaming their library.
 
 To produce a hand-to-wet-lab shortlist containing only compounds
 worth chemists' time (`follow_up` + `review` verdicts), add
