@@ -44,6 +44,7 @@ from typing import Optional
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.chem import compute_admet  # noqa: E402
 from src.dock import (  # noqa: E402
     DockingResult,
     attach_crystal_rmsd,
@@ -69,6 +70,7 @@ class BatchConfig:
     crystal_pdb: Optional[str] = None
     crystal_resname: Optional[str] = None
     run_posebusters: bool = True
+    run_admet: bool = True            # Lipinski / QED / logP / logS
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -87,6 +89,16 @@ def _worker(task: tuple) -> dict:
     cfg = BatchConfig(**cfg_tuple)
 
     t0 = time.time()
+    # ADMET is cheap (sub-ms); compute regardless of docking outcome
+    # so a compound that fails to dock still has drug-likeness flags
+    # in the output (biologist triage signal even on dock-fails).
+    admet = None
+    if cfg.run_admet:
+        try:
+            admet = compute_admet(smiles)
+        except Exception as e:
+            logger.debug("ADMET failed on %s: %s", name, e)
+
     try:
         r = dock_ligand(
             cfg.receptor_pdb, smiles,
@@ -116,9 +128,26 @@ def _worker(task: tuple) -> dict:
                     wall_s=time.time() - t0)
 
     wall = time.time() - t0
+
+    def _admet_fields() -> dict:
+        if admet is None or not admet.ok:
+            return {}
+        return dict(
+            MW=round(admet.MW, 2),
+            logP=round(admet.logP, 3),
+            TPSA=round(admet.tpsa, 1),
+            HBA=admet.hba, HBD=admet.hbd, rotb=admet.rotb,
+            ro5_pass=admet.ro5_pass,
+            ro5_violations=admet.ro5_violations,
+            QED=round(admet.qed, 3) if admet.qed is not None else None,
+            logS=round(admet.logS_ESOL, 2),
+            solubility=admet.solubility_class,
+        )
+
     if not r.ok:
         return dict(name=name, smiles=smiles, ok=False,
-                    reason=r.reason, wall_s=wall)
+                    reason=r.reason, wall_s=wall,
+                    **_admet_fields())
 
     top = r.poses[0]
     record = dict(
@@ -138,6 +167,7 @@ def _worker(task: tuple) -> dict:
         n_poses=len(r.poses),
         seed=r.seed, exhaustiveness=r.exhaustiveness,
         wall_s=round(wall, 1),
+        **_admet_fields(),
     )
     return record
 
@@ -225,6 +255,8 @@ def _write_csv(records: list[dict], out: Path) -> None:
     cols = ["rank", "name", "smiles", "formula", "inchi_key",
             "dG_kcalmol", "dG_kJmol", "Kd_nM", "Kd_human",
             "crystal_rmsd_A", "pocket_ok", "geometry_ok", "pb_all_ok",
+            "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
+            "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
             "n_poses", "seed", "exhaustiveness", "wall_s",
             "ok", "reason"]
     with out.open("w", newline="") as fo:
@@ -254,6 +286,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--crystal-pdb", default=None)
     ap.add_argument("--crystal-resname", default=None)
     ap.add_argument("--no-posebusters", action="store_true")
+    ap.add_argument("--no-admet", action="store_true",
+                    help="skip ADMET descriptors (Lipinski / QED / "
+                         "logP / logS) in the output")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -269,14 +304,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         crystal_pdb=args.crystal_pdb,
         crystal_resname=args.crystal_resname,
         run_posebusters=not args.no_posebusters,
+        run_admet=not args.no_admet,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
 
     # Biologist-friendly summary table on stdout.
     print()
-    print("RANK  NAME                       ΔG(kcal)   K_d        POCKET  RMSD")
-    print("-" * 78)
+    print("RANK  NAME                       ΔG(kcal)   K_d        "
+          "POCKET  RMSD      Ro5  QED   logS   class")
+    print("-" * 104)
     for r in records[:20]:
         if r.get("ok"):
             rmsd = (f"{r['crystal_rmsd_A']:.2f} Å"
@@ -284,9 +321,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             pocket = ("✓" if r.get("pocket_ok")
                       else "✗" if r.get("pocket_ok") is False
                       else "?")
+            ro5 = ("✓" if r.get("ro5_pass") else
+                   f"✗×{r.get('ro5_violations') or 0}")
+            qed = (f"{r['QED']:.2f}" if r.get("QED") is not None
+                   else "-")
+            logs = (f"{r['logS']:+.2f}" if r.get("logS") is not None
+                    else "-")
+            sol = (r.get("solubility") or "-")[:15]
             print(f"{r['rank']:>4d}  {r['name']:<25s}  "
                   f"{r['dG_kcalmol']:>8.2f}   {r['Kd_human']:<9s}  "
-                  f" {pocket}      {rmsd}")
+                  f" {pocket}      {rmsd:<8s}  {ro5:<4s} "
+                  f"{qed:<5s} {logs:<6s} {sol}")
         else:
             print(f" -    {r['name']:<25s}  FAIL  "
                   f"{(r.get('reason') or '')[:50]}")
