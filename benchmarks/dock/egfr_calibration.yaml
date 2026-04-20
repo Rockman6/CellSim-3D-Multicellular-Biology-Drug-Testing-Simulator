@@ -1,0 +1,87 @@
+# EGFR kinase inhibitor calibration set.
+#
+# Six ATP-competitive EGFR kinase inhibitors with published IC50
+# against the recombinant EGFR tyrosine kinase domain. Receptor is
+# 1M17 — erlotinib-bound EGFR kinase, 2.6 Å (Stamos et al 2002
+# J Biol Chem 277:46265). The search box is the erlotinib ATP-site
+# pocket (matches benchmarks/dock/mini_bench.yaml for 1m17).
+#
+# Why EGFR: ~25 % of marketed oncology small-molecule drugs target
+# kinases; EGFR (NSCLC, glioblastoma) is the flagship. Wet-lab
+# replacement requires CellSim's ΔG to track published IC50 across
+# a congeneric series — this bundle is that test.
+#
+# IC50 → ΔG_expt: ΔG = R·T·ln(IC50) at T=298.15 K, R=1.987e-3
+# kcal/mol/K.  This treats IC50 as a surrogate for K_i without
+# Cheng-Prusoff correction (papers rarely report [ATP]_Km pairs
+# needed for the correction), so the absolute ΔG scale is
+# offset by up to ~1.5 kcal/mol across the set. Rank-order
+# (Spearman ρ) is the load-bearing metric; Pearson r on ΔG is
+# informative but limited by this systematic offset.
+#
+# Sources (primary literature):
+#   Moyer et al 1997 Cancer Res 57:4838 (erlotinib, OSI-774)
+#   Wakeling et al 2002 Cancer Res 62:5749 (gefitinib, ZD1839)
+#   Levitzki & Gazit 1995 Science 267:1782 (AG-1478)
+#   Rusnak et al 2001 Mol Cancer Ther 1:85 (lapatinib, dual EGFR/HER2)
+#   Fry et al 1994 Science 265:1093 (4-anilinoquinazoline parent)
+#   Osherov & Levitzki 1994 Eur J Biochem 225:1047 (tyrphostin AG-494)
+
+receptor:
+  pdb: benchmarks/dock/1m17.pdb
+  crystal_center_A: [22.01, 0.25, 52.79]
+  search_box_A: [28.0, 22.0, 22.0]
+
+entries:
+  - name: erlotinib
+    smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+    IC50_M: 2.0e-9
+    dG_expt_kcalmol: -11.86
+    source_notes: |
+      Moyer 1997 Cancer Res 57:4838. FDA-approved 2004 (Tarceva).
+      1M17 native ligand — re-docking baseline.
+
+  - name: gefitinib
+    smiles: "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
+    IC50_M: 3.3e-8
+    dG_expt_kcalmol: -10.20
+    source_notes: |
+      Wakeling 2002 Cancer Res 62:5749. FDA-approved 2003 (Iressa).
+      Anilinoquinazoline; morpholinopropoxy tail differentiates
+      from erlotinib's methoxyethoxy.
+
+  - name: AG-1478
+    smiles: "COc1cc2ncnc(Nc3ccc(Cl)cc3)c2cc1OC"
+    IC50_M: 3.0e-9
+    dG_expt_kcalmol: -11.62
+    source_notes: |
+      Levitzki & Gazit 1995 Science 267:1782. Research-tool
+      compound; 4-chloroanilino with dimethoxyquinazoline core.
+
+  - name: lapatinib
+    smiles: "CS(=O)(=O)CCNCc1ccc(-c2ccc3ncnc(Nc4ccc(OCc5cccc(F)c5)c(Cl)c4)c3c2)o1"
+    IC50_M: 1.08e-8
+    dG_expt_kcalmol: -10.88
+    source_notes: |
+      Rusnak 2001 Mol Cancer Ther 1:85. FDA-approved 2007
+      (Tykerb). Dual EGFR/HER2; 4-(fluorobenzyloxy)-3-chloroaniline
+      extends into back pocket.
+
+  - name: 4-anilinoquinazoline
+    smiles: "c1ccc(Nc2ncnc3ccccc23)cc1"
+    IC50_M: 1.0e-6
+    dG_expt_kcalmol: -8.17
+    source_notes: |
+      Fry 1994 Science 265:1093 parent compound. Unsubstituted
+      anilinoquinazoline — the SAR starting point. Weak but
+      selective EGFR hit.
+
+  - name: tyrphostin_AG-494
+    smiles: "N#C/C(=C\\c1ccc(O)c(O)c1)/C(=O)Nc1ccccc1"
+    IC50_M: 1.1e-6
+    dG_expt_kcalmol: -8.11
+    source_notes: |
+      Osherov & Levitzki 1994 Eur J Biochem 225:1047. Non-
+      quinazoline tyrphostin; catechol + benzylidene-cyanoamide
+      scaffold. Tests whether CellSim generalises across chemotypes
+      at the same receptor.

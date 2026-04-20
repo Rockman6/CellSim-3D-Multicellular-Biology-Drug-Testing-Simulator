@@ -143,13 +143,46 @@ binder saturation — all affinities in Vina's calibrated µM–mM
 range), but it **cannot reliably rank close analogs** inside a
 ~4 kcal/mol window because its noise floor is ~1 kcal/mol.
 
+### EGFR kinase — `benchmarks/dock/egfr_calibration.yaml`
+
+6 ATP-competitive EGFR inhibitors (erlotinib, gefitinib, AG-1478,
+lapatinib, 4-anilinoquinazoline parent, tyrphostin AG-494) spanning
+IC50 2 nM – 1 µM (~3.7 kcal/mol).
+
+| Metric | Value | What it means |
+|---|:-:|---|
+| Pearson r | −0.01 | **no linear correlation** |
+| Spearman ρ | **−0.49** | **rank-order inverted vs experiment** |
+| MAE | 2.17 kcal/mol | systematic under-scoring of tight binders |
+| RMSE | 2.74 kcal/mol | |
+| Conformal q95 | ±4.63 kcal/mol | wide CI reflects ranking failure |
+
+**Honest negative result.** Vina's empirical score saturates on the
+ATP-hinge H-bond of anilinoquinazolines: erlotinib and AG-1478 (IC50
+~ 2–3 nM) dock at −7.2 to −7.5 kcal/mol, no better than the weak
+parent 4-anilinoquinazoline (−7.6, IC50 ~ 1 µM). Lapatinib's back-
+pocket extension is the only compound Vina rewards proportionally.
+
+This is consistent with the published Vina literature (Ross et al
+2023 J Chem Inf Model; Gaieb et al 2018 D3R) showing Vina is
+unreliable for kinase Ki ranking without rescoring. **For a wet-
+lab replacement, the biologist-facing implication is:** do not use
+Vina alone to triage kinase inhibitor series. Use it as a pocket-
+fit / pose-sanity pass, then rescore with xTB single-point or FEP
+for ranking.
+
 ### Cross-system take-away (for biologists)
 
-Use CellSim for ranking across **wide** affinity ranges (nM vs mM),
-**not** for discriminating close analogs. This is the correct
-intuition for any Vina-based pipeline and it's now baked into
-reproducible benchmarks. Future perses-FEP integration (Layer 1.3)
-will tighten MAE to ~1 kcal/mol on *both* systems.
+Use CellSim's Vina layer for ranking across **wide** affinity ranges
+(nM vs mM) on **non-kinase** targets, or for pose/pocket-fit
+sanity. Do not use it for:
+
+- close analog ranking within <~4 kcal/mol (noise floor ~1 kcal/mol
+  — trypsin evidence);
+- kinase ATP-site series (saturation failure — EGFR evidence).
+
+Future perses-FEP integration (Layer 1.3) will tighten MAE to
+~1 kcal/mol and restore rank-order on kinase systems.
 
 Reproducer: `cellsim uq ... ` (see `src/uq/calibration.py`).
 
