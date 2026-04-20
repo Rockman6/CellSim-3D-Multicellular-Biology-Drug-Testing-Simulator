@@ -92,6 +92,9 @@ jobs:
       - name: chem ADMET smoke (non-AI descriptors, 10/10)
         run: python -u tests/chem/test_admet_smoke.py
 
+      - name: chem cache smoke (parametrize AM1-BCC cache speed-up)
+        run: python -u tests/chem/test_parametrize_cache.py
+
       - name: md ligand smoke (Layer 1.2, 3 drugs × 10 ps, 3/3)
         run: python -u tests/md/test_ligand_vacuum.py --max 3 --gate 3
 
