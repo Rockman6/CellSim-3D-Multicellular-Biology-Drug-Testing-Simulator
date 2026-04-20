@@ -144,16 +144,23 @@ def _pose_to_mol(elements, positions_A, smiles):
             f"{float(xyz[2]):.4f}")
     xyz_block = "\n".join(xyz_lines)
 
+    # Infer connectivity from 3D, then transfer bond orders from the
+    # SMILES template via substructure matching. If this fails
+    # (typically because DetermineConnectivity mis-infers one edge
+    # on a distorted Vina pose), we surface ok=False honestly rather
+    # than use a less reliable fallback — strain is informational,
+    # and an empty cell in the CSV is more trustworthy than a bogus
+    # ratio pulled from misaligned coordinates.
     try:
         raw = Chem.MolFromXYZBlock(xyz_block)
         if raw is None:
             return None, n_heavy_pose, "MolFromXYZBlock returned None"
         rdDetermineBonds.DetermineConnectivity(raw)
         mol = AllChem.AssignBondOrdersFromTemplate(template, raw)
+        return mol, n_heavy_pose, None
     except Exception as e:
         return (None, n_heavy_pose,
                 f"bond-order inference failed: {e}")
-    return mol, n_heavy_pose, None
 
 
 def ligand_strain(

@@ -89,6 +89,16 @@ class BatchConfig:
     export_poses_dir: Optional[str] = None  # if set, per-compound
                                             # SDF + PDB files of all
                                             # poses get written here
+    run_strain: bool = True           # post-dock UFF-ensemble strain
+                                      # diagnostic on top-pose via
+                                      # src.dock.strain. Surfaces
+                                      # Vina artefacts (high-score but
+                                      # conformationally non-physical
+                                      # poses). ~0.5-2 s per compound
+                                      # at ensemble_n=20.
+    strain_ensemble_n: int = 20       # conformers for UFF ensemble;
+                                      # PoseBusters default is 100
+                                      # (slower, tighter ratio CI)
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -229,6 +239,27 @@ def _worker(task: tuple) -> dict:
                               if admet.mutagenic_alerts else ""),
         )
 
+    strain_result = None
+    if cfg.run_strain and r.ok and r.poses:
+        try:
+            from src.dock.strain import ligand_strain
+            strain_result = ligand_strain(
+                r.poses[0].elements, r.poses[0].positions_A,
+                r.ligand_smiles,
+                ensemble_n=cfg.strain_ensemble_n)
+        except Exception as e:
+            logger.debug("strain failed for %s: %s", name, e)
+
+    def _strain_fields() -> dict:
+        if strain_result is None or not strain_result.ok:
+            return {}
+        return dict(
+            strain_band=strain_result.band,
+            strain_kcalmol=round(
+                strain_result.strain_kcalmol, 2),
+            strain_ratio=round(strain_result.energy_ratio, 3),
+        )
+
     def _mc_fields() -> dict:
         if mc_stats is None or not mc_stats.ok:
             return {}
@@ -266,6 +297,7 @@ def _worker(task: tuple) -> dict:
         wall_s=round(wall, 1),
         **_admet_fields(),
         **_mc_fields(),
+        **_strain_fields(),
     )
     return record
 
@@ -344,6 +376,8 @@ def _progress_line(i: int, n: int, rec: dict) -> None:
         pb = ("pocket:ok" if rec.get("pocket_ok") else
               "pocket:fail" if rec.get("pocket_ok") is False else
               "pocket:n/a")
+        if rec.get("strain_band"):
+            tag += f"  strain:{rec['strain_band']}"
     else:
         tag = "FAIL"
         pb = (rec.get("reason") or "?")[:60]
@@ -359,6 +393,7 @@ def _write_csv(records: list[dict], out: Path) -> None:
             "dG_ci95_lo", "dG_ci95_hi",
             "mc_n_ok", "mc_n_samples",
             "crystal_rmsd_A", "pocket_ok", "geometry_ok", "pb_all_ok",
+            "strain_band", "strain_kcalmol", "strain_ratio",
             "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
             "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
             "bbb_permeable", "herg_risk", "herg_alerts",
@@ -431,6 +466,16 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="per-compound SDF + PDB files of all poses "
                          "written here. Open in PyMOL / ChimeraX / "
                          "any SDF viewer.")
+    ap.add_argument("--no-strain", action="store_true",
+                    help="skip the UFF-ensemble ligand-strain check "
+                         "(default: on). Strain flags Vina poses "
+                         "that score well but are conformationally "
+                         "non-physical; adds ~1 s per compound.")
+    ap.add_argument("--strain-ensemble", type=int, default=20,
+                    metavar="N",
+                    help="number of conformers for the UFF-ensemble "
+                         "strain baseline (default 20; PoseBusters "
+                         "default 100 is tighter but slower).")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -477,6 +522,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         refine_poses=args.refine_poses,
         cache_path=args.cache,
         export_poses_dir=args.export_poses_dir,
+        run_strain=not args.no_strain,
+        strain_ensemble_n=args.strain_ensemble,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
