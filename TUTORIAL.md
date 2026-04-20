@@ -64,8 +64,10 @@ RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STR
    3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
 ```
 
-To visualise the verdict distribution at a glance, turn any
-batch CSV into a 4-panel dashboard PNG:
+Whenever `cellsim dock` writes a CSV via `--out-csv`, it also
+writes a `<name>.triage.png` next to it — the 4-panel dashboard
+below appears automatically, no extra command needed. To
+regenerate from an existing CSV:
 
 ```bash
 ./scripts/cellsim triage-png run/report.csv --out run/triage.png
