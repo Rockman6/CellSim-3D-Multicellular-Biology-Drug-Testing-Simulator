@@ -12,8 +12,18 @@ from .simulate import (
     TrajectoryResult,
     simulate_ligand,
 )
+from .protein import (
+    ProteinSystemResult,
+    ProteinTrajectoryResult,
+    load_protein_pdb,
+    short_protein_md,
+)
 
 __all__ = [
     "TrajectoryResult",
     "simulate_ligand",
+    "ProteinSystemResult",
+    "ProteinTrajectoryResult",
+    "load_protein_pdb",
+    "short_protein_md",
 ]
