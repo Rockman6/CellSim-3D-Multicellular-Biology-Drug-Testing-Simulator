@@ -2460,7 +2460,38 @@ private:
             c.cdk.p21 = fminf(1.0f, c.cdk.p21 + 0.05f * sdt);
             c.cdk.CycD = fmaxf(0, c.cdk.CycD - 0.02f * sdt);
         }
-        if(c.damageLevel>0.2f) c.cdk.p21=fminf(1.0f,c.cdk.p21+c.damageLevel*0.35f*0.05f);
+        // ── Phase G4: p53-driven p21 transcription ────────────────
+        // Replaces the previous direct damageLevel → p21 hack. p53
+        // transcribes CDKN1A (p21) via a verified response element
+        // (El-Deiry 1993 Cell 75:817); Hill cooperativity n=8 from
+        // Ohno 2022, K_p21=0.18 (same normalised scale as MDM2 so
+        // baseline p53≈0.089 gives negligible p21 input but damage-
+        // driven p53≥0.2 snaps transcription on). k_p21_max tuned
+        // so steady-state p21 balances the existing 0.18/s decay
+        // in cdk.step at p21_ss≈0.9 under saturated hill.
+        //
+        // Cells that are ATM-active AND in S/G2 get a direct damage
+        // cytostatic bump (~20 % of the former hack's magnitude) to
+        // represent CHK1/CHK2-mediated checkpoint — a p53-independent
+        // pathway — preserving observed cisplatin response kinetics.
+        {
+            const float K_p21    = 0.18f;
+            const float k_p21_max = 0.15f;
+            float p2  = c.p53_protein * c.p53_protein;
+            float p4  = p2 * p2;
+            float p8  = p4 * p4;
+            float K2  = K_p21 * K_p21;
+            float K4  = K2 * K2;
+            float K8  = K4 * K4;
+            float hill_p21 = p8 / (K8 + p8);
+            c.cdk.p21 = fminf(1.0f, c.cdk.p21
+                              + k_p21_max * hill_p21 * sdt);
+            // CHK1/CHK2 S/G2 checkpoint (p53-independent, acts fast).
+            if (c.damageLevel > 0.2f && (c.phase == 1 || c.phase == 2)) {
+                c.cdk.p21 = fminf(1.0f,
+                    c.cdk.p21 + c.damageLevel * 0.008f * sdt);
+            }
+        }
 
         c.phase=c.cdk.getPhase();
         // Hold cells with CycB > 0.25 in G2 UNTIL the G2/M gate has

@@ -164,3 +164,13 @@ add_executable(cellsim_p53_pulsing
 target_include_directories(cellsim_p53_pulsing PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(cellsim_p53_pulsing PRIVATE
     -Wall -Wextra -Wno-unused-parameter -O2)
+
+# Phase-G4 biology validator: cisplatin-induced G1 arrest via
+# p53→p21→CDK2 axis; benchmarked against Sorenson 1990 / Zeng 2019.
+add_executable(cellsim_cisplatin_arrest
+    tests/headless_cisplatin_arrest.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
+target_include_directories(cellsim_cisplatin_arrest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(cellsim_cisplatin_arrest PRIVATE
+    -Wall -Wextra -Wno-unused-parameter -O2)
