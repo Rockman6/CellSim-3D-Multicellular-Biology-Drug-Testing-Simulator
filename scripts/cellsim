@@ -31,6 +31,9 @@ usage: cellsim <subcommand> [args...]
   triage-png  triage-breakdown PNG dashboard from a batch CSV
                 -> src/dock/triage_viewer.py
 
+  shortlist   filter a batch CSV to only follow_up + review rows
+                -> src/dock/shortlist.py
+
   redock      single-pair re-dock with crystal-RMSD
                 -> src/dock/vina.py
 
@@ -141,6 +144,7 @@ case "${1:-}" in
     dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
     off-target)  shift; exec python -m src.dock.off_target "$@" ;;
     triage-png)  shift; exec python -m src.dock.triage_viewer "$@" ;;
+    shortlist)   shift; exec python -m src.dock.shortlist "$@" ;;
     redock)      shift; exec python -m src.dock.vina "$@" ;;
     pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
     profile)     shift; exec python -m src.chem.profile "$@" ;;
