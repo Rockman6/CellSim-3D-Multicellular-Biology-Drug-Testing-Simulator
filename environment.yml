@@ -1,4 +1,4 @@
-# CellSim Campaign-1 Python environment
+# CellSim Campaign-1 Python environment (non-AI)
 #
 # Usage:
 #   mamba env create -f environment.yml    # or conda
@@ -6,6 +6,12 @@
 #
 # Pinned to known-good versions as of the restart. Bump via PR only.
 # Every tool below is BUY (integrate) rather than BUILD per the plan.
+#
+# Per the 2026-04-20 non-AI amendment (see MISSION.md), ML potentials
+# (mace-torch, openmm-ml, NequIP, OrbNet, Allegro) and GNINA CNN-
+# scored docking as the primary path are explicitly excluded. UQ
+# comes from parameter sweeps + Sobol (SALib) + Monte-Carlo and
+# MAPIE conformal as a post-hoc non-parametric wrapper.
 
 name: cellsim
 channels:
@@ -23,9 +29,8 @@ dependencies:
   - openff-interchange>=0.3
   - ambertools>=23            # for AM1-BCC, antechamber
 
-  # MD engines
+  # MD engines (no ML potentials)
   - openmm>=8.1
-  - openmm-ml                 # MACE / OrbNet plugin
   - openmmtools>=0.23
   - pdbfixer>=1.9
   - mdanalysis>=2.6
@@ -38,14 +43,20 @@ dependencies:
   - vermouth                  # martinize2
 
   # Docking + FEP
-  # GNINA + perses installed via pip / source; placeholder here.
+  #   AutoDock Vina primary (below via pip).
+  #   perses for alchemical FEP (pip).
 
-  # UQ + stats
-  - mapie>=0.8
+  # Metabolism (Campaign 2 prep)
+  - cobra>=0.29               # COBRApy FBA
+  - python-libsbml>=5.20      # SBML I/O for pathway models
+
+  # UQ + stats (non-AI)
+  - salib>=1.4                # Sobol, Morris, FAST sensitivity
+  - mapie>=0.8                # post-hoc conformal prediction wrapper
   - numpy>=1.26
   - scipy>=1.11
   - pandas>=2.1
-  - scikit-learn>=1.3
+  - scikit-learn>=1.3         # calibration helpers (no neural use)
 
   # Storage
   - h5py>=3.10
@@ -65,5 +76,5 @@ dependencies:
 
   - pip:
     - perses                  # alchemical FEP
-    - mace-torch              # MACE ML-potential
+    - vina                    # AutoDock Vina Python bindings
     - posebusters             # pose validity
