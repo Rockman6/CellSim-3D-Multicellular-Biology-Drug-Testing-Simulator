@@ -145,3 +145,22 @@ add_executable(cellsim_headless
 target_include_directories(cellsim_headless PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(cellsim_headless PRIVATE
     -Wall -Wextra -Wno-unused-parameter -O2)
+
+# Phase-7 infection-chain smoke test.
+add_executable(cellsim_infection
+    tests/headless_infection.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
+target_include_directories(cellsim_infection PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(cellsim_infection PRIVATE
+    -Wall -Wextra -Wno-unused-parameter -O2)
+
+# Phase-G2 biology validator: TP53 ↔ MDM2 oscillation under sustained damage,
+# benchmarked against Purvis 2012.
+add_executable(cellsim_p53_pulsing
+    tests/headless_p53_pulsing.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
+target_include_directories(cellsim_p53_pulsing PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(cellsim_p53_pulsing PRIVATE
+    -Wall -Wextra -Wno-unused-parameter -O2)
