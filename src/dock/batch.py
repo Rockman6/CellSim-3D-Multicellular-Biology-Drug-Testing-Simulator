@@ -164,6 +164,68 @@ def _triage_call(record: dict) -> tuple[str, str]:
     return "follow_up", f"ΔG {dG:+.2f}, pose trustworthy"
 
 
+# PDB IDs of bundled kinase crystals + well-known kinase PDBs
+# that are most likely to be fed into `cellsim dock`. Curated list
+# — expand as needed, or extend via the receptor-header check
+# below.
+_KNOWN_KINASE_PDB_IDS = {
+    "1m17",   # EGFR T790M + erlotinib
+    "2hyy",   # Abl + imatinib
+    "4bvt",   # cMet + crizotinib
+    "1fin",   # CDK2
+    "1hcl",   # CDK2 apo
+    "1a9u",   # p38α MAPK apo
+    "1kv2",   # p38α + BIRB-796
+    "2rgp",   # CDK2 + roscovitine
+    "3po1",   # CDK2 variant
+    "1opj",   # Abl T315I + PD-173955
+}
+
+
+def _warn_kinase_receptor(receptor_pdb: Path) -> None:
+    """Print a heads-up when the receptor is a kinase ATP-site
+    crystal. Best-effort: checks the PDB ID (stem) against a
+    curated list, then scans the first 50 lines of the PDB for
+    'KINASE' in the HEADER/TITLE/COMPND records."""
+    stem = receptor_pdb.stem.lower()
+    pdb_id = stem[:4] if len(stem) >= 4 else stem
+    is_known = pdb_id in _KNOWN_KINASE_PDB_IDS
+
+    header_hits = False
+    try:
+        with receptor_pdb.open() as fh:
+            for i, line in enumerate(fh):
+                if i > 50:
+                    break
+                if not line.startswith(
+                        ("HEADER", "TITLE", "COMPND", "SOURCE")):
+                    continue
+                if "KINASE" in line.upper():
+                    header_hits = True
+                    break
+    except OSError:
+        pass
+
+    if not (is_known or header_hits):
+        return
+    tag = "bundled kinase PDB" if is_known else \
+        "header contains 'KINASE'"
+    print(
+        "\n[batch] ⚠  heads-up — receptor looks like a kinase "
+        f"({tag}).\n"
+        "         Vina's empirical score does not reliably "
+        "rank-order kinase ATP-site\n"
+        "         inhibitors (Spearman -0.49 on the bundled EGFR "
+        "calibration set).\n"
+        "         Use the ΔG as a pose/pocket-fit sanity check "
+        "only; do NOT\n"
+        "         triage a kinase hit list on raw Vina ΔG. See "
+        "TUTORIAL.md §8\n"
+        "         'when CellSim works and when it fails' for "
+        "details.\n",
+        flush=True)
+
+
 def _kd_label(kd_nM: float) -> str:
     if kd_nM < 1.0:
         return f"{kd_nM * 1000:.1f} pM"
@@ -608,6 +670,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "verdict is 'follow_up' or 'review' — "
                          "the hand-to-wet-lab file.")
     args = ap.parse_args(argv)
+
+    # Upfront target-family heads-up. Vina's empirical score is not
+    # reliable for rank-ordering kinase ATP-site inhibitors
+    # (Spearman -0.49 on the EGFR calibration set — see
+    # BENCHMARKS.md §1.7). Warn when the receptor PDB is a known
+    # kinase crystal or its header mentions "KINASE", so biologists
+    # don't silently misuse the tool.
+    _warn_kinase_receptor(Path(args.receptor))
 
     # Resolve search box: either CLI args or fpocket auto-detect.
     if args.center is None:
