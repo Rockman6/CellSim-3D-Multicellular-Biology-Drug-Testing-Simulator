@@ -94,6 +94,9 @@ class CypPoseSoMResult:
     #                  accessible: bool)
 
     dock_dG_kcalmol: Optional[float] = None
+    strain_band: Optional[str] = None
+    strain_kcalmol: Optional[float] = None
+    strain_ratio: Optional[float] = None
     wall_seconds: Optional[float] = None
 
     def top1_parent_idx(self) -> Optional[int]:
@@ -105,10 +108,12 @@ class CypPoseSoMResult:
     def summary(self) -> str:
         if not self.ok:
             return f"[FAIL] CYP pose-SoM {self.smiles}  {self.reason}"
+        strain_tag = (f"  strain={self.strain_band}"
+                      if self.strain_band else "")
         lines = [
             f"[OK]   CYP3A4 pose-SoM  {self.smiles}  "
             f"n_candidates={self.n_candidates}  "
-            f"dock_ΔG={self.dock_dG_kcalmol:+.2f}  "
+            f"dock_ΔG={self.dock_dG_kcalmol:+.2f}{strain_tag}  "
             f"max_Fe={self.max_fe_distance_A:.1f} Å  "
             f"wall {self.wall_seconds:.1f} s",
         ]
@@ -248,6 +253,23 @@ def predict_cyp_som_with_heme_access(
             "reach — try --max-fe > 6 or refine pose")
         result.wall_seconds = time.time() - t0
         return result
+
+    # Pose-trust: UFF-ensemble strain on the top catalytically-
+    # productive pose. If strain=reject, the SoM prediction is
+    # resting on a non-physical docking pose and should not be
+    # trusted clinically — flagged but not suppressed, so the
+    # user can see the full ranking and make the call.
+    try:
+        from src.dock.strain import ligand_strain
+        s = ligand_strain(
+            top_pose.elements, top_pose.positions_A,
+            smiles, ensemble_n=20)
+        if s.ok:
+            result.strain_band = s.band
+            result.strain_kcalmol = round(s.strain_kcalmol, 2)
+            result.strain_ratio = round(s.energy_ratio, 3)
+    except Exception as e:
+        logger.debug("strain on CYP pose-SoM failed: %s", e)
 
     result.ok = True
     result.wall_seconds = time.time() - t0
