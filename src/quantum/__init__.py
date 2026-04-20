@@ -14,6 +14,10 @@ from .metabolism import (
     SoMResult,
     predict_cyp_som_bde,
 )
+from .dft import (
+    DftResult,
+    dft_single_point,
+)
 
 __all__ = [
     "XtbResult",
@@ -21,4 +25,6 @@ __all__ = [
     "SoMCandidate",
     "SoMResult",
     "predict_cyp_som_bde",
+    "DftResult",
+    "dft_single_point",
 ]
