@@ -16,6 +16,8 @@ Steps (each one < 1 s):
     7. RDKit can parse and embed aspirin?
     8. compound_hash deterministic?
     9. src.cache round-trip works?
+   10. triage rule table returns follow_up on a clean hit?
+   11. src.dock.strain importable?
 """
 
 from __future__ import annotations
@@ -178,6 +180,24 @@ def main() -> int:
             c.close()
     except Exception as e:
         check(f"Cache round-trip  [{e}]", False)
+
+    # 5d Triage + strain modules import and basic rules fire.
+    try:
+        from src.dock.batch import _triage_call
+        verdict, _ = _triage_call(dict(
+            dG_kcalmol=-9.2, strain_band="good",
+            pocket_ok=True, mutagenic_risk="low",
+            herg_risk="low", ro5_violations=0))
+        check(f"triage rules  → follow_up on a clean hit",
+              verdict == "follow_up")
+    except Exception as e:
+        check(f"triage rules  [{e}]", False)
+
+    try:
+        from src.dock.strain import ligand_strain  # noqa: F401
+        check("strain diagnostic module importable", True)
+    except Exception as e:
+        check(f"strain diagnostic  [{e}]", False)
 
     # --- report --------------------------------------------------
     print()
