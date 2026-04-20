@@ -424,6 +424,23 @@ def run_batch(
     if out_csv:
         _write_csv(sorted_records, out_csv)
         print(f"[batch] wrote {out_csv}", flush=True)
+        # Side-effect: also render the triage-breakdown PNG next to
+        # the CSV so biologists get the dashboard without running a
+        # separate subcommand. Silently skip if matplotlib or the
+        # viewer module isn't importable.
+        try:
+            from src.dock.triage_viewer import render_triage_dashboard
+            png = Path(out_csv).with_suffix(".triage.png")
+            render_triage_dashboard(
+                [{k: (str(v) if v is not None else "")
+                  for k, v in r.items()} for r in sorted_records],
+                png,
+                title=f"{Path(cfg.receptor_pdb).stem} — "
+                      f"{sum(1 for r in sorted_records if r.get('ok'))}"
+                      " compounds")
+            print(f"[batch] wrote {png}", flush=True)
+        except Exception as e:
+            logger.debug("triage PNG render skipped: %s", e)
 
     return sorted_records
 
