@@ -122,6 +122,28 @@ top pose (Buttenschoen 2024 Chem Sci 15:3130): `good` / `acceptable`
 / `suspicious` / `reject`. A `reject` here force-drops the
 compound regardless of ΔG because the pose isn't physical.
 
+### Single-compound pose viewer
+
+For one compound, `cellsim dock-one` renders the Vina pose into
+a dashboard with the binding pocket, the ranked-pose ΔG bars
+coloured by crystal-RMSD if a reference is available, and the
+strain readout in the title line:
+
+```bash
+./scripts/cellsim dock-one \
+    --receptor benchmarks/dock/1stp.pdb \
+    --ligand-smiles "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12" \
+    --center 11.12,1.68,-10.75 --box 20,20,20 \
+    --exhaustiveness 16 --num-modes 3 \
+    --save /tmp/biotin_dock.png
+```
+
+![dock-one biotin](docs/images/dock_one_biotin.png)
+
+Title line shows the top-1 ΔG, K_d, seed/exhaustiveness, and
+the strain badge (UFF-ensemble ratio + kcal/mol) so you see
+pose trust and affinity together.
+
 ## 3. Reading a drug-profile PNG
 
 Open `/tmp/run/profile_01_biotin_TRUE_BINDER.png` and you'll see
