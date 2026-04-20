@@ -44,6 +44,37 @@ from src.quantum.metabolism import predict_cyp_som_bde, SoMResult  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _normalise_elem(e: str) -> str:
+    """AutoDock PDBQT atom types → periodic-table element."""
+    e = e.upper()
+    if e in ("A", "G", "GA", "C"):
+        return "C"
+    if e in ("N", "NA", "NS"):
+        return "N"
+    if e in ("O", "OA"):
+        return "O"
+    if e in ("S", "SA"):
+        return "S"
+    return e.title()
+
+
+def _parent_pose_idx(cand, som, pose) -> Optional[int]:
+    """Map a SoMCandidate.parent_atom_idx to the matching heavy-atom
+    index in the docked pose. Returns None on mismatch."""
+    n_heavy_before = sum(
+        1 for i, e in enumerate(som.elements)
+        if i < cand.parent_atom_idx and e.upper() != "H")
+    pose_heavy = [(i, _normalise_elem(e))
+                  for i, e in enumerate(pose.elements)
+                  if _normalise_elem(e) != "H"]
+    if n_heavy_before >= len(pose_heavy):
+        return None
+    pose_full_idx, pose_elem = pose_heavy[n_heavy_before]
+    if pose_elem.title() != cand.parent_element.title():
+        return None
+    return pose_full_idx
+
+
 @dataclass
 class CypPoseSoMResult:
     smiles: str
@@ -96,12 +127,22 @@ def predict_cyp_som_with_heme_access(
     *,
     max_fe_distance_A: float = 6.0,
     exhaustiveness: int = 32,
-    num_modes: int = 3,
+    num_modes: int = 9,
     seed: int = 1,
     cpu: int = 2,
     cache: Optional["object"] = None,
+    ensemble_pose_search: bool = True,
 ) -> CypPoseSoMResult:
-    """Run xTB SoM + CYP3A4 docking; filter SoM by Fe accessibility."""
+    """Run xTB SoM + CYP3A4 docking; filter SoM by Fe accessibility.
+
+    If `ensemble_pose_search=True` (default), iterate through ALL
+    Vina poses and pick the one that places the lowest-BDE
+    candidate closest to Fe (within `max_fe_distance_A`). This
+    matches the biological fact that CYP3A4's active site is
+    flexible and the catalytically-productive pose is not always
+    Vina's best-scored pose — energy and catalytic competence
+    are distinct properties.
+    """
     import math
 
     result = CypPoseSoMResult(
@@ -126,8 +167,36 @@ def predict_cyp_som_with_heme_access(
         result.reason = f"CYP3A4 dock failed: {dock_r.reason}"
         result.wall_seconds = time.time() - t0
         return result
+    result.dock_dG_kcalmol = float(dock_r.poses[0].affinity_kcalmol)
+
+    # Step 2a: ensemble search — pick the Vina pose that places the
+    # lowest-BDE candidate within reach of Fe. Fall back to pose #1
+    # if no pose reaches the heme for any candidate.
     top_pose = dock_r.poses[0]
-    result.dock_dG_kcalmol = float(top_pose.affinity_kcalmol)
+    if ensemble_pose_search:
+        best_score = None
+        best_pose = top_pose
+        for cand_pose in dock_r.poses:
+            # For this pose, compute (min BDE among accessible
+            # candidates, min Fe distance across all candidates).
+            # Lower best_bde + any accessibility = better.
+            min_accessible_bde = None
+            for cand in som.candidates:
+                pose_idx = _parent_pose_idx(cand, som, cand_pose)
+                if pose_idx is None:
+                    continue
+                xyz = cand_pose.positions_A[pose_idx]
+                d = math.sqrt(sum((xyz[k] - _FE_COORD_1TQN[k]) ** 2
+                                    for k in range(3)))
+                if d <= max_fe_distance_A:
+                    if (min_accessible_bde is None
+                            or cand.bde_kcalmol < min_accessible_bde):
+                        min_accessible_bde = cand.bde_kcalmol
+            if min_accessible_bde is not None:
+                if best_score is None or min_accessible_bde < best_score:
+                    best_score = min_accessible_bde
+                    best_pose = cand_pose
+        top_pose = best_pose
 
     # Step 3: map SoM candidate parent atoms → pose atoms.
     # The BDE predictor indexes atoms in its internal RDKit mol
@@ -145,43 +214,10 @@ def predict_cyp_som_with_heme_access(
     # Walk the SoM `elements` array; every time we hit the parent
     # idx, count how many heavy atoms came before and use that
     # as the pose index.
-    # AutoDock atom types in PDBQT use A (aromatic C), G / GA
-    # (glycine C), NA / NS (polar N/S), OA (H-bond acceptor O),
-    # SA (S H-bond acc). Normalise back to periodic-table element.
-    def _normalise_elem(e: str) -> str:
-        e = e.upper()
-        if e in ("A", "G", "GA", "C"):
-            return "C"
-        if e in ("N", "NA", "NS"):
-            return "N"
-        if e in ("O", "OA"):
-            return "O"
-        if e in ("S", "SA"):
-            return "S"
-        return e.title()
-
-    pose_heavy = [(i, _normalise_elem(e))
-                  for i, e in enumerate(top_pose.elements)
-                  if _normalise_elem(e) != "H"]
-    # pose_heavy[k] = (index_in_full_pose, element) for the k-th
-    # heavy atom.
-
     entries = []
     for cand in som.candidates:
-        # Count heavy atoms strictly before parent_atom_idx in
-        # the som mol.
-        n_heavy_before = sum(
-            1 for i, e in enumerate(som.elements)
-            if i < cand.parent_atom_idx and e.upper() != "H")
-        if n_heavy_before >= len(pose_heavy):
-            # Parent atom isn't a heavy atom — shouldn't happen.
-            continue
-        pose_full_idx, pose_elem = pose_heavy[n_heavy_before]
-        if pose_elem.title() != cand.parent_element.title():
-            # Element mismatch — stale indices, skip.
-            logger.debug(
-                "element mismatch at SoM idx %d: som=%s pose=%s",
-                cand.parent_atom_idx, cand.parent_element, pose_elem)
+        pose_full_idx = _parent_pose_idx(cand, som, top_pose)
+        if pose_full_idx is None:
             continue
         xyz = top_pose.positions_A[pose_full_idx]
         dx, dy, dz = (xyz[i] - _FE_COORD_1TQN[i] for i in range(3))
