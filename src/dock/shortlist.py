@@ -36,11 +36,14 @@ def filter_csv(
 ) -> int:
     """Filter `in_path` to `out_path`. Returns number of rows kept."""
     kept = 0
-    with in_path.open() as fi:
+    with in_path.open(encoding="utf-8-sig") as fi:
         reader = csv.DictReader(fi)
         fieldnames = reader.fieldnames or []
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        with out_path.open("w", newline="") as fo:
+        # Write with UTF-8 BOM so Excel on Windows auto-detects the
+        # encoding (same reasoning as src/dock/batch.py _write_csv).
+        with out_path.open("w", newline="",
+                            encoding="utf-8-sig") as fo:
             writer = csv.DictWriter(
                 fo, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
