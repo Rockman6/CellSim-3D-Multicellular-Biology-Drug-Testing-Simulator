@@ -9,13 +9,13 @@ manifest + Campaign-1 scope + build-vs-buy table).
 
 ## Where we are
 
-**Pre-Campaign-1 restart, April 2026.**
+**Campaign 1, mid-execution, April 2026.**
 
 The pre-restart HeLa / p53 / cisplatin Campaign-2 prototype is
-frozen under `OLD/`. It still builds and passes its 6 headless
-validators as a regression snapshot. The new top-level `src/` tree
-is scaffolded but not yet populated; each layer's source is added in
-a dedicated PR.
+frozen under `OLD/` as a regression snapshot. The new top-level
+`src/` tree is populated across Layers 1.1–1.6 with the exceptions
+noted below. 34 smoke gates run on every PR (see `README.md`
+§"Validation that runs on every PR").
 
 ## Campaign 1 — Atomic → Molecular Foundation (Years 1–2, non-AI)
 
@@ -24,18 +24,44 @@ is 7 layers, no ML potentials. Original Layer 1.5 (MACE-OFF23) was
 removed; the coarse-grained, UQ, and blind-validation layers
 renumbered accordingly.
 
-- 1.1 Chem foundation (RDKit + OpenFF + AM1-BCC)          — DONE
-- 1.2 Classical MD (OpenMM + ff14SB + TIP3P)              — DONE (MVP)
-- 1.3 Docking + FEP (AutoDock Vina primary + perses FEP)
-- 1.4 Quantum (xtb + PySCF)
-- 1.5 Coarse-grained (Martini 3)
-- 1.6 UQ (Sobol + Monte-Carlo + parameter sweeps; MAPIE conformal
-  as post-hoc statistical wrapper only)
-- 1.7 Blind-validation harness (PDBBind / CASF / PoseBusters /
-  ChEMBL)
+- **1.1 Chem foundation (RDKit + OpenFF + AM1-BCC)** — DONE.
+  Parametrise, ADMET (Lipinski + QED + logS + BBB + hERG + Ames),
+  AM1-BCC cache, profile-PNG dashboard.
+- **1.2 Classical MD (OpenMM + ff14SB + TIP3P)** — DONE (MVP).
+  Vacuum Langevin on ligands, 1UBQ solvate + 1 ps MD. Full
+  100-ns ubiquitin gate pending GPU runner.
+- **1.3 Docking + FEP (AutoDock Vina primary + perses FEP)** —
+  Docking side substantially DONE; FEP pending. Covered:
+  Meeko prep, re-dock gate, mini-bench, fpocket auto-detect,
+  Vina cache, MC-dock, refine, SDF/PDB export, off-target
+  panel, CYP3A4 inhibition screen, UFF-ensemble strain as a
+  cross-cutting pose-trust gate, triage verdict column,
+  strain-gate top-pose promotion, shortlist CSV, triage-PNG
+  dashboard, kinase-receptor heads-up, "next steps" paste-ready
+  guidance. **FEP integration via openmmtools/perses is the
+  open Layer 1.3 work item** (blocks kinase rank-order fix).
+- **1.4 Quantum (xtb + PySCF)** — DONE (MVP). GFN2 single-point,
+  homolytic C-H BDE ranking for CYP3A4 SoM, optional DFT top-N
+  rescore, CYP3A4 heme-accessibility pose-SoM with ensemble pose
+  search. 2/3 on the literature validation set (aspirin ✓,
+  midazolam ✓, diazepam ✗ — documented as xTB-BDE limitation
+  on α-N-methyl sites, not a pose-sampling issue).
+- **1.5 Coarse-grained (Martini 3)** — SCAFFOLD only. Stubs raise
+  NotImplementedError; martinize2 present in env via `vermouth`.
+- **1.6 UQ (Sobol + Monte-Carlo + parameter sweeps; MAPIE
+  conformal)** — DONE. MC-dock over seeds, Sobol sensitivity,
+  split-conformal quantiles, streptavidin + trypsin + EGFR
+  calibration bundles (EGFR is an honest rank-order-failure
+  finding on kinases, pinned as a regression witness).
+- **1.7 Blind-validation harness (PDBBind / CASF / PoseBusters /
+  ChEMBL)** — PARTIAL. PoseBusters integrated; PDBBind / CASF
+  bundles not yet populated.
 
 Every layer ships **numeric harness + minimal viewer** in lockstep.
-See `docs/campaign1_scope.md` for exit criteria.
+See `docs/campaign1_scope.md` for exit criteria, `BENCHMARKS.md`
+for the current numbers, `TUTORIAL.md` §8 for the target-class
+reliability table that tells biologists when to trust CellSim
+and when to stop.
 
 ## Campaigns 2–5
 
