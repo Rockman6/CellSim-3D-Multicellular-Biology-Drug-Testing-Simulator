@@ -20,6 +20,7 @@ from .calibration import (
     CalibrationPoint,
     run_calibration,
 )
+from .calibration_viewer import render_calibration_result
 
 __all__ = [
     "DockingMCResult",
@@ -31,4 +32,5 @@ __all__ = [
     "CalibrationResult",
     "CalibrationPoint",
     "run_calibration",
+    "render_calibration_result",
 ]
