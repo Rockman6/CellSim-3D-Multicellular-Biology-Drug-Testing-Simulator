@@ -113,27 +113,26 @@ Explicitly excluded:
 ## Validation that runs on every PR
 
 [`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) provisions
-the `cellsim` conda env and runs the full gate stack in ~15 min:
+the `cellsim` conda env and runs **34 gates** in ~15 min, grouped
+by layer:
 
-1. `tests/chem/test_parametrize_smoke.py` — 10 canonical drugs →
-   OpenMM system (Layer 1.1).
-2. `tests/chem/test_admet_smoke.py` — Lipinski / QED / logS sanity.
-3. `tests/md/test_ligand_vacuum.py --max 3 --gate 3` — 10-ps vacuum
-   Langevin (Layer 1.2).
-4. `tests/md/test_protein_load.py` — 1UBQ load + solvate + minimise +
-   1-ps MD.
-5. `tests/dock/test_prep_smoke.py` — Meeko PDBQT prep.
-6. `tests/dock/test_redocking.py` — 1STP biotin top-1 ≤ 2.5 Å AND
-   top-3 best < 2.0 Å.
-7. `tests/dock/test_pocket_detect_smoke.py` — fpocket finds biotin
-   pocket within 3 Å.
-8. `tests/dock/test_mini_bench.py` — 3-cocrystal aggregate pose
-   recovery ≥ 66 %.
-9. `tests/quantum/test_xtb_smoke.py` — 10-drug GFN2 sanity.
-10. `tests/quantum/test_som_smoke.py` — 3-drug CYP3A4 BDE smoke.
-11. `tests/uq/test_mc_dock_smoke.py` — 4-seed MC dock sanity.
+- **Layer 1.1 chem** — 10-drug parametrise, ADMET, AM1-BCC cache.
+- **Layer 1.2 MD** — 3-drug vacuum MD, 1UBQ solvate + 1 ps MD.
+- **Layer 1.3 docking + triage** — Meeko prep, 1STP re-dock,
+  fpocket detect, 3-cocrystal mini-bench, refine, Vina cache,
+  pose SDF/PDB export, off-target selectivity, strain diagnostic
+  (UFF-ensemble), strain-gate top-pose promotion, triage rule
+  table, shortlist filter, triage-PNG dashboard, kinase-receptor
+  heads-up, CYP3A4 DDI-risk strain-downgrade.
+- **Layer 1.4 quantum** — 10-drug xTB, 3-drug CYP3A4 BDE SoM,
+  heme-accessibility SoM, PySCF DFT single-point.
+- **Layer 1.6 UQ** — MC-dock, conformal, streptavidin + EGFR
+  calibrations.
+- **Cross-cut** — cache round-trip.
 
-A regression in any gate blocks merge.
+A regression in any gate blocks merge. See
+[`BENCHMARKS.md`](BENCHMARKS.md) for the numeric targets each
+gate enforces.
 
 ## Layout
 
