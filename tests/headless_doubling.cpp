@@ -17,6 +17,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 
 #include "../src/simulation/Simulation.h"
+#include "../src/simulation/SimRng.h"
 #include "../src/simulation/TelemetryLog.h"
 #include <chrono>
 #include <cmath>
@@ -33,12 +34,31 @@ static double secondsSince(std::chrono::high_resolution_clock::time_point t0) {
 
 int main(int argc, char** argv) {
     // ── CLI args ─────────────────────────────────────────────────────────
+    // Phase P1: --seed <uint32> may appear anywhere and is consumed first.
+    // Any remaining positional args retain their legacy meaning:
+    //   argv[1]=bio_hours argv[2]=bio_dt argv[3]=init_cells argv[4]=ref_csv.
+    uint32_t sim_seed = simrng::DEFAULT_SEED;
+    {
+        int w = 1; // next write slot for filtered argv
+        for (int i = 1; i < argc; i++) {
+            if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+                sim_seed = (uint32_t)std::strtoul(argv[i + 1], nullptr, 0);
+                i++; // skip value
+            } else {
+                argv[w++] = argv[i];
+            }
+        }
+        argc = w;
+    }
+    simrng::seed(sim_seed);
+
     float bio_hours_target = (argc >= 2) ? (float)atof(argv[1]) : 72.0f;
     float bio_dt_step      = (argc >= 3) ? (float)atof(argv[2]) :  60.0f;
     int   init_cells_req   = (argc >= 4) ? atoi(argv[3])        :  -1;
     const char* ref_csv    = (argc >= 5) ? argv[4]
         : "data/reference/growth_curves/ctc_hela_cellcount_seq02.csv";
 
+    printf("[headless] seed = 0x%08x\n", sim_seed);
     printf("[headless] bio-hours target = %.1f, bio_dt step = %.1f s\n",
            bio_hours_target, bio_dt_step);
     printf("[headless] reference CSV = %s\n", ref_csv);
@@ -124,7 +144,12 @@ int main(int argc, char** argv) {
                 else if (p == 2) g2++;
                 else if (p == 3) m++;
             }
-            double wall = secondsSince(wall0);
+            // Phase P1: wall-clock elapsed is computed only for stdout perf
+            // reporting; the CSV uses a deterministic 0.00 so run-to-run
+            // outputs are bit-identical. Real perf still goes to stdout.
+            double wall_perf = secondsSince(wall0);
+            double wall = 0.0;
+            (void)wall_perf;
             // Average CDK + biomass + ATP across alive cells
             float avgCycD=0, avgCycE=0, avgCycA=0, avgCycB=0;
             float avgRb=0, avgp21=0, avgBio=0, avgATP=0, avgDmg=0, avgRepl=0;

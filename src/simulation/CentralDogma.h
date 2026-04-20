@@ -3,6 +3,10 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <cstdint>
 #include <simd/simd.h>
 
 // Local clampf so this header is independent of include order. Simulation.h
@@ -275,6 +279,37 @@ static int findStopCodon(const std::string& mrna, int startBase) {
     return -1;
 }
 
+// ── Viral / extra gene template (Phase 8A) ──────────────────────────
+//
+// Part 8 §55 Stage 7: when a virion uncoats inside a cell, its genome
+// becomes an additional template the host's RNA Pol II (or viral
+// RdRp) transcribes alongside HBB. Each GeneTemplate is one gene
+// added to the cell's gene registry. The existing HBB pipeline is
+// unaffected — HBB is still referenced directly via HBB_SEQUENCE
+// when transcript.geneIndex == -1 (the default).
+//
+// This is the load-bearing change that lets viral replication go
+// through real transcription/translation rather than the toy
+// `dG = rate × intra × dt` autocatalytic ODE.
+enum class GenePolymerase : uint8_t {
+    HOST_POLII   = 0,   // default host nuclear Pol II
+    VIRAL_RdRp   = 1,   // virion-carried RNA-dependent RNA polymerase
+    VIRAL_RT     = 2,   // retrovirus reverse transcriptase (cDNA path)
+    VIRAL_POL    = 3,   // DNA-virus own polymerase (HBV, adeno)
+};
+
+struct GeneTemplate {
+    std::string     id;                // e.g. "flu_HA_seg4"
+    std::string     dnaSeq;            // DNA as sense strand
+    int             startCodon    = -1; // position within mRNA (set after build)
+    int             stopCodon     = -1;
+    std::string     codingMRNA;        // cached mRNA built once
+    float           promoterStrength = 1.0f; // 0..N; weighted random start
+    GenePolymerase  polymerase    = GenePolymerase::HOST_POLII;
+    std::string     proteinName;       // tag attached to released peptides
+    int             copiesMade    = 0; // monitoring / assembly counter
+};
+
 // Forward declarations for mitosis (full definition below)
 enum MitosisPhase {
     MITO_NONE = 0, MITO_PROPHASE, MITO_PROMETAPHASE, MITO_METAPHASE,
@@ -301,6 +336,9 @@ struct TranscriptionState {
     bool active;
     float timer;
     int transcriptIndex = -1;
+    // -1 = transcribing HBB (host default).
+    // >= 0 = index into CentralDogmaState::viralGenes (Phase 8A).
+    int geneIndex = -1;
 };
 
 struct SplicingState {
@@ -354,6 +392,16 @@ struct TranscriptState {
     std::string preMRNA;
     std::string matureMRNA;
     std::string polyATail;
+    // Phase 8A — which gene template produced this transcript.
+    // -1 = HBB host default; >= 0 = index into viralGenes.
+    int  geneIndex        = -1;
+    // Per-transcript start codon, used by translation instead of the
+    // cell-wide `startCodonBase` when geneIndex >= 0.
+    int  transcriptStartCodon = -1;
+    int  transcriptStopCodon  = -1;
+    // Tag propagated to ProteinProductState.proteinName on release.
+    std::string geneId;
+    std::string proteinTag;
 };
 
 struct ChargedTRNAState {
@@ -375,6 +423,12 @@ struct ProteinProductState {
     bool mature = false;
     std::string aminoAcids;
     std::string structureAsset;
+    // Phase 8A — gene + protein tag so downstream code can route
+    // viral proteins into the per-cell `viralProteinCount` ledger
+    // (Part 8 §55 Stage 8).
+    std::string geneId;
+    std::string proteinName;  // e.g. "flu_HA"
+    int geneIndex = -1;       // -1 = HBB host protein
 };
 
 static constexpr int CDOGMA_MAX_REPL_ORIGINS = 3;
@@ -433,6 +487,22 @@ struct CentralDogmaState {
     ChargedTRNAState trnaPool[CDOGMA_MAX_TRNA_POOL];
     ProteinProductState proteins[CDOGMA_MAX_PROTEINS];
     int activeMRNAs;                      // mature mRNAs in cytoplasm
+
+    // Phase 8A — extra gene templates available for transcription.
+    // Appended at runtime when a virion uncoats (Part 8 §55 Stage 7)
+    // or a drug induces heterologous expression. HBB remains the
+    // implicit "default" gene consulted when no viral gene is loaded
+    // or when the random-weighted pick selects it (promoterStrength
+    // of HBB is 1.0 by convention).
+    std::vector<GeneTemplate> viralGenes;
+    // Aggregate viral-protein counts per proteinName, harvested by
+    // Simulation::updatePathogens to drive stoichiometric assembly.
+    // This replaces Part 7's float-valued `assembledVirions[]`.
+    // Phase P1: swapped from std::unordered_map to std::map so future
+    // telemetry / diagnostics that iterate this ledger produce deterministic
+    // sorted-key order. N is tiny (<100 viral proteins at high MOI); the
+    // log-N insert cost is unmeasurable vs amortised O(1).
+    std::map<std::string, int> viralProteinCount;
 
     float replicationProgress;   // 0-1 during S-phase
     bool replicationActive;
@@ -674,6 +744,57 @@ struct CentralDogmaState {
                replicationQuality > 0.82f;
     }
 
+    // ── Phase 8A helpers ─────────────────────────────────────────────
+    // Route every sequence read through here so HBB is still a direct
+    // pointer-to-literal access (same perf) while any registered viral
+    // gene goes through its std::string storage.
+    inline const char* geneSequence(int geneIndex, int& outLen) const {
+        if (geneIndex < 0 || geneIndex >= (int)viralGenes.size()) {
+            outLen = HBB_LENGTH;
+            return HBB_SEQUENCE;
+        }
+        outLen = (int)viralGenes[geneIndex].dnaSeq.size();
+        return viralGenes[geneIndex].dnaSeq.c_str();
+    }
+    inline int geneLength(int geneIndex) const {
+        if (geneIndex < 0 || geneIndex >= (int)viralGenes.size())
+            return HBB_LENGTH;
+        return (int)viralGenes[geneIndex].dnaSeq.size();
+    }
+    // Pick a gene to start transcribing using promoter-weighted random:
+    // HBB_weight = 1.0 by convention. Returns geneIndex (-1 for HBB).
+    int pickGeneForTranscription() {
+        if (viralGenes.empty()) return -1;
+        float total = 1.0f; // HBB weight
+        for (const auto& g : viralGenes) total += g.promoterStrength;
+        float r = ((float)rand() / (float)RAND_MAX) * total;
+        if (r < 1.0f) return -1;
+        r -= 1.0f;
+        for (int i = 0; i < (int)viralGenes.size(); i++) {
+            r -= viralGenes[i].promoterStrength;
+            if (r <= 0.0f) return i;
+        }
+        return (int)viralGenes.size() - 1;
+    }
+    // Register a new gene template; returns its index.
+    int registerViralGene(const GeneTemplate& gene) {
+        viralGenes.push_back(gene);
+        // Pre-build the mRNA if start/stop codon unknown.
+        GeneTemplate& g = viralGenes.back();
+        if (g.codingMRNA.empty()) {
+            g.codingMRNA.reserve(g.dnaSeq.size());
+            for (char c : g.dnaSeq) {
+                // Keep viral mRNA simple: no splicing — prokaryote-like
+                // one-exon; works for flu / covid / any segmented genome.
+                g.codingMRNA.push_back(transcribe(c));
+            }
+        }
+        if (g.startCodon < 0) g.startCodon = findStartCodon(g.codingMRNA);
+        if (g.stopCodon < 0 && g.startCodon >= 0)
+            g.stopCodon = findStopCodon(g.codingMRNA, g.startCodon);
+        return (int)viralGenes.size() - 1;
+    }
+
     void clearTranscriptionState(TranscriptionState& ts) {
         ts = {};
         ts.transcriptIndex = -1;
@@ -820,11 +941,28 @@ struct CentralDogmaState {
         tx.active = true;
         tx.uid = nextTranscriptUid++;
         tx.sourcePolymerase = polymeraseIndex;
+        // Phase 8A: pick which gene this Pol II transcribes. Promoter-
+        // weighted random across host HBB + registered viral genes.
+        tx.geneIndex = pickGeneForTranscription();
+        if (tx.geneIndex >= 0 && tx.geneIndex < (int)viralGenes.size()) {
+            const GeneTemplate& g = viralGenes[tx.geneIndex];
+            tx.geneId = g.id;
+            tx.proteinTag = g.proteinName.empty() ? g.id : g.proteinName;
+            tx.transcriptStartCodon = g.startCodon;
+            tx.transcriptStopCodon  = g.stopCodon;
+        } else {
+            tx.geneIndex = -1;
+            tx.geneId = "HBB";
+            tx.proteinTag = "HBB";
+            tx.transcriptStartCodon = startCodonBase;
+            tx.transcriptStopCodon  = stopCodonBase;
+        }
 
         auto& pol = transcription[polymeraseIndex];
         clearTranscriptionState(pol);
         pol.active = true;
         pol.transcriptIndex = txSlot;
+        pol.geneIndex = tx.geneIndex;
         pol.timer = 0.0f;
         pol.rnaPolPosition = 0.0f;
         pol.currentBP = 0;
@@ -840,12 +978,22 @@ struct CentralDogmaState {
         tr.waitingForTRNA = true;
 
         const auto* tx = getTranscript(tr.transcriptIndex);
-        if (!tx || tx->matureMRNA.empty() || startCodonBase < 0) {
+        if (!tx || tx->matureMRNA.empty()) {
+            tr.stopReached = true;
+            return;
+        }
+        // Phase 8A: pick per-transcript start codon (viral mRNAs have
+        // their own ORF); fall back to cell-wide HBB start for host.
+        int txStart = (tx->transcriptStartCodon >= 0)
+                      ? tx->transcriptStartCodon : startCodonBase;
+        int txStop  = (tx->transcriptStopCodon  >= 0)
+                      ? tx->transcriptStopCodon  : stopCodonBase;
+        if (txStart < 0) {
             tr.stopReached = true;
             return;
         }
 
-        int base = startCodonBase + tr.currentCodon * 3;
+        int base = txStart + tr.currentCodon * 3;
         if (base + 2 >= (int)tx->matureMRNA.size()) {
             tr.stopReached = true;
             return;
@@ -859,7 +1007,8 @@ struct CentralDogmaState {
         }
         tr.anticodon = anticodonForCodon(tr.codon[0], tr.codon[1], tr.codon[2]);
         tr.incomingAA = aa.letter;
-        int totalCodons = totalCodingCodons();
+        int totalCodons = (txStop > txStart) ? ((txStop - txStart) / 3)
+                                              : totalCodingCodons();
         tr.ribosomePosition = (totalCodons > 0) ? ((float)(tr.currentCodon + 1) / (float)totalCodons) : 0.0f;
     }
 
@@ -904,6 +1053,21 @@ struct CentralDogmaState {
         protein.active = true;
         protein.sourceTranscript = tr.transcriptIndex;
         protein.aminoAcids = tr.nascentPeptide;
+        // Phase 8A: propagate gene origin to the protein so callers
+        // can route viral peptides into viralProteinCount without
+        // sequence-matching the polypeptide.
+        const auto* tx = getTranscript(tr.transcriptIndex);
+        if (tx) {
+            protein.geneIndex = tx->geneIndex;
+            protein.geneId = tx->geneId;
+            protein.proteinName = tx->proteinTag;
+            if (protein.geneIndex >= 0) {
+                viralProteinCount[tx->proteinTag]++;
+                if (protein.geneIndex < (int)viralGenes.size()) {
+                    viralGenes[protein.geneIndex].copiesMade++;
+                }
+            }
+        }
         if ((int)tr.nascentPeptide.size() >= 120 && (int)tr.nascentPeptide.size() <= 170) {
             protein.structureAsset = "hbb_folded.pdb";
         }
@@ -1152,6 +1316,10 @@ struct CentralDogmaState {
         codingMRNA = buildHBBCodingMRNA();
         startCodonBase = findStartCodon(codingMRNA);
         stopCodonBase = findStopCodon(codingMRNA, startCodonBase);
+        // Phase 8A: viralGenes + protein counter reset on every init
+        // so a fresh cell has no residual infection.
+        viralGenes.clear();
+        viralProteinCount.clear();
 
         for (auto& ts : transcription) clearTranscriptionState(ts);
         for (auto& sp : splicing) clearSplicingState(sp);
@@ -1193,18 +1361,36 @@ struct CentralDogmaState {
                 continue;
             }
 
+            // Phase 8A: route the sequence read via the transcript's
+            // gene template. HBB (geneIndex == -1) still uses the
+            // embedded HBB_SEQUENCE literal; viral genes use their
+            // registered string. No-op change for HBB.
+            int seqLen = 0;
+            const char* seqData = geneSequence(tx->geneIndex, seqLen);
             ts.rnaPolPosition = fminf(1.0f, ts.rnaPolPosition + dt * 0.22f);
-            ts.currentBP = std::min(HBB_LENGTH, (int)floorf(ts.rnaPolPosition * (float)HBB_LENGTH));
-            while (tx->genomicBases < ts.currentBP && tx->genomicBases < HBB_LENGTH) {
-                tx->preMRNA.push_back(transcribe(HBB_SEQUENCE[tx->genomicBases]));
+            ts.currentBP = std::min(seqLen, (int)floorf(ts.rnaPolPosition * (float)seqLen));
+            while (tx->genomicBases < ts.currentBP && tx->genomicBases < seqLen) {
+                tx->preMRNA.push_back(transcribe(seqData[tx->genomicBases]));
                 tx->genomicBases++;
             }
             tx->transcriptionProgress = ts.rnaPolPosition;
             if (!tx->capped && tx->genomicBases >= 18) tx->capped = true;
 
-            if (ts.currentBP >= HBB_LENGTH || ts.rnaPolPosition >= 1.0f) {
+            if (ts.currentBP >= seqLen || ts.rnaPolPosition >= 1.0f) {
                 tx->transcriptionComplete = true;
-                bindSpliceosomeIfNeeded(ts.transcriptIndex);
+                // Viral genes skip splicing (prokaryote-like /
+                // monocistronic RNA virus): jump straight to mature.
+                if (tx->geneIndex >= 0 && tx->geneIndex < (int)viralGenes.size()) {
+                    tx->spliced = true;
+                    tx->polyadenylated = true;
+                    tx->matureMRNA = viralGenes[tx->geneIndex].codingMRNA;
+                    tx->polyATail.assign(48, 'A');
+                    tx->intron1Removed = true;
+                    tx->intron2Removed = true;
+                    tx->processingProgress = 1.0f;
+                } else {
+                    bindSpliceosomeIfNeeded(ts.transcriptIndex);
+                }
                 clearTranscriptionState(ts);
                 ts.timer = 0.0f;
             }
