@@ -282,7 +282,53 @@ Sobol sensitivity — which Vina knob moves ΔG most?
 | `logS` | ESOL log solubility (mol/L). Higher = more soluble. |
 | `solubility` | Qualitative bucket (highly / moderately / slightly / insoluble). |
 
-## 8. How to trust the output
+## 8. When CellSim works well, and when it fails
+
+CellSim replaces the *triage* stage of wet-lab pharma work, not
+the *confirmation* stage. Match your target to the table below
+before trusting a ΔG / hit-list.
+
+### Targets where the Vina layer is reliable for *ranking*
+
+| Target class | Evidence | Typical accuracy |
+|---|---|---|
+| Biotin-binding sites (streptavidin, avidin) | [`benchmarks/dock/streptavidin_calibration.yaml`](benchmarks/dock/streptavidin_calibration.yaml) | Spearman +0.80 across 14 orders of magnitude |
+| Serine proteases (trypsin, thrombin-like S1 pocket) | [`benchmarks/dock/trypsin_calibration.yaml`](benchmarks/dock/trypsin_calibration.yaml) | MAE 0.9 kcal/mol on the absolute scale |
+| Rigid pocket, wide K_d spread (nM → mM) | generalisable from the above | Pearson > 0.6 typical |
+
+### Targets where the Vina layer is *only a pose filter, not a ranker*
+
+| Target class | Evidence | What to do instead |
+|---|---|---|
+| Kinase ATP sites (EGFR, Abl, CDK, …) | [`benchmarks/dock/egfr_calibration.yaml`](benchmarks/dock/egfr_calibration.yaml) — Spearman −0.49 on 6 EGFR inhibitors | Use Vina for pose/pocket-fit sanity only; rescore with FEP (Layer 1.3 perses integration — pending) |
+| Anything where the strain ratio > 3 on top pose | `strain_band = suspicious` / `reject` in the batch CSV | Don't trust the ΔG; strain means Vina contorted the ligand |
+| Compounds with > 15 rotatable bonds | Vina's degrees-of-freedom scaling | Flag for refinement (`--refine-poses` + MD rescoring) |
+| Metal-coordinating inhibitors (imidazole/pyridine on Zn/Fe targets) | Vina has no metal term | Use our pocket-geometric post-filter (cf. ketoconazole in `cyp-inhibit`); raw ΔG is under-scored |
+
+### Targets CellSim currently cannot replace wet-lab for at all
+
+- **Protein-protein interactions / allosteric sites** — Vina was
+  trained on small-molecule ATP-competitive binding; shallow
+  protein-protein interfaces give meaningless ΔG.
+- **Covalent inhibitors** — no covalent-bond scoring in this
+  stack. Meeko prep will silently strip the warhead.
+- **Membrane-embedded receptors** (GPCRs, ion channels) — Layer
+  1.5 (Martini 3 bilayer) is scaffold-only.
+
+### The `triage` column does the routing for you
+
+For every compound, the batch CSV's `triage` verdict already
+bakes these rules in:
+
+- a pose with `strain_band = reject` is automatically marked
+  `drop` regardless of ΔG;
+- a `suspicious` strain on a strong ΔG routes to `review`;
+- kinase ranking failure isn't auto-detected yet (no public
+  target-family labels), so for kinase hit-lists, **treat the
+  `triage` column as pose-trust only** and re-rank by external
+  orthogonal evidence.
+
+## 9. How to trust the output
 
 Every prediction carries provenance. Every CellSim release runs
 the full smoke gate in CI — see
@@ -298,7 +344,7 @@ the "Validation that runs on every PR" section of
 
 A regression on any of the ~11 smoke gates blocks merge.
 
-## 9. What CellSim doesn't do
+## 10. What CellSim doesn't do
 
 - **No Campaign-2 cellular biology.** The Layer-2 pathway
   simulation (HeLa p53/MDM2/cisplatin etc.) lives under
@@ -313,7 +359,7 @@ A regression on any of the ~11 smoke gates blocks merge.
 - **No membrane proteins yet.** GPCRs / ion channels in a bilayer
   need Layer 1.5 Martini 3, scaffold-only at the moment.
 
-## 10. Getting help
+## 11. Getting help
 
 - `./scripts/cellsim help` — subcommand index.
 - `./scripts/cellsim <subcommand> --help` — per-subcommand args.
