@@ -296,10 +296,18 @@ def render_profile(
                       else "#e6a82a" if admet.herg_risk == "medium"
                       else "#c62828" if admet.herg_risk == "high"
                       else "#888888")
-        ax_call.text(0.26, 0.68, bbb_label, ha="center",
-                     fontsize=16, color=bbb_color, weight="bold")
-        ax_call.text(0.74, 0.68, herg_label, ha="center",
-                     fontsize=16, color=herg_color, weight="bold")
+        mut_label = (f"Ames {admet.mutagenic_risk}"
+                     if admet.mutagenic_risk else "Ames ?")
+        mut_color = ("#2a9d3a" if admet.mutagenic_risk == "low"
+                     else "#e6a82a" if admet.mutagenic_risk == "medium"
+                     else "#c62828" if admet.mutagenic_risk == "high"
+                     else "#888888")
+        ax_call.text(0.20, 0.68, bbb_label, ha="center",
+                     fontsize=14, color=bbb_color, weight="bold")
+        ax_call.text(0.50, 0.68, herg_label, ha="center",
+                     fontsize=14, color=herg_color, weight="bold")
+        ax_call.text(0.82, 0.68, mut_label, ha="center",
+                     fontsize=14, color=mut_color, weight="bold")
         ax_call.text(0.5, 0.54,
                      f"logS = {admet.logS_ESOL:+.2f}",
                      ha="center", fontsize=14)
