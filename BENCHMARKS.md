@@ -106,6 +106,8 @@ Split-conformal calibrated against published K_d values.
 
 ### Streptavidin — `benchmarks/dock/streptavidin_calibration.yaml`
 
+![streptavidin calibration scatter](docs/images/calib_streptavidin.png)
+
 4 biotin-analog compounds spanning K_d 10⁻¹⁴ M to 10⁻⁵ M.
 
 | Metric | Value | What it means |
@@ -122,6 +124,8 @@ compound (tight-binder saturation). Use the ranking; don't believe
 the absolute.
 
 ### Trypsin — `benchmarks/dock/trypsin_calibration.yaml`
+
+![trypsin calibration scatter](docs/images/calib_trypsin.png)
 
 6 benzamidine-analog compounds spanning K_i 10⁻⁷ M to 10⁻³ M.
 
