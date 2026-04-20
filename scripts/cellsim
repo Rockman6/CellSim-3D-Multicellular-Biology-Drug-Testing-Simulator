@@ -71,6 +71,9 @@ usage: cellsim <subcommand> [args...]
   fetch-chembl  drug-like SMILES subset from the ChEMBL API
                 -> scripts/fetch_chembl_sample.py
 
+  doctor      end-to-end install sanity check
+                -> scripts/doctor.py
+
   help        show this message
   version     show cellsim / tool versions
 
@@ -107,6 +110,8 @@ case "${1:-}" in
         _usage ;;
     version | --version | -V)
         _version ;;
+    doctor)
+        exec python scripts/doctor.py ;;
     dock)        shift; exec python -m src.dock.batch "$@" ;;
     dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
     redock)      shift; exec python -m src.dock.vina "$@" ;;
