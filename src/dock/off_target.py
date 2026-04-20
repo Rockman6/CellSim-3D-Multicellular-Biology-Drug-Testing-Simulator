@@ -53,6 +53,9 @@ class OffTargetEntry:
     pocket_box_A: Optional[tuple] = None
     wall_seconds: Optional[float] = None
     pb_pocket_ok: Optional[bool] = None
+    strain_band: Optional[str] = None
+    strain_kcalmol: Optional[float] = None
+    strain_ratio: Optional[float] = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -207,11 +210,28 @@ def off_target_screen(
         entry.dG_kJmol = float(top.affinity_kJmol)
         entry.kd_implied_nM = float(_kd_from_dG_nM(top.affinity_kcalmol))
         entry.pb_pocket_ok = top.posebusters_pocket_ok
+        # Per-receptor strain readout. Wet-lab users want pose-trust
+        # alongside selectivity: a "tight" off-target score is
+        # meaningless if the pose is non-physical.
+        try:
+            from src.dock.strain import ligand_strain
+            s = ligand_strain(
+                top.elements, top.positions_A,
+                r.ligand_smiles, ensemble_n=20)
+            if s.ok:
+                entry.strain_band = s.band
+                entry.strain_kcalmol = round(s.strain_kcalmol, 2)
+                entry.strain_ratio = round(s.energy_ratio, 3)
+        except Exception as e:
+            logger.debug("off-target strain failed on %s: %s",
+                         name, e)
         entry.wall_seconds = time.time() - t0
         result.entries.append(entry)
+        strain_tag = (f"  strain:{entry.strain_band}"
+                      if entry.strain_band else "")
         print(f"  [off-target] {name:<30s}  "
               f"ΔG = {entry.dG_kcalmol:+.2f}  "
-              f"drug_score = {pkt.drug_score:.2f}  "
+              f"drug_score = {pkt.drug_score:.2f}{strain_tag}  "
               f"({entry.wall_seconds:.1f} s)",
               flush=True)
 
@@ -226,6 +246,7 @@ def write_csv(result: OffTargetResult, path: str | Path) -> None:
     cols = ["rank", "name", "receptor_pdb", "ok", "reason",
             "dG_kcalmol", "dG_kJmol", "Kd_nM",
             "pocket_drug_score", "pb_pocket_ok",
+            "strain_band", "strain_kcalmol", "strain_ratio",
             "pocket_center_x", "pocket_center_y", "pocket_center_z",
             "wall_s"]
     with path.open("w", newline="") as fo:
@@ -244,6 +265,11 @@ def write_csv(result: OffTargetResult, path: str | Path) -> None:
                 (f"{e.pocket_drug_score:.3f}"
                  if e.pocket_drug_score is not None else ""),
                 e.pb_pocket_ok if e.pb_pocket_ok is not None else "",
+                e.strain_band or "",
+                (f"{e.strain_kcalmol:.2f}"
+                 if e.strain_kcalmol is not None else ""),
+                (f"{e.strain_ratio:.3f}"
+                 if e.strain_ratio is not None else ""),
                 (f"{e.pocket_center_A[0]:.2f}"
                  if e.pocket_center_A else ""),
                 (f"{e.pocket_center_A[1]:.2f}"
