@@ -51,9 +51,15 @@ int main(int argc, char** argv) {
     printf("[p53] seed = 0x%08x\n", sim_seed);
 
     // ── Scenario runner ─────────────────────────────────────────────────
+    struct ScenarioResult {
+        float peak_p53   = 0.0f;
+        float peak_mdm2  = 0.0f;
+        float last_p53   = 0.0f;
+        int   peak_count = 0;      // number of local p53 maxima detected
+        float mean_period_h = 0.0f; // mean interval between peaks (0 if <2 peaks)
+    };
     auto runScenario = [&](const char* label, float forced_damage,
-                           float& out_peak_p53, float& out_peak_mdm2,
-                           float& out_last_p53) {
+                           ScenarioResult& out) {
         simrng::seed(sim_seed);
         Simulation sim;
         sim.mode = MODE_COLONY;
@@ -74,10 +80,12 @@ int main(int argc, char** argv) {
         }
         if (csv) {
             fprintf(csv, "bio_hours,cell_id,damageLevel,"
-                         "ATM_active,p53_protein,MDM2_protein,cdk_p21\n");
+                         "ATM_active,p53_protein,MDM2_mRNA,MDM2_protein,cdk_p21\n");
         }
 
-        float peak_p53 = 0.0f, peak_mdm2 = 0.0f, last_p53 = 0.0f;
+        std::vector<float> p53_trace;
+        std::vector<float> t_trace;
+
         double bio_sec = 0.0;
         int step = 0;
         while (bio_sec / 3600.0 < bio_hours_target) {
@@ -96,44 +104,86 @@ int main(int argc, char** argv) {
                     const auto& c = sim.cells[i];
                     if (!c.alive) continue;
                     if (csv) {
-                        fprintf(csv, "%.3f,%zu,%.4f,%.4f,%.5f,%.5f,%.4f\n",
+                        fprintf(csv,
+                                "%.3f,%zu,%.4f,%.4f,%.5f,%.5f,%.5f,%.4f\n",
                                 bio_sec / 3600.0, i,
                                 c.damageLevel, c.ATM_active,
-                                c.p53_protein, c.MDM2_protein, c.cdk.p21);
+                                c.p53_protein, c.MDM2_mRNA,
+                                c.MDM2_protein, c.cdk.p21);
                     }
                 }
                 const auto& c0 = sim.cells[0];
                 if (c0.alive) {
-                    peak_p53  = std::max(peak_p53,  c0.p53_protein);
-                    peak_mdm2 = std::max(peak_mdm2, c0.MDM2_protein);
-                    last_p53  = c0.p53_protein;
+                    out.peak_p53  = std::max(out.peak_p53,  c0.p53_protein);
+                    out.peak_mdm2 = std::max(out.peak_mdm2, c0.MDM2_protein);
+                    out.last_p53  = c0.p53_protein;
+                    p53_trace.push_back(c0.p53_protein);
+                    t_trace.push_back((float)(bio_sec / 3600.0));
                 }
             }
         }
         if (csv) fclose(csv);
-        out_peak_p53  = peak_p53;
-        out_peak_mdm2 = peak_mdm2;
-        out_last_p53  = last_p53;
+
+        // ── Peak detection on cell-0 p53 trace ────────────────────────
+        // Skip first 2 h (initial ATM-activation transient). Use a
+        // 3-point local-max rule with peak-height gate = 1.3× baseline.
+        // Enforce a minimum inter-peak separation of 2.5 h so noise
+        // isn't counted as twin peaks.
+        const float baseline_p53  = 0.089f;
+        const float peak_min      = baseline_p53 * 1.3f;
+        const float min_gap_h     = 2.5f;
+        std::vector<float> peak_times;
+        size_t i0 = 0;
+        while (i0 < t_trace.size() && t_trace[i0] < 2.0f) i0++;
+        for (size_t i = i0 + 1; i + 1 < p53_trace.size(); i++) {
+            float v = p53_trace[i];
+            if (v <= p53_trace[i - 1] || v <= p53_trace[i + 1]) continue;
+            if (v < peak_min) continue;
+            if (!peak_times.empty() &&
+                t_trace[i] - peak_times.back() < min_gap_h) continue;
+            peak_times.push_back(t_trace[i]);
+        }
+        out.peak_count = (int)peak_times.size();
+        if (peak_times.size() >= 2) {
+            out.mean_period_h =
+                (peak_times.back() - peak_times.front()) /
+                (float)(peak_times.size() - 1);
+        }
     };
 
-    // ── Two-scenario assay: no damage (control) vs sustained damage ────
-    float ctl_peak_p53 = 0, ctl_peak_mdm2 = 0, ctl_last_p53 = 0;
-    float dmg_peak_p53 = 0, dmg_peak_mdm2 = 0, dmg_last_p53 = 0;
-    runScenario("control", 0.00f, ctl_peak_p53, ctl_peak_mdm2, ctl_last_p53);
-    runScenario("damage",  0.30f, dmg_peak_p53, dmg_peak_mdm2, dmg_last_p53);
+    // ── Three-scenario assay: control, mid damage, high damage ─────────
+    ScenarioResult ctl, dmg_mid, dmg_high;
+    runScenario("control",  0.00f, ctl);
+    runScenario("damage",   0.30f, dmg_mid);
+    runScenario("damage35", 0.35f, dmg_high);
+
+    float ctl_peak_p53 = ctl.peak_p53,    ctl_peak_mdm2 = ctl.peak_mdm2,
+          ctl_last_p53 = ctl.last_p53;
+    float dmg_peak_p53 = dmg_mid.peak_p53, dmg_peak_mdm2 = dmg_mid.peak_mdm2,
+          dmg_last_p53 = dmg_mid.last_p53;
 
     // Baselines observed at init (analytical steady state of the ODE).
     const float baseline_p53  = 0.089f;
     const float baseline_mdm2 = 0.21f;
 
     // ── Assertions ─────────────────────────────────────────────────────
+    // G2 gates: mechanism is present and specific.
     bool okA = (ctl_peak_p53 > baseline_p53 * 0.75f) &&
-               (ctl_peak_p53 < baseline_p53 * 1.25f);  // ±25 % window
+               (ctl_peak_p53 < baseline_p53 * 1.25f);
     bool okB = (dmg_peak_p53  >= baseline_p53 * 1.5f);
     bool okC = (dmg_peak_mdm2 >= baseline_mdm2 * 1.5f);
-    bool okD = (dmg_peak_p53  >  ctl_peak_p53 * 1.4f); // specificity
+    bool okD = (dmg_peak_p53  >  ctl_peak_p53 * 1.4f);
+    // G3 gates: Purvis-2012-style oscillation under sustained damage.
+    bool okE = (dmg_mid.peak_count >= 2);
+    bool okF = (dmg_mid.mean_period_h >= 3.0f &&
+                dmg_mid.mean_period_h <= 9.0f);
+    bool okG = (dmg_high.mean_period_h > 0.0f &&
+                dmg_mid.mean_period_h > 0.0f &&
+                dmg_high.mean_period_h <= dmg_mid.mean_period_h * 1.05f);
+    bool okH = (ctl.peak_count == 0);
 
-    printf("\n=== p53 STRESS-RESPONSE RESULT (seed=0x%08x) ===\n", sim_seed);
+    printf("\n=== p53 STRESS-RESPONSE + PULSING RESULT (seed=0x%08x) ===\n",
+           sim_seed);
     printf("  baseline p53      : %.4f\n", baseline_p53);
     printf("  baseline MDM2     : %.4f\n", baseline_mdm2);
     printf("  CONTROL (dmg=0):   p53 peak %.4f  MDM2 peak %.4f  last p53 %.4f\n",
@@ -145,8 +195,18 @@ int main(int argc, char** argv) {
     printf("  (c) damage MDM2 ≥ 1.5× basal          : %s\n", okC ? "PASS" : "FAIL");
     printf("  (d) p53(damage) > 1.4× p53(control)   : %s\n", okD ? "PASS" : "FAIL");
 
-    bool all = okA && okB && okC && okD;
+    printf("\n--- G3 Purvis-2012-style oscillation ---\n");
+    printf("  control peaks=%d  damage(0.30) peaks=%d period=%.2fh  "
+           "damage(0.35) peaks=%d period=%.2fh\n",
+           ctl.peak_count, dmg_mid.peak_count, dmg_mid.mean_period_h,
+           dmg_high.peak_count, dmg_high.mean_period_h);
+    printf("  (e) ≥2 p53 peaks under damage 0.30    : %s\n", okE ? "PASS" : "FAIL");
+    printf("  (f) mean period ∈ [3, 9] h            : %s\n", okF ? "PASS" : "FAIL");
+    printf("  (g) period(0.35) ≤ period(0.30) (+5%%): %s\n", okG ? "PASS" : "FAIL");
+    printf("  (h) control has 0 peaks               : %s\n", okH ? "PASS" : "FAIL");
+
+    bool all = okA && okB && okC && okD && okE && okF && okG && okH;
     printf("=> %s\n", all ? "PASS" : "FAIL");
-    printf("CSVs: logs/p53_pulsing_control.csv, logs/p53_pulsing_damage.csv\n");
+    printf("CSVs: logs/p53_pulsing_{control,damage,damage35}.csv\n");
     return all ? 0 : 1;
 }

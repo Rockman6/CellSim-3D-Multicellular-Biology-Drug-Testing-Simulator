@@ -1876,10 +1876,18 @@ Post-8A validation:
         (3.3× baseline) and MDM2 peak = 0.507 (2.4× baseline).
         The p53(damage)/p53(control) ratio = 2.9, demonstrating
         mechanism specificity rather than constitutive activation.
-        Simple 2-variable ODE settles to a stable elevated p53 under
-        sustained damage — \emph{not} the Purvis 2012 oscillatory
-        regime. True pulsing requires an MDM2-mRNA intermediate
-        (Geva-Zatorsky 2006 3-variable model); target of the next PR.
+        Simple 2-variable ODE (G2) settles to a stable elevated p53
+        under sustained damage. Phase~G3 added an MDM2-mRNA
+        intermediate with Hill (n=8) transactivation — exactly the
+        Geva-Zatorsky 2006 3-variable delay topology — and now
+        reproduces Purvis-2012-style sustained oscillation:
+        7 p53 peaks detected across a 24-h damage window at
+        damageLevel=0.30, mean period $\approx 3.03$ h, period
+        shortening with increased stress (gate g: period(0.35) $<$
+        period(0.30)), no peaks under control (damageLevel=0).
+        All eight combined gates (G2 a-d + G3 e-h) pass across
+        five pinned seeds (0x1, 0xCE11517E, 0xDEADBEEF, 0x2,
+        0xFFFFFFFE).
   \item \code{CellSim} main app: builds clean.
   \item \textbf{Zero biology drift at default seed}: G2 stress-response
         ODE and the P1 SimRng wrapper + \code{viralProteinCount} map
@@ -6857,6 +6865,11 @@ know:
   \item Phase G2 (TP53↔MDM2 stress-response loop with
         literature-calibrated Kd + half-lives; \code{cellsim\_p53\_pulsing}
         validator with 4 assertion gates, 2026-04-20).
+  \item Phase G3 (MDM2 mRNA intermediate + Hill(n=8) transactivation;
+        Purvis-2012-style sustained p53 pulsing under damage;
+        validator extended with 4 additional gates for peak count,
+        mean period, stress-scaling, and control specificity;
+        zero drift on seq02 preserved at 5.1\%, 2026-04-20).
   \item Phase 8B-L roadmap (16 remaining sessions).
 \end{itemize}
 
