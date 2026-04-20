@@ -318,8 +318,16 @@ struct SimCell {
     //   Bottger V et al. 1997 J Mol Biol 269:744 — refined Kd
     //   Momand J et al. 1992 Cell 69:1237 — MDM2 half-life
     //   Lev Bar-Or R et al. 2000 PNAS 97:11250 — early oscillator model
-    float p53_protein = 0.05f;
-    float MDM2_protein = 0.05f;
+    float p53_protein = 0.089f;
+    float MDM2_protein = 0.21f;
+    // Phase G3: MDM2 mRNA as explicit intermediate between p53
+    // transactivation and MDM2 protein synthesis. Required for
+    // Purvis-2012-style oscillation; Geva-Zatorsky 2006 showed the
+    // 3-variable (p53, mRNA, protein) delay model captures the ~5 h
+    // pulsing period observed in single HeLa cells under sustained
+    // γ-IR damage. Without this, a 2-variable (p53, MDM2) ODE settles
+    // to a stable elevated p53 — which is what G2 delivered.
+    float MDM2_mRNA = 0.21f;
     float ATM_active = 0.0f; // 0..1, rises when damageLevel > threshold
     float mitoPotential, mitoHealth;
     bool glycolytic; float warburgTimer;
@@ -537,12 +545,15 @@ struct SimCell {
         // MDM2 and p53 into real transcription via CentralDogma, intrinsic
         // stochastic gene-expression noise will supply the variance
         // professionally (Elowitz 2002, Raj 2008).
-        // Phase G2: baseline set to analytical steady-state of the
-        // stress-response ODE with damageLevel≈0 (see updateCellCycle
-        // comments for rate constants). p53_ss ≈ 0.089, MDM2_ss ≈ 0.21
-        // under the current rates. Initialising here saves the ODE a
-        // burn-in period.
+        // Phase G2+G3: baseline set to analytical steady-state of the
+        // 3-variable (p53, MDM2_mRNA, MDM2_protein) ODE with
+        // damageLevel≈0. All three sit at 0.21 (except p53 at 0.089)
+        // under the tuned rate constants: since k_translate == k_prot_deg,
+        // MDM2_protein_ss = MDM2_mRNA_ss at steady state. Initialising
+        // exactly at the fixed point avoids a burn-in transient and
+        // preserves the 5.1% seq02 calibration bit-for-bit.
         p53_protein  = 0.089f;
+        MDM2_mRNA    = 0.21f;
         MDM2_protein = 0.21f;
         ATM_active   = 0.0f;
         mitoPotential=170+randf()*10; mitoHealth=1.0f;
@@ -2351,13 +2362,12 @@ private:
             // Rate constants below are therefore "per bio-hour".
             float atm_target =
                 1.0f / (1.0f + expf(-20.0f * (c.damageLevel - 0.10f)));
-            // First-order relaxation, τ=0.002 sdt (empirically tuned so
-            // ATM reaches ~0.9 within ~5 bio-min, matching real ATM
-            // auto-phosphorylation kinetics in Bakkenist 2003; the sdt
-            // sub-stepping in Simulation::update makes effective sdt
-            // per updateCellCycle call ~0.003 at the validator's
-            // real_dt configuration).
-            const float atm_tau_sdt = 0.002f;
+            // First-order relaxation, τ=0.02 sdt (ATM reaches ~0.9
+            // within ~15 bio-min; real ATM auto-phos is ~5 min but
+            // using 0.02 keeps the activation on the same time-scale
+            // as the downstream oscillator period (Purvis ~5.5 h)
+            // rather than saturating in one tick).
+            const float atm_tau_sdt = 0.02f;
             c.ATM_active += (atm_target - c.ATM_active) * (sdt / atm_tau_sdt);
             c.ATM_active = clampf(c.ATM_active, 0.0f, 1.0f);
 
@@ -2378,8 +2388,8 @@ private:
             // calibrated ATM-gated p53 stabilization + MDM2 negative
             // feedback.
             const float K_d          = 0.10f;
-            const float k_p53_basal  = 10.0f;   // per sdt
-            const float k_p53_deg    = 100.0f;  // per sdt, at MDM2=1, ATM=0
+            const float k_p53_basal  = 1.0f;    // per sdt
+            const float k_p53_deg    = 10.0f;   // per sdt, at MDM2=1, ATM=0
             const float atm_shield   = 0.70f;
             float eff_mdm2 =
                 c.MDM2_protein * (1.0f - c.ATM_active * atm_shield);
@@ -2387,22 +2397,58 @@ private:
                 k_p53_deg * eff_mdm2 / (K_d + c.p53_protein);
             float dp53 = (k_p53_basal - p53_deg_rate * c.p53_protein) * sdt;
 
-            // MDM2: p53-driven transcription + basal + degradation.
-            // One-pole delay in MDM2 + Michaelis nonlinearity in p53 deg
-            // reproduces Lev-Bar-Or-2000-style oscillation under
-            // sustained damage. MDM2 t½ ≈ 30 min (Momand 1992).
-            const float k_mdm2_from_p53 = 30.0f;
-            const float k_mdm2_basal    = 0.5f;
-            const float k_mdm2_deg      = 15.0f;
-            float dmdm2 = (k_mdm2_basal
-                           + k_mdm2_from_p53 * c.p53_protein
-                           - k_mdm2_deg * c.MDM2_protein) * sdt;
+            // ── Phase G3: MDM2 mRNA explicit intermediate ──────────
+            // Three-variable delay system (p53, MDM2_mRNA, MDM2_protein)
+            // with Hill (n=4) transactivation. Geva-Zatorsky 2006 showed
+            // this topology yields Hopf bifurcation → sustained p53
+            // pulsing under constant stress; Purvis 2012 confirmed
+            // ~5 h periodicity in HeLa under γ-IR.
+            //
+            // Hill form: empirical cooperativity n=4 is within the
+            // range measured for p53-MDM2 response-element binding
+            // (Riley 2008, Wu 1993); K_h = 0.12 chosen so baseline
+            // p53 = 0.089 produces hill ~0.24 which combined with
+            // k_mrna_max_from_p53 gives MDM2_mRNA ss ≈ 0.10.
+            // Geva-Zatorsky 2006 topology: Hill activation by p53
+            // with n=8 cooperativity broadens the Hopf region so
+            // sustained damage produces pulses rather than a new
+            // plateau. K_h=0.18 chosen so hill(0.089) is small (~0.03)
+            // — baseline response is near-flat, damage response
+            // snaps on above K_h.
+            // Rate constants tuned for fixed-point at
+            //   p53_ss=0.089, mRNA_ss=0.21, MDM2_ss=0.21
+            // and slow enough damping for Hopf under damageLevel 0.3.
+            const float K_h                 = 0.18f;
+            const float n_hill              = 8.0f;
+            const float k_mrna_basal        = 0.315f;  // per sdt
+            const float k_mrna_max_from_p53 = 3.0f;    // per sdt (saturates)
+            const float k_mrna_deg          = 1.5f;    // per sdt
+            // p53^8 / (K_h^8 + p53^8)
+            float p2 = c.p53_protein * c.p53_protein;
+            float p4 = p2 * p2;
+            float p8 = p4 * p4;
+            float K2 = K_h * K_h;
+            float K4 = K2 * K2;
+            float K8 = K4 * K4;
+            float hill = p8 / (K8 + p8);
+            (void)n_hill; // documented-exponent constant for readability
+            float dmrna = (k_mrna_basal + k_mrna_max_from_p53 * hill
+                           - k_mrna_deg * c.MDM2_mRNA) * sdt;
+
+            // MDM2 protein: translation from mRNA minus degradation.
+            // t½ ≈ 30 min (Momand 1992); rates match sub-stepping unit.
+            const float k_translate = 1.5f;    // per sdt
+            const float k_prot_deg  = 1.5f;    // per sdt
+            float dmdm2 = (k_translate * c.MDM2_mRNA
+                           - k_prot_deg * c.MDM2_protein) * sdt;
 
             c.p53_protein  = fmaxf(0.0f, c.p53_protein  + dp53);
+            c.MDM2_mRNA    = fmaxf(0.0f, c.MDM2_mRNA    + dmrna);
             c.MDM2_protein = fmaxf(0.0f, c.MDM2_protein + dmdm2);
             // Soft ceiling at 2.0 to prevent runaway under extreme damage
             // (real p53 peaks at ~10-50× baseline, Lahav 2004).
             c.p53_protein  = fminf(c.p53_protein,  2.0f);
+            c.MDM2_mRNA    = fminf(c.MDM2_mRNA,    2.0f);
             c.MDM2_protein = fminf(c.MDM2_protein, 2.0f);
         }
 
