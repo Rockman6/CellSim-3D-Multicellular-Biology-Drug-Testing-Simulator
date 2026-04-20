@@ -1,31 +1,41 @@
-name: chem-smoke
+name: smoke
 
 on:
   push:
     branches: [main]
     paths:
       - "src/chem/**"
+      - "src/md/**"
       - "tests/chem/**"
+      - "tests/md/**"
       - "benchmarks/chembl/**"
+      - "benchmarks/md/**"
       - "environment.yml"
-      - ".github/workflows/chem-smoke.yml"
+      - ".github/workflows/smoke.yml"
   pull_request:
     paths:
       - "src/chem/**"
+      - "src/md/**"
       - "tests/chem/**"
+      - "tests/md/**"
       - "benchmarks/chembl/**"
+      - "benchmarks/md/**"
       - "environment.yml"
-      - ".github/workflows/chem-smoke.yml"
+      - ".github/workflows/smoke.yml"
   workflow_dispatch:
     inputs:
       scale_n:
-        description: "Run the scale test with N compounds (0 = skip)"
+        description: "Run the ChEMBL scale test with N compounds (0 = skip)"
         required: false
         default: "0"
 
 jobs:
+  # One mega-job that runs chem + md-ligand + md-protein smoke gates
+  # back-to-back under a single conda env. Environment setup (~5 min)
+  # dominates wall time, so sharing the env across gates is much
+  # cheaper than splitting them into separate jobs.
   smoke:
-    name: smoke_10 (full tier, conda)
+    name: chem + md smoke (full tier, conda)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up mambaforge + cache env
+      - name: Set up miniforge + cellsim env
         uses: conda-incubator/setup-miniconda@v3
         with:
           environment-file: environment.yml
@@ -43,13 +53,21 @@ jobs:
 
       - name: Env report
         run: |
-          python -c "import rdkit, openff.toolkit, openmm; \
+          python -c "import rdkit, openff.toolkit, openmm, pdbfixer; \
             print('rdkit', rdkit.__version__); \
             print('openff-toolkit', openff.toolkit.__version__); \
-            print('openmm', openmm.__version__)"
+            print('openmm', openmm.__version__); \
+            print('pdbfixer', getattr(pdbfixer, '__version__', '?'))"
+          echo "AMBERHOME=$AMBERHOME"
 
-      - name: smoke_10 (10 canonical drugs, full tier ≥ 8/10)
-        run: python tests/chem/test_parametrize_smoke.py
+      - name: chem smoke_10 (Layer 1.1, full tier ≥ 8/10)
+        run: python -u tests/chem/test_parametrize_smoke.py
+
+      - name: md ligand smoke (Layer 1.2, 3 drugs × 10 ps, 3/3)
+        run: python -u tests/md/test_ligand_vacuum.py --max 3 --gate 3
+
+      - name: md protein smoke (Layer 1.2, 1UBQ solvate + 1 ps MD)
+        run: python -u tests/md/test_protein_load.py
 
   scale:
     name: scale (workflow_dispatch only)
@@ -63,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up mambaforge + cache env
+      - name: Set up miniforge + cellsim env
         uses: conda-incubator/setup-miniconda@v3
         with:
           environment-file: environment.yml
@@ -76,6 +94,6 @@ jobs:
 
       - name: Scale parametrise (gate 99 %)
         run: |
-          python tests/chem/test_parametrize_scale.py \
+          python -u tests/chem/test_parametrize_scale.py \
             --smi data/chembl/chembl_${{ github.event.inputs.scale_n }}.smi \
             --workers $(nproc) --charge am1bcc --gate 99.0
