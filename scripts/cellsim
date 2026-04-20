@@ -25,6 +25,9 @@ usage: cellsim <subcommand> [args...]
   dock-one    single-compound dock + biologist viewer
                 -> src/dock/viewer.py
 
+  off-target  dock one compound into N receptors (selectivity screen)
+                -> src/dock/off_target.py
+
   redock      single-pair re-dock with crystal-RMSD
                 -> src/dock/vina.py
 
@@ -114,6 +117,7 @@ case "${1:-}" in
         exec python scripts/doctor.py ;;
     dock)        shift; exec python -m src.dock.batch "$@" ;;
     dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
+    off-target)  shift; exec python -m src.dock.off_target "$@" ;;
     redock)      shift; exec python -m src.dock.vina "$@" ;;
     pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
     profile)     shift; exec python -m src.chem.profile "$@" ;;
