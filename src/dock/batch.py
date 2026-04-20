@@ -81,6 +81,11 @@ class BatchConfig:
                                       # → fixes bond / angle / clash
                                       # geometry so PB geometry_ok
                                       # flips True on most poses
+    cache_path: Optional[str] = None  # if set, content-addressed
+                                      # Vina cache at that SQLite path;
+                                      # second run of an identical
+                                      # (ligand, receptor, box, exh,
+                                      # seed) returns instantly
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -132,13 +137,24 @@ def _worker(task: tuple) -> dict:
         except Exception as e:
             logger.debug("MC failed on %s: %s", name, e)
 
+    # Open the cache once per worker (SQLite is cheap and one
+    # connection per worker is the canonical pattern).
+    _cache_obj = None
+    if cfg.cache_path:
+        try:
+            from src.cache import Cache
+            _cache_obj = Cache(cfg.cache_path)
+        except Exception as e:
+            logger.debug("cache open failed: %s", e)
+
     try:
         r = dock_ligand(
             cfg.receptor_pdb, smiles,
             center_A=cfg.center_A, box_size_A=cfg.box_size_A,
             exhaustiveness=cfg.exhaustiveness,
             num_modes=cfg.num_modes, seed=dock_seed,
-            cpu=cfg.cpu_per_job, timeout_s=cfg.timeout_s)
+            cpu=cfg.cpu_per_job, timeout_s=cfg.timeout_s,
+            cache=_cache_obj)
         if r.ok and cfg.crystal_pdb and cfg.crystal_resname:
             try:
                 r = attach_crystal_rmsd(
@@ -378,6 +394,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "geometry_ok True on most poses; required "
                          "before downstream FEP. Adds ~1-2 s per "
                          "pose.")
+    ap.add_argument("--cache", type=str, default=None, metavar="PATH",
+                    help="SQLite cache path (content-addressed). "
+                         "Same (ligand, receptor, box, exh, seed) "
+                         "returns from cache on repeat runs "
+                         "(~1000x speedup). Use one cache per project.")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -422,6 +443,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_admet=not args.no_admet,
         mc_samples=args.mc,
         refine_poses=args.refine_poses,
+        cache_path=args.cache,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
