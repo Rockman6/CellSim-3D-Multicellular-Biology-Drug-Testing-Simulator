@@ -316,6 +316,142 @@ def predict_cyp_som_bde(
     return result
 
 
+def verify_som_dft(
+    result: SoMResult,
+    *,
+    top_n: int = 3,
+    functional: str = "B3LYP",
+    basis: str = "def2-svp",
+) -> SoMResult:
+    """Re-rank the top-N xTB-BDE candidates at DFT level.
+
+    Takes an existing SoMResult from predict_cyp_som_bde, recomputes
+    BDE for the top-N candidates using PySCF DFT (paper-grade),
+    and overwrites those candidates' `bde_Hartree` / `bde_kcalmol`
+    fields with the DFT values. Re-ranks the candidate list by the
+    new BDE. Remaining candidates keep their xTB values.
+
+    Biologist interpretation: xTB BDE has a ~20 kcal/mol systematic
+    offset vs experiment; DFT gets within ~2-5 kcal/mol. If the
+    xTB top-1 matches the DFT top-1, the xTB ranking is trustworthy
+    for this compound. If they disagree, DFT wins.
+
+    Non-AI; PySCF Kohn-Sham physics end-to-end.
+    """
+    if not result.ok:
+        return result
+    import time
+
+    # Lazy import; DFT is heavy.
+    try:
+        from src.quantum.dft import dft_single_point
+    except ImportError as e:
+        logger.warning("DFT module unavailable: %s", e)
+        return result
+
+    # Need full atom-level coords. We have them on result.positions_A.
+    # But we also need them per radical (remove one H). Rebuild
+    # radicals from scratch using the same pathway as the xTB code.
+    top = result.candidates[:top_n]
+    if not top:
+        return result
+
+    # Full-molecule DFT energy.
+    t0 = time.time()
+    full = dft_single_point(
+        result.smiles, functional=functional, basis=basis,
+        charge=0, multiplicity=1)
+    if not full.ok:
+        logger.warning("DFT on full molecule failed: %s", full.reason)
+        return result
+    e_mol_Ha = full.total_energy_Hartree
+
+    # H-atom reference at DFT.
+    h_ref = _dft_h_atom_energy(functional=functional, basis=basis)
+    if h_ref is None:
+        logger.warning("DFT H-atom reference failed; skipping re-rank")
+        return result
+
+    # For each candidate, compute radical energy.
+    # We use the xTB-cached radical geometry (result.positions_A
+    # minus the hydrogen at c.hydrogen_atom_idx) and do a DFT
+    # single-point (UKS mult=2) on it.
+    from pyscf import gto, dft as pyscf_dft
+
+    updated = list(result.candidates)
+    for i, cand in enumerate(top):
+        h_idx = cand.hydrogen_atom_idx
+        rad_elements = [e for j, e in enumerate(result.elements)
+                        if j != h_idx]
+        rad_positions = [p for j, p in enumerate(result.positions_A)
+                         if j != h_idx]
+        try:
+            mol = gto.M(
+                atom=[(sym, (x, y, z)) for sym, (x, y, z) in
+                      zip(rad_elements, rad_positions)],
+                basis=basis, charge=0, spin=1,
+                max_memory=4000, verbose=0)
+            mf = pyscf_dft.UKS(mol)
+            mf.xc = functional.lower()
+            mf.max_cycle = 60
+            mf.conv_tol = 1e-8
+            e_rad = mf.kernel()
+        except Exception as e:
+            logger.warning("DFT radical SCF failed for H%d: %s",
+                           h_idx, str(e)[:80])
+            continue
+        if e_rad is None or not getattr(mf, "converged", False):
+            continue
+        bde_Ha = e_rad + h_ref - e_mol_Ha
+        bde_kcal = bde_Ha * 627.509474
+        # Update the candidate in place.
+        rank_pos = updated.index(cand)
+        updated[rank_pos] = SoMCandidate(
+            parent_atom_idx=cand.parent_atom_idx,
+            parent_element=cand.parent_element,
+            hydrogen_atom_idx=cand.hydrogen_atom_idx,
+            position_A=cand.position_A,
+            bde_Hartree=float(bde_Ha),
+            bde_kcalmol=float(bde_kcal),
+            rank=None)  # re-ranked below
+
+    # Re-rank by BDE ascending.
+    updated.sort(key=lambda c: (c.bde_kcalmol
+                                  if c.bde_kcalmol is not None
+                                  else float("inf")))
+    for rank, c in enumerate(updated, 1):
+        c.rank = rank
+
+    result.candidates = updated
+    result.method = f"{functional}/{basis} BDE (top-{top_n}) + GFN2-xTB BDE (rest)"
+    result.wall_seconds = (result.wall_seconds or 0.0) + (time.time() - t0)
+    return result
+
+
+def _dft_h_atom_energy(*, functional: str = "B3LYP",
+                      basis: str = "def2-svp") -> Optional[float]:
+    """DFT energy of an isolated H atom (doublet)."""
+    try:
+        from pyscf import gto, dft as pyscf_dft
+    except ImportError:
+        return None
+    try:
+        mol = gto.M(atom=[("H", (0.0, 0.0, 0.0))],
+                    basis=basis, charge=0, spin=1,
+                    max_memory=2000, verbose=0)
+        mf = pyscf_dft.UKS(mol)
+        mf.xc = functional.lower()
+        mf.max_cycle = 60
+        mf.conv_tol = 1e-8
+        e = mf.kernel()
+        if e is None or not getattr(mf, "converged", False):
+            return None
+        return float(e)
+    except Exception as e:
+        logger.debug("H-atom DFT failed: %s", e)
+        return None
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -325,12 +461,23 @@ if __name__ == "__main__":
     ap.add_argument("--recompute-h", action="store_true",
                     help="recompute E(H·) for this run "
                          "(slower, calibrates to current xtb build)")
+    ap.add_argument("--dft-verify", type=int, default=0,
+                    metavar="N",
+                    help="after xTB ranks top-N, re-rank those N "
+                         "with DFT B3LYP/def2-SVP for paper-grade "
+                         "accuracy (default 0 = skip DFT).")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
     r = predict_cyp_som_bde(
         args.smiles, top_k=args.top_k,
         recompute_h_ref=args.recompute_h)
+
+    if args.dft_verify > 0 and r.ok:
+        print(f"[som] xTB ranking complete; DFT-verifying top-"
+              f"{args.dft_verify} …")
+        r = verify_som_dft(r, top_n=args.dft_verify)
+
     if args.json:
         import json
         print(json.dumps(r.as_dict(), indent=2, default=str))
