@@ -350,6 +350,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="run N Monte-Carlo seeds per compound "
                          "(adds ΔG mean ± SD + 95%% CI per row; "
                          "0 = disable, >=2 = enable)")
+    ap.add_argument("--profile-top-k", type=int, default=0,
+                    metavar="K",
+                    help="after ranking, run src.chem.profile on "
+                         "the top K successful compounds and save "
+                         "one PNG per compound next to --out-csv. "
+                         "0 = skip (default)")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -396,6 +402,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
+
+    # Optionally produce a per-compound drug profile dashboard for
+    # the top-K successful hits (ties chem + quantum + ADMET + dock
+    # into a one-page biologist summary).
+    if args.profile_top_k > 0:
+        from src.chem.profile import render_profile
+        top_ok = [r for r in records if r.get("ok")][:args.profile_top_k]
+        if args.out_csv is not None:
+            out_dir = Path(args.out_csv).resolve().parent
+        else:
+            out_dir = Path(".").resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n[batch] generating profile PNGs for top "
+              f"{len(top_ok)} hits in {out_dir}", flush=True)
+        for rec in top_ok:
+            png = out_dir / f"profile_{rec['rank']:02d}_{rec['name']}.png"
+            try:
+                render_profile(
+                    rec["name"], rec["smiles"],
+                    save=str(png), show=False,
+                    seed=args.seed)
+            except SystemExit as e:
+                print(f"  profile {rec['name']} skipped: {e}",
+                      flush=True)
+            except Exception as e:
+                print(f"  profile {rec['name']} failed: {e}",
+                      flush=True)
 
     # Biologist-friendly summary table on stdout.
     print()
