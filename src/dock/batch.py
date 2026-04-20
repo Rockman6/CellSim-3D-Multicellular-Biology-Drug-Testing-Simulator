@@ -86,6 +86,9 @@ class BatchConfig:
                                       # second run of an identical
                                       # (ligand, receptor, box, exh,
                                       # seed) returns instantly
+    export_poses_dir: Optional[str] = None  # if set, per-compound
+                                            # SDF + PDB files of all
+                                            # poses get written here
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -181,6 +184,21 @@ def _worker(task: tuple) -> dict:
                     crystal_resname=cfg.crystal_resname)
             except Exception as e:
                 logger.debug("PoseBusters failed for %s: %s", name, e)
+
+        # Optional per-compound pose export (SDF + PDB).
+        if r.ok and cfg.export_poses_dir:
+            try:
+                from src.dock import export_poses_sdf, export_poses_pdb
+                export_dir = Path(cfg.export_poses_dir)
+                export_dir.mkdir(parents=True, exist_ok=True)
+                safe_name = "".join(c if c.isalnum() or c in "-_."
+                                     else "_" for c in name)
+                sdf_path = export_dir / f"{safe_name}.sdf"
+                pdb_path = export_dir / f"{safe_name}.pdb"
+                export_poses_sdf(r, sdf_path)
+                export_poses_pdb(r, pdb_path)
+            except Exception as e:
+                logger.debug("pose export failed for %s: %s", name, e)
     except Exception as e:
         logger.exception("docking crashed on %s", name)
         return dict(name=name, smiles=smiles, ok=False,
@@ -399,6 +417,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "Same (ligand, receptor, box, exh, seed) "
                          "returns from cache on repeat runs "
                          "(~1000x speedup). Use one cache per project.")
+    ap.add_argument("--export-poses-dir", type=str, default=None,
+                    metavar="DIR",
+                    help="per-compound SDF + PDB files of all poses "
+                         "written here. Open in PyMOL / ChimeraX / "
+                         "any SDF viewer.")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -444,6 +467,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         mc_samples=args.mc,
         refine_poses=args.refine_poses,
         cache_path=args.cache,
+        export_poses_dir=args.export_poses_dir,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
