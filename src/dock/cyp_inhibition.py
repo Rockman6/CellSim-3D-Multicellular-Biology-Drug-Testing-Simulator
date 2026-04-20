@@ -158,11 +158,6 @@ def cyp3a4_inhibition(
     min_d2 = min(_sq(xyz, _FE_COORD_1TQN) for _, xyz in heavy)
     result.min_distance_to_Fe_A = math.sqrt(min_d2)
 
-    risk, reason = _classify(
-        result.dG_kcalmol, result.min_distance_to_Fe_A)
-    result.inhibitor_risk = risk
-    result.classification_reason = reason
-
     # Pose-trust: UFF-ensemble strain on the top pose. Same signal
     # surfaced in off-target / batch outputs so a DDI screen's
     # "high" risk call can be discounted if the pose is strained.
@@ -177,6 +172,22 @@ def cyp3a4_inhibition(
             result.strain_ratio = round(s.energy_ratio, 3)
     except Exception as e:
         logger.debug("strain on CYP inhibition failed: %s", e)
+
+    risk, reason = _classify(
+        result.dG_kcalmol, result.min_distance_to_Fe_A)
+    # Strain-aware risk downgrade. A strain=reject pose cannot
+    # support a high-risk DDI call — Vina achieved the tight ΔG
+    # only by contorting the ligand into a non-physical geometry,
+    # so the compound is not actually a strong CYP3A4 binder. This
+    # is the same wet-lab-trust pattern the batch triage applies.
+    if result.strain_band == "reject" and risk in ("high", "medium"):
+        reason = (f"risk downgraded from {risk} → low: strain"
+                  f"={result.strain_band} "
+                  f"(ratio {result.strain_ratio:.2f}); "
+                  "non-physical pose, ΔG not trustworthy")
+        risk = "low"
+    result.inhibitor_risk = risk
+    result.classification_reason = reason
 
     result.ok = True
     result.wall_seconds = time.time() - t0
