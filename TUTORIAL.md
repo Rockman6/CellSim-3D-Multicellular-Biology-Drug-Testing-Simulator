@@ -64,6 +64,19 @@ RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STR
    3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
 ```
 
+To produce a hand-to-wet-lab shortlist containing only compounds
+worth chemists' time (`follow_up` + `review` verdicts), add
+`--shortlist-csv`:
+
+```bash
+./scripts/cellsim dock ... --out-csv run/full.csv \
+                            --shortlist-csv run/shortlist.csv
+```
+
+The shortlist has the same columns as the full CSV but filters
+out `deprioritise` and `drop` rows, so you can paste it straight
+into a wet-lab handoff meeting.
+
 Whenever `cellsim dock` writes a CSV via `--out-csv`, it also
 writes a `<name>.triage.png` next to it — the 4-panel dashboard
 below appears automatically, no extra command needed. To
