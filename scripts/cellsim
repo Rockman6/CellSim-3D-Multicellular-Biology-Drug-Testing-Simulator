@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# cellsim — unified CLI wrapper for the Campaign-1 modules.
+#
+# Run `cellsim <subcommand> [--help]` to see per-subcommand options.
+# Activate the cellsim conda env first (conda activate cellsim).
+#
+# This script just dispatches to `python -m src.<pkg>.<module>`
+# with the remaining args. It's intentionally a shell wrapper, not
+# a Python console-script entry point, so it works without
+# pip-installing the package.
+
+set -euo pipefail
+
+_cellsim_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${_cellsim_repo}"
+
+_usage() {
+    cat <<USAGE
+usage: cellsim <subcommand> [args...]
+
+  dock        batch docking screen (Layer 1.3)
+                ranked CSV ± MC error bars ± auto-profile PNGs
+                -> src/dock/batch.py
+
+  dock-one    single-compound dock + biologist viewer
+                -> src/dock/viewer.py
+
+  redock      single-pair re-dock with crystal-RMSD
+                -> src/dock/vina.py
+
+  pocket      fpocket auto binding-site detection
+                -> src/dock/pocket_detect.py
+
+  refine      post-dock OpenMM ligand-only minimisation
+                (currently python module only, no CLI yet)
+
+  profile     one-page drug profile dashboard
+                (3D + SoM + HOMO/LUMO + ADMET + Ro5 callouts)
+                -> src/chem/profile.py
+
+  admet       Lipinski / QED / logS / TPSA descriptors
+                -> src/chem/admet.py
+
+  parametrize SMILES -> parametrised OpenMM system
+                -> src/chem/parametrize.py
+
+  xtb         xTB GFN2 single-point + HOMO/LUMO + charges
+                -> src/quantum/xtb.py
+
+  som         CYP3A4 site-of-metabolism prediction (BDE)
+                -> src/quantum/metabolism.py
+
+  md-ligand   vacuum Langevin MD on a SMILES
+                -> src/md/simulate.py
+
+  md-protein  PDB -> solvated OpenMM system + short MD
+                -> src/md/protein.py
+
+  md-view     animated protein trajectory viewer
+                -> src/md/protein_viewer.py
+
+  uq-mc       Monte-Carlo over Vina seeds (ΔG ± CI)
+                -> src/uq/dock_mc.py
+
+  uq-sobol    Sobol sensitivity over docking inputs
+                -> src/uq/sobol.py
+
+  fetch-pdb   download a PDB by ID from RCSB
+                -> scripts/fetch_pdb.py
+
+  fetch-chembl  drug-like SMILES subset from the ChEMBL API
+                -> scripts/fetch_chembl_sample.py
+
+  help        show this message
+  version     show cellsim / tool versions
+
+All subcommands accept --help for their own args.
+See README.md for the 5-minute biologist quickstart.
+USAGE
+}
+
+_version() {
+    python - <<'PY'
+import importlib, sys
+mods = [
+    ("rdkit", "rdkit"),
+    ("openmm", "openmm"),
+    ("openff-toolkit", "openff.toolkit"),
+    ("pdbfixer", "pdbfixer"),
+    ("vina", "vina"),
+    ("meeko", "meeko"),
+    ("posebusters", "posebusters"),
+]
+print("cellsim   — Campaign-1 non-AI drug-discovery stack")
+print("python    ", sys.version.split()[0])
+for label, m in mods:
+    try:
+        mod = importlib.import_module(m)
+        print(f"{label:<16s}", getattr(mod, "__version__", "?"))
+    except ImportError:
+        print(f"{label:<16s} MISSING (env not activated?)")
+PY
+}
+
+case "${1:-}" in
+    "" | -h | --help | help)
+        _usage ;;
+    version | --version | -V)
+        _version ;;
+    dock)        shift; exec python -m src.dock.batch "$@" ;;
+    dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
+    redock)      shift; exec python -m src.dock.vina "$@" ;;
+    pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
+    profile)     shift; exec python -m src.chem.profile "$@" ;;
+    admet)       shift; exec python -m src.chem.admet "$@" ;;
+    parametrize) shift; exec python -m src.chem.parametrize "$@" ;;
+    xtb)         shift; exec python -m src.quantum.xtb "$@" ;;
+    som)         shift; exec python -m src.quantum.metabolism "$@" ;;
+    md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
+    md-protein)  shift; exec python -m src.md.protein "$@" ;;
+    md-view)     shift; exec python -m src.md.protein_viewer "$@" ;;
+    uq-mc)       shift; exec python -m src.uq.dock_mc "$@" ;;
+    uq-sobol)    shift; exec python -m src.uq.sobol "$@" ;;
+    fetch-pdb)    shift; exec python scripts/fetch_pdb.py "$@" ;;
+    fetch-chembl) shift; exec python scripts/fetch_chembl_sample.py "$@" ;;
+    *)
+        echo "cellsim: unknown subcommand '$1'. Run 'cellsim help' for a list." >&2
+        exit 2 ;;
+esac

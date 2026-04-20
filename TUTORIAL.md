@@ -1,0 +1,238 @@
+# CellSim — Biologist Tutorial
+
+End-to-end in ~10 minutes: install, run a screen, inspect a hit,
+ship a shortlist.
+
+No ML, no black boxes. Every number in every output has a physics
+derivation or a cited empirical formula — see [`MISSION.md`](MISSION.md).
+
+## 1. Install (one-time)
+
+CellSim ships a single conda environment covering everything from
+RDKit to xTB to Vina to PoseBusters.
+
+```bash
+# Install mambaforge first if you don't have conda.
+# (macOS:    brew install miniforge)
+# (Linux:    see https://github.com/conda-forge/miniforge#install)
+
+# From the CellSim repo root:
+mamba env create -f environment.yml     # ~5 min
+conda activate cellsim
+```
+
+The `conda activate cellsim` step sets `AMBERHOME`, which is
+required for AM1-BCC partial charges. A bare `python …` invocation
+without the activate will silently fail at charge assignment — see
+[`src/chem/README.md`](src/chem/README.md) for diagnostics.
+
+Everything below assumes `conda activate cellsim` has been run.
+
+## 2. First screen on a bundled cocrystal (3 min)
+
+CellSim ships the streptavidin–biotin cocrystal (PDB 1STP) and a
+tiny 5-compound validation batch (biotin + 4 non-binder drugs). Run
+a full screen:
+
+```bash
+./scripts/cellsim dock \
+    --smi benchmarks/dock/1stp_batch_5.smi \
+    --receptor benchmarks/dock/1stp.pdb \
+    --out-csv /tmp/run/report.csv \
+    --mc 4 --profile-top-k 3 \
+    --crystal-pdb benchmarks/dock/1stp.pdb --crystal-resname BTN
+```
+
+What happens:
+
+1. **Pocket detection.** If you hadn't given `--center`/`--box`,
+   fpocket would auto-find the binding site. (Here we skip because
+   we *do* know the site from the crystal.)
+2. **Per-compound**: RDKit embed → OpenFF Sage parameters → AM1-BCC
+   charges → Vina docks 4 seeds for the `--mc 4` Monte-Carlo.
+3. **PoseBusters** grades pocket fit + geometry per pose.
+4. **ADMET**: Lipinski / QED / logS / TPSA computed alongside.
+5. Ranks, writes `/tmp/run/report.csv`, then generates
+   `/tmp/run/profile_01_biotin_TRUE_BINDER.png` (and top 2 + 3).
+
+Expected stdout:
+
+```
+RANK  NAME                    ΔG(kcal)   K_d       POCKET  RMSD    Ro5  QED   logS
+   1  biotin_TRUE_BINDER        -7.45    3.5 µM    ✓       1.96 Å  ✓    0.49  -1.53
+   2  ibuprofen_negative        -7.36    4.1 µM    ?       -       ✓    0.82  -3.09
+   3  aspirin_negative          -6.66   13.0 µM    ✓       -       ✓    0.55  -1.99
+```
+
+Biotin correctly ranks #1 with a 1.96 Å crystal RMSD, `pocket:ok`,
+and soluble classification.
+
+## 3. Reading a drug-profile PNG
+
+Open `/tmp/run/profile_01_biotin_TRUE_BINDER.png` and you'll see
+six panels on one page:
+
+| Panel | What it tells you |
+|---|---|
+| **3D + charges** (top-left) | Atom positions with Mulliken charges (blue = electron-rich, red = electron-poor). Spot the nucleophiles / electrophiles by eye. |
+| **SoM prediction** (top-mid) | Red atom = predicted primary CYP3A4 metabolism site. Orange = top-3. Tells you where metabolism will clear this drug. |
+| **Text datasheet** (top-right) | Full ADMET + electronic summary. Your compound's MW, logP, HBA/HBD, rotb, QED, HOMO/LUMO. |
+| **HOMO/LUMO bar** (bottom-left) | Electronic gap → reactivity/stability cue. |
+| **BDE chart** (bottom-mid) | Top-10 bonds by dissociation energy. Low BDE = easier to abstract = CYP hotspot. |
+| **Ro5 / QED callouts** (bottom-right) | Big green/red "is this drug-like?" glance. |
+
+One page → one compound triage decision.
+
+## 4. Run on your own target + compound list
+
+Drop a receptor PDB and a SMILES file into the repo:
+
+```bash
+cat > /tmp/my_compounds.smi <<'EOF'
+CC(=O)OC1=CC=CC=C1C(=O)O	aspirin
+CC(C)CC1=CC=C(C=C1)C(C)C(=O)O	ibuprofen
+Oc1ccc(/C=C/C(=O)O)cc1	p-coumaric_acid
+EOF
+
+./scripts/cellsim dock \
+    --smi /tmp/my_compounds.smi \
+    --receptor path/to/your_target.pdb \
+    --out-csv /tmp/my_screen/report.csv \
+    --mc 8 --profile-top-k 10 \
+    --refine-poses
+```
+
+No `--center`? fpocket auto-detects the binding site from receptor
+geometry.
+
+`--mc 8` runs 8 Vina seeds per compound → honest ΔG mean ± 95% CI
+in the CSV.
+
+`--refine-poses` runs OpenMM ligand-only minimisation on each pose
+→ PoseBusters `geometry_ok` flag is meaningful downstream.
+
+`--profile-top-k 10` auto-generates the per-compound dashboard
+PNGs for your top 10 hits.
+
+## 5. Single-compound tools
+
+Want just the ADMET for one SMILES?
+
+```bash
+./scripts/cellsim admet "CC(=O)OC1=CC=CC=C1C(=O)O"
+# [OK] ADMET C9H8O4 MW=180.2 logP=+1.31 TPSA=63.6 HBA=3 HBD=1
+#      rotb=2 Ro5 ✓ QED=0.55 logS=-1.99 (soluble)
+```
+
+xTB electronic structure?
+
+```bash
+./scripts/cellsim xtb "CC(=O)OC1=CC=CC=C1C(=O)O"
+# [OK] xtb GFN2-xTB … HOMO=-11.38 LUMO=-7.87 gap=3.51 eV µ=2.39 D
+```
+
+CYP3A4 site-of-metabolism?
+
+```bash
+./scripts/cellsim som "CC12CCC3C(C1CCC2=O)CCC4=CC(=O)CCC34C"
+# [OK] SoM CYP3A4 testosterone … 26 candidates
+#   rank= 1  C(idx=5)  BDE= 118.7 kcal/mol
+#   rank= 2  C(idx=4)  BDE= 120.6 kcal/mol
+#   rank= 3  C(idx=12) BDE= 123.9 kcal/mol
+```
+
+Full drug profile PNG in one shot:
+
+```bash
+./scripts/cellsim profile testosterone \
+    --smiles "CC12CCC3C(C1CCC2=O)CCC4=CC(=O)CCC34C" \
+    --save testosterone.png
+```
+
+## 6. Uncertainty quantification tools
+
+Monte-Carlo ΔG estimate for one compound against one target:
+
+```bash
+./scripts/cellsim uq-mc \
+    --receptor benchmarks/dock/1stp.pdb \
+    --ligand-smiles "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12" \
+    --center 11.12,1.68,-10.75 --box 20,20,20 \
+    --n 16 --workers 4
+# ΔG = -7.42 ± 0.03 kcal/mol  95 % CI [-7.45, -7.38]
+```
+
+Sobol sensitivity — which Vina knob moves ΔG most?
+
+```bash
+./scripts/cellsim uq-sobol \
+    --receptor benchmarks/dock/1stp.pdb \
+    --ligand-smiles "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12" \
+    --center 11.12,1.68,-10.75 --box 20,20,20 \
+    --n-base 32 --workers 8
+# Reports S1 / ST + 95% CI per input over 256 runs.
+```
+
+## 7. What the CSV columns mean
+
+| Column | Meaning |
+|---|---|
+| `rank` | Rank within successful compounds (best ΔG = 1). |
+| `dG_kcalmol` | Vina top-pose ΔG, kcal/mol. More negative = tighter. |
+| `dG_kJmol` | Same in SI. |
+| `Kd_nM` | Implied K_d = exp(ΔG / RT). |
+| `Kd_human` | Auto-formatted ("3.5 µM", "12 nM", …). |
+| `dG_mean_kcalmol` | (if `--mc N`) MC mean ΔG over N seeds. |
+| `dG_std_kcalmol` | MC standard deviation. |
+| `dG_ci95_lo` / `dG_ci95_hi` | 95 % CI from sample percentiles. |
+| `crystal_rmsd_A` | (if `--crystal-*`) top-pose RMSD vs crystal HETATM ligand in Å. |
+| `pocket_ok` | PoseBusters: pose placed in pocket, no protein clashes. Triage signal. |
+| `geometry_ok` | PoseBusters: bonds/angles/chirality all sane. Required for FEP. |
+| `pb_all_ok` | All PoseBusters tests pass including RMSD ≤ 2 Å. |
+| `MW`, `logP`, `TPSA`, `HBA`, `HBD`, `rotb` | Lipinski Ro5 inputs + PSA. |
+| `ro5_pass` / `ro5_violations` | Rule-of-five flag. |
+| `QED` | Bickerton 2012 drug-likeness score in [0,1]. |
+| `logS` | ESOL log solubility (mol/L). Higher = more soluble. |
+| `solubility` | Qualitative bucket (highly / moderately / slightly / insoluble). |
+
+## 8. How to trust the output
+
+Every prediction carries provenance. Every CellSim release runs
+the full smoke gate in CI — see
+[`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) and
+the "Validation that runs on every PR" section of
+[`README.md`](README.md). On every PR:
+
+- Layer 1.1 chem smoke (10 canonical drugs end-to-end).
+- Layer 1.2 short MD on aspirin + 1UBQ.
+- Layer 1.3 re-dock gate on 1STP biotin; 3-cocrystal mini-bench.
+- Layer 1.4 xTB + SoM smoke.
+- Layer 1.6 MC-dock smoke.
+
+A regression on any of the ~11 smoke gates blocks merge.
+
+## 9. What CellSim doesn't do
+
+- **No Campaign-2 cellular biology.** The Layer-2 pathway
+  simulation (HeLa p53/MDM2/cisplatin etc.) lives under
+  [`OLD/`](OLD/) as a frozen pre-restart snapshot. Campaign 2
+  resumes once Campaign 1 closes (see [`ROADMAP.md`](ROADMAP.md)).
+- **No ML predictions.** If you want a neural scorer, use a
+  different tool; CellSim is deliberately physics-only (see
+  [`MISSION.md`](MISSION.md) §"No black-box / no AI surrogates").
+- **No rigorous binding affinity for the top hit**. Vina ΔG is
+  triage-grade. For publication-grade ΔΔG, bolt a perses FEP run
+  onto the refined poses (Layer 1.3 perses hook pending).
+- **No membrane proteins yet.** GPCRs / ion channels in a bilayer
+  need Layer 1.5 Martini 3, scaffold-only at the moment.
+
+## 10. Getting help
+
+- `./scripts/cellsim help` — subcommand index.
+- `./scripts/cellsim <subcommand> --help` — per-subcommand args.
+- [`MISSION.md`](MISSION.md) — discipline + non-AI ground rules.
+- [`ROADMAP.md`](ROADMAP.md) — Campaign-1 layer status.
+- [`docs/campaign1_scope.md`](docs/campaign1_scope.md) — exit
+  criteria for each layer.
+- Run into a confusing error? Open an issue with the commit SHA
+  (`git rev-parse HEAD`) + the stderr.
