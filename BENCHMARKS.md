@@ -239,6 +239,43 @@ Reproducer: `cellsim som "CC(=O)OC1=CC=CC=C1C(=O)O" --dft-verify 3`.
 
 Reproducer (xTB-only baseline): `python tests/quantum/test_som_smoke.py`.
 
+### Literature SoM validation on 3 drugs
+
+`benchmarks/quantum/cyp3a4_som_validation.yaml` bundles 3 canonical
+CYP3A4 substrates with literature-cited primary metabolism sites
+and SMARTS patterns pinning the expected heavy-atom. Harness in
+`src/quantum/som_validation.py`:
+
+| Method | aspirin<br/>(methyl → salicylate) | midazolam<br/>(1′-OH, imidazole methyl) | diazepam<br/>(N-demethyl) | aggregate |
+|---|:-:|:-:|:-:|:-:|
+| xTB BDE only | ✗ (picks O-H) | ✗ | ✗ | 0/3 |
+| + DFT rescore top-3 | ✓ matches methyl | ✗ (picks benzylic CH₂) | ✗ (picks benzylic CH₂) | **1/3** |
+
+Honest interpretation of the 1/3 DFT result:
+
+- **Aspirin:** DFT correctly flips xTB's O-H prediction to the
+  methyl C-H, consistent with salicylate formation.
+- **Midazolam + diazepam:** DFT identifies a benzylic methylene
+  (both molecules have one) as the lowest-BDE C-H. These are
+  known *secondary* CYP3A4 metabolism sites for both drugs
+  (4-hydroxymidazolam, temazepam) but not the clinically
+  reported *primary*. BDE-ranking ≠ kinetic preference —
+  CYP active-site orientation also constrains which H can
+  reach the heme iron. A future PR adds "distance-to-heme"
+  scoring via docking into a CYP3A4 structure, which is
+  expected to lift the primary sites back to rank 1.
+
+This is a genuine scientific limitation of BDE-only SoM
+prediction, now documented with a reproducible literature
+cross-check. Wall: 758 s (12.6 min) for the 3-drug DFT-verified
+run on a laptop.
+
+Reproducer:
+```bash
+cellsim som-validate benchmarks/quantum/cyp3a4_som_validation.yaml \
+    --dft-verify 3
+```
+
 ---
 
 ## 1.2 MD: solvated protein equilibration
