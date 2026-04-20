@@ -10,6 +10,7 @@
 name: cellsim
 channels:
   - conda-forge
+  - bioconda
   - omnia
 dependencies:
   - python=3.11

@@ -144,78 +144,67 @@ def parametrize_smiles(
     inchi_key = Chem.InchiToInchiKey(inchi) if inchi else None
     formula = Chem.rdMolDescriptors.CalcMolFormula(mol)
 
-    try:
-        from openff.toolkit import ForceField, Molecule
-    except ImportError as e:
-        # RDKit-only result is still useful for the viewer — ship it.
-        conf = mol.GetConformer()
-        positions = [
-            [conf.GetAtomPosition(i).x * 0.1,
-             conf.GetAtomPosition(i).y * 0.1,
-             conf.GetAtomPosition(i).z * 0.1]
-            for i in range(mol.GetNumAtoms())
-        ]
-        elements = [a.GetSymbol() for a in mol.GetAtoms()]
-        bonds = [
-            (b.GetBeginAtomIdx(), b.GetEndAtomIdx(),
-             b.GetBondTypeAsDouble())
-            for b in mol.GetBonds()
-        ]
+    # Always capture RDKit geometry so the viewer works even when
+    # downstream steps (OpenFF import, charge assignment, FF assignment)
+    # later fail.
+    conf = mol.GetConformer()
+    rdkit_positions = [
+        [conf.GetAtomPosition(i).x * 0.1,
+         conf.GetAtomPosition(i).y * 0.1,
+         conf.GetAtomPosition(i).z * 0.1]
+        for i in range(mol.GetNumAtoms())
+    ]
+    rdkit_elements = [a.GetSymbol() for a in mol.GetAtoms()]
+    rdkit_bonds = [
+        (b.GetBeginAtomIdx(), b.GetEndAtomIdx(),
+         b.GetBondTypeAsDouble())
+        for b in mol.GetBonds()
+    ]
+    rdkit_n_atoms = mol.GetNumAtoms()
+    rdkit_n_conformers = mol.GetNumConformers()
+
+    def _rdkit_fallback(reason: str, **extra) -> ParametrizeResult:
         return ParametrizeResult(
             smiles=smiles,
             ok=False,
-            reason=f"openff-toolkit not available: {e}",
+            reason=reason,
             inchi=inchi,
             inchi_key=inchi_key,
             formula=formula,
-            n_atoms=mol.GetNumAtoms(),
-            n_conformers=mol.GetNumConformers(),
-            positions_nm=positions,
-            elements=elements,
-            bonds=bonds,
+            n_atoms=rdkit_n_atoms,
+            n_conformers=rdkit_n_conformers,
+            positions_nm=rdkit_positions,
+            elements=rdkit_elements,
+            bonds=rdkit_bonds,
             tool_versions=versions,
+            **extra,
         )
+
+    try:
+        from openff.toolkit import ForceField, Molecule
+    except ImportError as e:
+        return _rdkit_fallback(f"openff-toolkit not available: {e}")
 
     try:
         off_mol = Molecule.from_rdkit(mol, allow_undefined_stereo=True)
     except Exception as e:
-        return ParametrizeResult(
-            smiles=smiles,
-            ok=False,
-            reason=f"OpenFF Molecule.from_rdkit failed: {e}",
-            inchi=inchi,
-            inchi_key=inchi_key,
-            formula=formula,
-            tool_versions=versions,
-        )
+        return _rdkit_fallback(f"OpenFF Molecule.from_rdkit failed: {e}")
 
     try:
         off_mol.assign_partial_charges(partial_charge_method=charge_method)
     except Exception as e:
-        return ParametrizeResult(
-            smiles=smiles,
-            ok=False,
-            reason=f"{charge_method} charge assignment failed: {e}",
-            inchi=inchi,
-            inchi_key=inchi_key,
-            formula=formula,
-            tool_versions=versions,
-        )
+        # Truncate the very long OpenFF diagnostic to the first line.
+        reason = str(e).splitlines()[0]
+        return _rdkit_fallback(
+            f"{charge_method} charge assignment failed: {reason}")
 
     try:
         ff = ForceField(ff_name)
         system = ff.create_openmm_system(off_mol.to_topology())
     except Exception as e:
-        return ParametrizeResult(
-            smiles=smiles,
-            ok=False,
-            reason=f"OpenFF parametrisation failed ({ff_name}): {e}",
-            inchi=inchi,
-            inchi_key=inchi_key,
-            formula=formula,
-            charge_method=charge_method,
-            tool_versions=versions,
-        )
+        return _rdkit_fallback(
+            f"OpenFF parametrisation failed ({ff_name}): {e}",
+            charge_method=charge_method)
 
     # Extract geometry + charges for cache + viewer.
     conf = off_mol.conformers[0]
