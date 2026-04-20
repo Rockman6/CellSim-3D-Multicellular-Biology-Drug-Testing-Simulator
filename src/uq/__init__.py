@@ -14,6 +14,7 @@ from .sobol import (
     sobol_dock,
 )
 from .sobol_viewer import render_sobol_result
+from .conformal import ConformalBounds
 
 __all__ = [
     "DockingMCResult",
@@ -21,4 +22,5 @@ __all__ = [
     "SobolResult",
     "sobol_dock",
     "render_sobol_result",
+    "ConformalBounds",
 ]

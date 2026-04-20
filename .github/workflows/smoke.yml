@@ -118,6 +118,9 @@ jobs:
       - name: UQ MC-dock smoke (Layer 1.6, 4 seeds on 1STP biotin)
         run: python -u tests/uq/test_mc_dock_smoke.py
 
+      - name: UQ conformal smoke (Layer 1.6, synthetic calibration)
+        run: python -u tests/uq/test_conformal_smoke.py
+
   scale:
     name: scale (workflow_dispatch only)
     if: >
