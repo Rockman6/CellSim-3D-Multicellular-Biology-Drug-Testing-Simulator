@@ -67,6 +67,10 @@ class CypInhibitionResult:
 
     inhibitor_risk: Optional[str] = None     # "low" | "medium" | "high"
     classification_reason: str = ""
+    strain_band: Optional[str] = None        # good / acceptable /
+                                              # suspicious / reject
+    strain_kcalmol: Optional[float] = None
+    strain_ratio: Optional[float] = None
     wall_seconds: Optional[float] = None
 
     def as_dict(self) -> dict:
@@ -75,10 +79,13 @@ class CypInhibitionResult:
     def summary(self) -> str:
         if not self.ok:
             return f"[FAIL] CYP3A4 inhibition {self.smiles}  {self.reason}"
+        strain_tag = (
+            f"  strain = {self.strain_band}"
+            if self.strain_band else "")
         return (f"[OK]   CYP3A4 inhibition  {self.ligand_formula or self.smiles}"
                 f"  ΔG = {self.dG_kcalmol:+.2f} kcal/mol  "
                 f"min(Fe-atom) = {self.min_distance_to_Fe_A:.2f} Å  "
-                f"risk = {self.inhibitor_risk}  "
+                f"risk = {self.inhibitor_risk}{strain_tag}  "
                 f"({self.classification_reason})  "
                 f"wall {self.wall_seconds:.1f} s")
 
@@ -155,6 +162,21 @@ def cyp3a4_inhibition(
         result.dG_kcalmol, result.min_distance_to_Fe_A)
     result.inhibitor_risk = risk
     result.classification_reason = reason
+
+    # Pose-trust: UFF-ensemble strain on the top pose. Same signal
+    # surfaced in off-target / batch outputs so a DDI screen's
+    # "high" risk call can be discounted if the pose is strained.
+    try:
+        from src.dock.strain import ligand_strain
+        s = ligand_strain(
+            top.elements, top.positions_A,
+            smiles, ensemble_n=20)
+        if s.ok:
+            result.strain_band = s.band
+            result.strain_kcalmol = round(s.strain_kcalmol, 2)
+            result.strain_ratio = round(s.energy_ratio, 3)
+    except Exception as e:
+        logger.debug("strain on CYP inhibition failed: %s", e)
 
     result.ok = True
     result.wall_seconds = time.time() - t0
