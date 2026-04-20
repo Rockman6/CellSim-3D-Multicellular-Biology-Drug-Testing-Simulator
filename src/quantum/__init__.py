@@ -13,6 +13,7 @@ from .metabolism import (
     SoMCandidate,
     SoMResult,
     predict_cyp_som_bde,
+    verify_som_dft,
 )
 from .dft import (
     DftResult,
@@ -25,6 +26,7 @@ __all__ = [
     "SoMCandidate",
     "SoMResult",
     "predict_cyp_som_bde",
+    "verify_som_dft",
     "DftResult",
     "dft_single_point",
 ]
