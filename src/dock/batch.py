@@ -602,6 +602,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "default 100 is tighter but slower).")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
+    ap.add_argument("--shortlist-csv", type=Path, default=None,
+                    help="if set, also write a filtered CSV "
+                         "containing only compounds whose triage "
+                         "verdict is 'follow_up' or 'review' — "
+                         "the hand-to-wet-lab file.")
     args = ap.parse_args(argv)
 
     # Resolve search box: either CLI args or fpocket auto-detect.
@@ -652,6 +657,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
+
+    # Write an optional shortlist-CSV with only the compounds a
+    # biologist should actually look at (follow_up + review). This
+    # is the "hand-to-wet-lab" artifact — a smaller file whose
+    # first column is already the verdict.
+    if args.shortlist_csv:
+        shortlist = [r for r in records
+                     if r.get("triage") in ("follow_up", "review")]
+        args.shortlist_csv.parent.mkdir(parents=True, exist_ok=True)
+        _write_csv(shortlist, args.shortlist_csv)
+        print(f"[batch] wrote shortlist ({len(shortlist)} "
+              f"compounds) → {args.shortlist_csv}", flush=True)
 
     # Optionally produce a per-compound drug profile dashboard for
     # the top-K successful hits (ties chem + quantum + ADMET + dock
