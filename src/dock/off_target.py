@@ -271,6 +271,10 @@ if __name__ == "__main__":
     ap.add_argument("--cache", default=None,
                     help="SQLite cache path")
     ap.add_argument("--out-csv", default=None)
+    ap.add_argument("--save-plot", default=None,
+                    help="save bar-chart PNG of ΔG per receptor")
+    ap.add_argument("--intended-target", default=None,
+                    help="highlight this receptor name in the plot")
     args = ap.parse_args()
 
     receptors: list = []
@@ -312,4 +316,9 @@ if __name__ == "__main__":
     if args.out_csv:
         write_csv(r, args.out_csv)
         print(f"\n[off-target] wrote {args.out_csv}")
+    if args.save_plot:
+        from src.dock.off_target_viewer import render_off_target_result
+        render_off_target_result(
+            r, intended_target=args.intended_target,
+            save=args.save_plot, show=False)
     sys.exit(0)
