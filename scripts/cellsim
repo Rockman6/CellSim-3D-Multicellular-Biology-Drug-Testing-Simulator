@@ -50,6 +50,9 @@ usage: cellsim <subcommand> [args...]
   xtb         xTB GFN2 single-point + HOMO/LUMO + charges
                 -> src/quantum/xtb.py
 
+  dft         PySCF B3LYP/def2-SVP single-point (rigorous QM)
+                -> src/quantum/dft.py
+
   som         CYP3A4 site-of-metabolism prediction (BDE)
                 -> src/quantum/metabolism.py
 
@@ -134,6 +137,7 @@ case "${1:-}" in
     admet)       shift; exec python -m src.chem.admet "$@" ;;
     parametrize) shift; exec python -m src.chem.parametrize "$@" ;;
     xtb)         shift; exec python -m src.quantum.xtb "$@" ;;
+    dft)         shift; exec python -m src.quantum.dft "$@" ;;
     som)         shift; exec python -m src.quantum.metabolism "$@" ;;
     md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
     md-protein)  shift; exec python -m src.md.protein "$@" ;;
