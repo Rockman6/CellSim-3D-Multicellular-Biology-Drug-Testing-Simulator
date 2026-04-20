@@ -1,0 +1,55 @@
+# Streptavidin-binder calibration set for Layer-1.6 conformal
+# prediction + Layer-1.7 blind validation.
+#
+# Four compounds with published K_d against streptavidin (1STP).
+# Small set but spans ~12 kcal/mol of real affinity range, enough
+# for a first conformal calibration demo.
+#
+# Experimental ΔG computed from K_d via ΔG = RT·ln(K_d), RT = 0.5924
+# kcal/mol at 298.15 K. Where K_d ranges are reported, midpoint is
+# taken. These are *reference* values — a future PR should replace
+# them with BindingDB / PDBBind-refined pull exactly pinned to PDB
+# IDs.
+#
+# Citation trail in `source_notes` per entry.
+
+receptor:
+  pdb: benchmarks/dock/1stp.pdb
+  crystal_center_A: [11.12, 1.68, -10.75]
+  search_box_A: [20.0, 20.0, 20.0]
+
+entries:
+  - name: biotin
+    smiles: "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12"
+    Kd_M: 1.0e-14
+    dG_expt_kcalmol: -19.1   # RT·ln(1e-14), 298 K
+    source_notes: |
+      Green 1975 Adv Protein Chem 29:85 — canonical tight binder,
+      K_d ~ 10^-14 M. Under Vina this is a known tight-binder
+      outlier (Vina predicts ~ -7 kcal/mol).
+
+  - name: 2-iminobiotin
+    smiles: "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=N)N[C@H]12"
+    Kd_M: 3.5e-11
+    dG_expt_kcalmol: -14.3
+    source_notes: |
+      Heney 1981 Methods Enzymol 62:298 — guanidine replaces the
+      ureido C=O; K_d ~ 30 pM at physiological pH.
+
+  - name: desthiobiotin
+    smiles: "C[C@H]1NC(=O)N[C@H]1CCCCC(=O)O"
+    Kd_M: 5.0e-5
+    dG_expt_kcalmol: -5.9
+    source_notes: |
+      Hirsch 2002 Anal Biochem 308:343 — lacks the sulphur and the
+      bicyclic ureido ring is opened; much weaker than biotin.
+      (Often cited K_d ≈ 10^-4 to 10^-6 M; midpoint used here.)
+
+  - name: HABA
+    smiles: "Oc1ccc(/N=N/c2ccccc2C(=O)O)cc1"
+    Kd_M: 5.8e-6
+    dG_expt_kcalmol: -7.1
+    source_notes: |
+      Green 1965 Biochem J 94:23c — classical streptavidin spectro-
+      photometric assay ligand; K_d ~ 5-10 µM. Competes with biotin
+      binding but at dramatically weaker affinity.

@@ -15,6 +15,11 @@ from .sobol import (
 )
 from .sobol_viewer import render_sobol_result
 from .conformal import ConformalBounds
+from .calibration import (
+    CalibrationResult,
+    CalibrationPoint,
+    run_calibration,
+)
 
 __all__ = [
     "DockingMCResult",
@@ -23,4 +28,7 @@ __all__ = [
     "sobol_dock",
     "render_sobol_result",
     "ConformalBounds",
+    "CalibrationResult",
+    "CalibrationPoint",
+    "run_calibration",
 ]
