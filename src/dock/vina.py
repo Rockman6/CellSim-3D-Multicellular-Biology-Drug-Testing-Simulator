@@ -325,22 +325,20 @@ def _parse_vina_output(pdbqt_out: Path) -> list[DockingPose]:
                 x = float(line[30:38])
                 y = float(line[38:46])
                 z = float(line[46:54])
-                # AutoDock-Vina's PDBQT output puts the element in
-                # the last token of the line (e.g. "... -0.084 Cl"),
-                # not at the canonical PDB columns 76-78. The 76:78
-                # slice chops the second char off two-letter elements
-                # like Cl/Br — which silently dropped chlorine atoms
-                # from every halogenated docked pose. Fall back to
-                # the atom-name field [12:16] which AutoDock fills
-                # with the full element symbol.
-                elem = ""
-                tail = line[76:].strip()
-                if tail:
-                    elem = tail.split()[0]
+                # Element extraction from PDBQT. The canonical PDB
+                # element column (76-78) is only 2 chars wide in
+                # AutoDock-Vina output and gets chopped for two-
+                # letter elements like Cl/Br. The atom-NAME column
+                # [12:16] is 4 chars wide and reliably carries the
+                # full element symbol (e.g. " Cl ", " C  ", " N  ")
+                # — Meeko writes the periodic-table symbol here
+                # rather than a raw atom name.
+                elem = line[12:16].strip()
                 if not elem:
-                    elem = line[12:16].strip()
-                if not elem:
-                    elem = line[12:14].strip()
+                    elem = line[76:78].strip()
+                # Strip trailing digits (some AutoDock variants
+                # write " C1 " / " N2 " for numbered atoms).
+                elem = "".join(c for c in elem if c.isalpha())
             except ValueError:
                 continue
             positions.append([x, y, z])
