@@ -204,7 +204,33 @@ experiment; the *ranking* is what matters for SoM. Literature-
 validated correctness against 20 marketed CYP3A4 substrates is
 pending (Layer 1.4 exit gate).
 
-Reproducer: `python tests/quantum/test_som_smoke.py`.
+### DFT rescoring of top-3 xTB candidates — aspirin case study
+
+Canonical pharma pattern: xTB ranks all X-H bonds fast; DFT re-
+scores the top-3 for paper-grade accuracy. On aspirin:
+
+| Step | top-1 | top-2 | top-3 |
+|---|---|---|---|
+| xTB (GFN2-xTB BDE) | O(12) 134.4 | C(0) 134.5 | C(0) 136.3 |
+| + DFT rescoring | **C(0) 112.7** | C(0) 114.0 | O(12) 115.3 |
+
+Two honest findings:
+
+1. **DFT values are ~20 kcal/mol lower than xTB** — empirically
+   confirms the GFN2 systematic offset vs experiment.
+2. **DFT disagrees with xTB on the winner.** xTB says O-H of the
+   carboxylic acid; DFT says methyl C-H. The literature primary
+   CYP3A4 metabolism of aspirin is methyl oxidation leading to
+   salicylate, matching DFT. xTB's top-2 and DFT's top-1 are the
+   same atom, so xTB is usable as a fast funnel; DFT is the
+   final arbiter.
+
+Wall: 58.9 s on a 21-atom drug (1 full-mol DFT + 3 radicals + 1
+H-atom reference; B3LYP/def2-SVP; PySCF).
+
+Reproducer: `cellsim som "CC(=O)OC1=CC=CC=C1C(=O)O" --dft-verify 3`.
+
+Reproducer (xTB-only baseline): `python tests/quantum/test_som_smoke.py`.
 
 ---
 
