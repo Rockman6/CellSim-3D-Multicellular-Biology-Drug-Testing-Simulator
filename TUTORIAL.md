@@ -141,6 +141,25 @@ cellsim dock --smi compounds.smi --receptor target.pdb \
 
 Then in PyMOL: `File → Open → run/poses/top_hit.sdf`.
 
+### Off-target selectivity screen
+
+One compound vs many receptors — in-silico off-target toxicity
+triage. CellSim auto-detects each receptor's binding site via
+fpocket and reports a ΔG per target plus the selectivity ΔΔG
+between the intended target and the strongest off-target:
+
+```bash
+cellsim off-target \
+    --ligand-smiles "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12" \
+    --receptors "streptavidin=1stp.pdb,trypsin=3ptb.pdb,EGFR=1m17.pdb" \
+    --cache offtarget.sqlite \
+    --out-csv offtarget.csv
+```
+
+Reads "biotin binds streptavidin at −7.4 kcal/mol, everything else
+is weaker, selectivity margin is 1.4 kcal/mol". The convention in
+pharma is ΔΔG ≥ 3 kcal/mol = "good selectivity" (~200× K_d gap).
+
 ## 5. Single-compound tools
 
 Want just the ADMET for one SMILES?
