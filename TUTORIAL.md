@@ -141,6 +141,26 @@ cellsim dock --smi compounds.smi --receptor target.pdb \
 
 Then in PyMOL: `File → Open → run/poses/top_hit.sdf`.
 
+### CYP3A4 metabolism site-of-metabolism (SoM)
+
+The CYP SoM predictor tells a biologist where a drug is likely to
+get oxidised in the liver, which is a direct proxy for its half-
+life and clearance. xTB BDE picks the reactive site in ~s per
+compound; for high-stakes calls, DFT B3LYP/def2-SVP rescoring
+flips the ranking when xTB disagrees:
+
+```bash
+cellsim som "CC(=O)OC1=CC=CC=C1C(=O)O"                     # xTB only, <1 s
+cellsim som "CC(=O)OC1=CC=CC=C1C(=O)O" --dft-verify 3      # +DFT, ~60 s
+cellsim som-validate benchmarks/quantum/cyp3a4_som_validation.yaml \
+    --dft-verify 3   # compares top-1 against literature sites
+```
+
+See `benchmarks/quantum/cyp3a4_som_validation.yaml` for a
+literature-cited 3-drug validation set; the SMARTS in
+`known_som_smarts` encodes the experimentally reported primary
+metabolism site per compound.
+
 ### Off-target selectivity screen
 
 One compound vs many receptors — in-silico off-target toxicity
