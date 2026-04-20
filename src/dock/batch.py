@@ -321,10 +321,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "'smiles [name]' per line)")
     ap.add_argument("--receptor", required=True,
                     help="receptor PDB")
-    ap.add_argument("--center", required=True,
-                    help="comma-separated x,y,z Å")
-    ap.add_argument("--box", default="22,22,22",
-                    help="comma-separated dx,dy,dz Å")
+    ap.add_argument("--center", default=None,
+                    help="comma-separated x,y,z Å. Omit together "
+                         "with --box to let fpocket auto-detect the "
+                         "top druggable pocket (biologist-friendly "
+                         "default for unknown targets).")
+    ap.add_argument("--box", default=None,
+                    help="comma-separated dx,dy,dz Å. If omitted and "
+                         "--center is omitted, uses fpocket's "
+                         "suggested box.")
+    ap.add_argument("--auto-pocket-rank", type=int, default=1,
+                    help="which fpocket-detected pocket to target "
+                         "when --center is not supplied (1 = best "
+                         "drug score; default 1)")
     ap.add_argument("--exhaustiveness", type=int, default=16)
     ap.add_argument("--num-modes", type=int, default=5)
     ap.add_argument("--seed", type=int, default=1)
@@ -345,10 +354,36 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
 
+    # Resolve search box: either CLI args or fpocket auto-detect.
+    if args.center is None:
+        from src.dock import detect_pockets
+        print(f"[batch] --center not given; running fpocket on "
+              f"{args.receptor} to auto-detect binding pocket "
+              f"(rank={args.auto_pocket_rank})", flush=True)
+        pockets = detect_pockets(args.receptor,
+                                  top_k=max(5, args.auto_pocket_rank))
+        if not pockets or len(pockets) < args.auto_pocket_rank:
+            print(f"[batch] fpocket found {len(pockets)} pockets; "
+                  f"cannot satisfy --auto-pocket-rank="
+                  f"{args.auto_pocket_rank}. Aborting.",
+                  file=sys.stderr)
+            return 2
+        pkt = pockets[args.auto_pocket_rank - 1]
+        auto_center = pkt.center_A
+        auto_box = pkt.suggested_box_A
+        print(f"[batch] auto-pocket #{pkt.rank}: "
+              f"drug={pkt.drug_score:.3f}  "
+              f"volume={pkt.volume_A3:.0f} Å³  "
+              f"center={auto_center}  box={auto_box}", flush=True)
+    else:
+        auto_center = tuple(float(x) for x in args.center.split(","))
+        auto_box = (tuple(float(x) for x in args.box.split(","))
+                    if args.box else (22.0, 22.0, 22.0))
+
     cfg = BatchConfig(
         receptor_pdb=args.receptor,
-        center_A=tuple(float(x) for x in args.center.split(",")),
-        box_size_A=tuple(float(x) for x in args.box.split(",")),
+        center_A=auto_center,
+        box_size_A=auto_box,
         exhaustiveness=args.exhaustiveness,
         num_modes=args.num_modes,
         seed=args.seed, cpu_per_job=args.cpu_per_job,

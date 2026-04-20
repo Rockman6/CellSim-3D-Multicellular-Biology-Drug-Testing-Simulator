@@ -45,6 +45,8 @@ dependencies:
   # Docking + FEP (non-AI path)
   - vina>=1.2.5               # AutoDock Vina — primary docking engine
   - meeko>=0.7                # PDBQT prep for Vina (ligand + receptor)
+  - fpocket>=4.2              # geometric binding-pocket detection
+                              # (classical Voronoi/alpha-sphere; non-AI)
 
   # Metabolism (Campaign 2 prep)
   - cobra>=0.29               # COBRApy FBA

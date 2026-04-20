@@ -100,6 +100,9 @@ jobs:
       - name: dock re-docking gate (Layer 1.3, 1STP biotin)
         run: python -u tests/dock/test_redocking.py
 
+      - name: dock pocket-detect smoke (Layer 1.3, fpocket on 1STP)
+        run: python -u tests/dock/test_pocket_detect_smoke.py
+
       - name: quantum smoke (Layer 1.4, xTB GFN2 on 10 drugs, 8/10)
         run: python -u tests/quantum/test_xtb_smoke.py --gate 8
 

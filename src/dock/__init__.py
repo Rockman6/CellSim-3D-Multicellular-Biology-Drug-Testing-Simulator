@@ -17,6 +17,7 @@ from .pose_rmsd import (
 )
 from .validity import attach_posebusters
 from .batch import BatchConfig, run_batch
+from .pocket_detect import PocketCandidate, detect_pockets
 
 __all__ = [
     "DockingResult",
@@ -29,4 +30,6 @@ __all__ = [
     "attach_posebusters",
     "BatchConfig",
     "run_batch",
+    "PocketCandidate",
+    "detect_pockets",
 ]
