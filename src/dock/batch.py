@@ -77,6 +77,10 @@ class BatchConfig:
     run_admet: bool = True            # Lipinski / QED / logP / logS
     mc_samples: int = 0               # 0 = single-seed; N>=2 = MC over
                                       # seeds [seed, seed+N) → ΔG ± CI
+    refine_poses: bool = False        # OpenMM ligand-only minimise
+                                      # → fixes bond / angle / clash
+                                      # geometry so PB geometry_ok
+                                      # flips True on most poses
 
 
 def _kd_label(kd_nM: float) -> str:
@@ -142,6 +146,17 @@ def _worker(task: tuple) -> dict:
                     ligand_resname=cfg.crystal_resname)
             except Exception as e:
                 logger.debug("crystal RMSD failed for %s: %s", name, e)
+        # Optional OpenMM refinement step (fixes Vina's approximate
+        # geometry — runs BEFORE PoseBusters so the refined geometry
+        # is what gets graded.
+        if r.ok and cfg.refine_poses:
+            try:
+                from src.dock import refine_pose_openff
+                r.poses = [refine_pose_openff(p, r.ligand_smiles)
+                           for p in r.poses]
+            except Exception as e:
+                logger.debug("refine failed for %s: %s", name, e)
+
         if r.ok and cfg.run_posebusters:
             try:
                 r = attach_posebusters(
@@ -356,6 +371,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "the top K successful compounds and save "
                          "one PNG per compound next to --out-csv. "
                          "0 = skip (default)")
+    ap.add_argument("--refine-poses", action="store_true",
+                    help="post-dock OpenMM ligand-only minimisation "
+                         "to fix Vina's approximate bond / angle / "
+                         "clash geometry. Flips PoseBusters "
+                         "geometry_ok True on most poses; required "
+                         "before downstream FEP. Adds ~1-2 s per "
+                         "pose.")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="output CSV path (default: print to stdout)")
     args = ap.parse_args(argv)
@@ -399,6 +421,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_posebusters=not args.no_posebusters,
         run_admet=not args.no_admet,
         mc_samples=args.mc,
+        refine_poses=args.refine_poses,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
