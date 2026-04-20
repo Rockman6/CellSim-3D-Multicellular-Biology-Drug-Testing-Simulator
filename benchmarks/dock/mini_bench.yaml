@@ -1,0 +1,61 @@
+# CellSim Layer-1.3 mini-docking benchmark.
+#
+# Four diverse pharma-relevant cocrystals for the re-docking pose-
+# recovery gate. Every entry is a published crystal structure where
+# the native ligand's heavy-atom coordinates give an unambiguous
+# reference pose.
+#
+# Used by tests/dock/test_mini_bench.py. Passing criterion per entry
+# is the canonical Astex/PDBBind convention:
+#   top-1 RMSD <= 2.5 Å  AND  best-of-top-3 RMSD < 2.0 Å
+#
+# Aggregate CellSim claim: "k/N cocrystals pass" at this gate.
+
+entries:
+  - pdb: 1stp.pdb
+    name: streptavidin_biotin
+    family: biotin-binder
+    disease_area: tool compound
+    ligand_resname: BTN
+    ligand_smiles: "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12"
+    crystal_center_A: [11.12, 1.68, -10.75]
+    search_box_A: [20.0, 20.0, 20.0]
+    notes: |
+      Canonical docking benchmark since AutoDock 1.0. Tight binder
+      (K_d ~ 10^-14 M, ΔG ~ -18 kcal/mol experimental). Vina
+      systematically under-estimates binding energy for extreme
+      tight binders — pose accuracy is the validation metric here.
+
+  - pdb: 1m17.pdb
+    name: EGFR_erlotinib
+    family: kinase
+    disease_area: oncology (NSCLC)
+    ligand_resname: AQ4
+    ligand_smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+    crystal_center_A: [22.01, 0.25, 52.79]
+    search_box_A: [28.0, 22.0, 22.0]
+    notes: |
+      Erlotinib (Tarceva) against EGFR T790M. FDA-approved 2004.
+      Longer ligand (29 heavy atoms) tests Vina's handling of
+      rotatable side chains.
+
+  # 1HPV removed from the mini-bench: the crystal HETATM 478 block
+  # has 35 heavy atoms while the published indinavir SMILES gives
+  # 45 (the crystal is missing atoms — partial disorder on the
+  # tertiary-butyl + pyridylmethyl end). Replace with a cleaner
+  # fourth case in a future PR (e.g. 2RGP CDK2 + roscovitine or
+  # 4DFR DHFR + methotrexate, where the crystal ligand is fully
+  # resolved).
+
+  - pdb: 3ptb.pdb
+    name: trypsin_benzamidine
+    family: serine protease
+    disease_area: tool compound
+    ligand_resname: BEN
+    ligand_smiles: "NC(=N)c1ccccc1"
+    crystal_center_A: [-1.76, 14.46, 16.92]
+    search_box_A: [18.0, 18.0, 18.0]
+    notes: |
+      Benzamidine in trypsin's S1 pocket — classic small-ligand
+      test case. Only 9 heavy atoms, well-defined pocket;
+      a docking method that fails this one is not usable.

@@ -103,6 +103,9 @@ jobs:
       - name: dock pocket-detect smoke (Layer 1.3, fpocket on 1STP)
         run: python -u tests/dock/test_pocket_detect_smoke.py
 
+      - name: dock mini-bench (Layer 1.3, 3-cocrystal re-dock ≥ 2/3)
+        run: python -u tests/dock/test_mini_bench.py
+
       - name: quantum smoke (Layer 1.4, xTB GFN2 on 10 drugs, 8/10)
         run: python -u tests/quantum/test_xtb_smoke.py --gate 8
 
