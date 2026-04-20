@@ -42,9 +42,9 @@ dependencies:
   # Coarse-grained
   - vermouth                  # martinize2
 
-  # Docking + FEP
-  #   AutoDock Vina primary (below via pip).
-  #   perses for alchemical FEP (pip).
+  # Docking + FEP (non-AI path)
+  - vina>=1.2.5               # AutoDock Vina — primary docking engine
+  - meeko>=0.7                # PDBQT prep for Vina (ligand + receptor)
 
   # Metabolism (Campaign 2 prep)
   - cobra>=0.29               # COBRApy FBA
@@ -76,5 +76,4 @@ dependencies:
 
   - pip:
     - perses                  # alchemical FEP
-    - vina                    # AutoDock Vina Python bindings
     - posebusters             # pose validity
