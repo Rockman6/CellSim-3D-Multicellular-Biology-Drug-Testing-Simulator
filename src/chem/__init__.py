@@ -8,8 +8,14 @@ from .parametrize import (
     ParametrizeResult,
     parametrize_smiles,
 )
+from .admet import (
+    AdmetResult,
+    compute_admet,
+)
 
 __all__ = [
     "ParametrizeResult",
     "parametrize_smiles",
+    "AdmetResult",
+    "compute_admet",
 ]

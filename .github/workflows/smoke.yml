@@ -81,6 +81,9 @@ jobs:
       - name: chem smoke_10 (Layer 1.1, full tier ≥ 8/10)
         run: python -u tests/chem/test_parametrize_smoke.py
 
+      - name: chem ADMET smoke (non-AI descriptors, 10/10)
+        run: python -u tests/chem/test_admet_smoke.py
+
       - name: md ligand smoke (Layer 1.2, 3 drugs × 10 ps, 3/3)
         run: python -u tests/md/test_ligand_vacuum.py --max 3 --gate 3
 
