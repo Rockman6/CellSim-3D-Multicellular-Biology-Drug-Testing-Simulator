@@ -54,6 +54,15 @@ def _sane(r) -> tuple[bool, str]:
         return False, "logS is NaN / missing"
     if not r.solubility_class:
         return False, "solubility_class empty"
+    if r.herg_risk not in ("low", "medium", "high"):
+        return False, f"herg_risk not in expected set: {r.herg_risk}"
+    if r.mutagenic_risk not in ("low", "medium", "high"):
+        return False, (f"mutagenic_risk not in expected set: "
+                       f"{r.mutagenic_risk}")
+    # BBB may be None (insufficient info) for exotic chemistry,
+    # else must be True/False.
+    if r.bbb_permeable is not None and r.bbb_permeable not in (True, False):
+        return False, f"bbb_permeable not bool/None: {r.bbb_permeable}"
     return True, ""
 
 

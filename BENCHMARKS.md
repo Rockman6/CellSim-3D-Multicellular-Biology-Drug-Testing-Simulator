@@ -28,6 +28,7 @@ python -u tests/<path>/<test>.py    # or cellsim <subcommand> …
 | 1.4 | xTB GFN2 single-point + CYP3A4 SoM predictor | ✅ | ✅ | 15/20 marketed drugs CYP3A4 primary SoM match (pending) |
 | 1.5 | Martini 3 bilayer + CG MD | ⏳ scaffold | ❌ | 10 µs POPC area-per-lipid within 2 % of literature |
 | 1.6 | UQ triad: MC + Sobol + split-conformal | ✅ | ✅ | Conformal coverage ≤ 10 % calibration error |
+| 1.1 safety | BBB (Pardridge) + hERG (Aronov) + Ames (Kazius) | ✅ | ✅ | correct assignment on validation drugs |
 | 1.7 | Blind-validation harness | ⏳ partial | ✅ | PDBBind r ≥ 0.6; red-team quarterly |
 | x-cut | SQLite physics-prior cache (hash-addressed) | ✅ | ✅ | > 1000× speedup per compound on cache hit |
 
