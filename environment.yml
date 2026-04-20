@@ -48,6 +48,19 @@ dependencies:
   - fpocket>=4.2              # geometric binding-pocket detection
                               # (classical Voronoi/alpha-sphere; non-AI)
 
+  # FEP — choderalab/perses, installed from conda-forge (NOT PyPI;
+  # `pip install perses` resolves to a different ML-tracking library
+  # by Vincent Primault that has nothing to do with alchemical FEP).
+  # On Apple-silicon the conda package may need the omnia channel or
+  # a GitHub source install (see docs/perses_install.md when the
+  # Layer 1.3 FEP integration lands).
+  # - perses                  # choderalab/perses — commented out
+                              # pending a cross-platform-verified
+                              # install path. openmmtools (above)
+                              # provides enough alchemical primitives
+                              # for a manual FEP driver in the
+                              # meantime.
+
   # Metabolism (Campaign 2 prep)
   - cobra>=0.29               # COBRApy FBA
   - python-libsbml>=5.20      # SBML I/O for pathway models
@@ -79,5 +92,8 @@ dependencies:
   - pre-commit
 
   - pip:
-    - perses                  # alchemical FEP
+    # NOTE: "perses" was listed here previously; PyPI's `perses`
+    # package is Vincent Primault's ML experiment tracker and is
+    # NOT the choderalab/perses FEP engine the code expects. See
+    # the Docking + FEP section above for the correct install path.
     - posebusters             # pose validity
