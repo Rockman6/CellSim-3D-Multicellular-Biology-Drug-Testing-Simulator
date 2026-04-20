@@ -28,6 +28,9 @@ usage: cellsim <subcommand> [args...]
   off-target  dock one compound into N receptors (selectivity screen)
                 -> src/dock/off_target.py
 
+  triage-png  triage-breakdown PNG dashboard from a batch CSV
+                -> src/dock/triage_viewer.py
+
   redock      single-pair re-dock with crystal-RMSD
                 -> src/dock/vina.py
 
@@ -137,6 +140,7 @@ case "${1:-}" in
     dock)        shift; exec python -m src.dock.batch "$@" ;;
     dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
     off-target)  shift; exec python -m src.dock.off_target "$@" ;;
+    triage-png)  shift; exec python -m src.dock.triage_viewer "$@" ;;
     redock)      shift; exec python -m src.dock.vina "$@" ;;
     pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
     profile)     shift; exec python -m src.chem.profile "$@" ;;

@@ -64,6 +64,19 @@ RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STR
    3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
 ```
 
+To visualise the verdict distribution at a glance, turn any
+batch CSV into a 4-panel dashboard PNG:
+
+```bash
+./scripts/cellsim triage-png run/report.csv --out run/triage.png
+```
+
+Panels: stacked verdict bar, ΔG scatter faceted by verdict,
+pose-trust (strain band) counts, and safety-filter pass rates
+(Ro5 / hERG / Ames). Paste-into-meeting ready.
+
+![triage dashboard](docs/images/triage_dashboard_8compounds.png)
+
 The `TRIAGE` column is the one-decision column for wet-lab
 handoff. Four verdicts:
 

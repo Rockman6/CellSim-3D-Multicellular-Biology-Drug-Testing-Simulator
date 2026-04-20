@@ -122,6 +122,9 @@ jobs:
       - name: dock triage rules smoke (Layer 1.3, batch triage verdicts)
         run: python -u tests/dock/test_triage_smoke.py
 
+      - name: dock triage-viewer smoke (Layer 1.3, PNG dashboard)
+        run: python -u tests/dock/test_triage_viewer_smoke.py
+
       - name: dock vina cache smoke (cache hit speed-up)
         run: python -u tests/dock/test_vina_cache.py
 
