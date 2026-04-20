@@ -238,7 +238,15 @@ def _prep_receptor_pdbqt(pdb_path: Path, workdir: Path) -> Path:
 
     cmd = [script,
            "--read_pdb", str(cleaned),
-           "-p", str(out)]
+           "-p", str(out),
+           # Robust defaults for the zoo of X-ray PDBs biologists
+           # throw at the tool: take the primary altloc of any
+           # residue with alternates, and drop residues whose
+           # chemistry doesn't match an AMBER template (e.g.
+           # selenomethionine, phosphorylated residues, metals
+           # pre-stripped above).
+           "--default_altloc", "A",
+           "-a"]
     try:
         r = subprocess.run(
             cmd, capture_output=True, text=True, timeout=180)
