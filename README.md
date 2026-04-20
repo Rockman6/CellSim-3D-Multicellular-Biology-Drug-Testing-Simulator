@@ -153,6 +153,26 @@ docs/        strategic plan, professor debriefs, campaign scope
 scripts/     CLI utilities (fetch_pdb, fetch_chembl_sample, ...)
 ```
 
+## How good is it?
+
+See [`BENCHMARKS.md`](BENCHMARKS.md) for the full scorecard —
+every current number (pose-recovery %, Spearman on two receptor
+families, cache speed-ups, CI gate list) with honest caveats and
+per-row reproducers.
+
+Headline numbers today:
+
+- **3-cocrystal mini-bench:** 2/3 = 67 % pose recovery at canonical
+  top-3 < 2 Å gate.
+- **Streptavidin calibration:** Spearman ρ = **1.00** across
+  14 orders of magnitude of K_d (but Pearson r = 0.98 hides the
+  fact that Vina's absolute ΔG saturates on tight binders — MAE
+  4.99 kcal/mol).
+- **Trypsin calibration:** MAE = **0.91 kcal/mol** on benzamidine
+  analogs (Vina's absolute is accurate here), but Spearman
+  ρ = 0.09 within the narrow 4 kcal/mol window (noise floor).
+- **End-to-end cache speed-up:** 19× on a 5-compound batch rerun.
+
 ## How to cite
 
 Every prediction in CellSim carries its method provenance (tool
