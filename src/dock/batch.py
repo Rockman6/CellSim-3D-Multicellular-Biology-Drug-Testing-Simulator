@@ -579,7 +579,12 @@ def _write_csv(records: list[dict], out: Path) -> None:
             "mutagenic_risk", "mutagenic_alerts",
             "n_poses", "seed", "exhaustiveness", "wall_s",
             "ok", "reason"]
-    with out.open("w", newline="") as fo:
+    # Write with UTF-8 BOM so Excel on Windows auto-detects the
+    # encoding. The Kd_human column contains "µM" (U+00B5) and
+    # strain_reason can carry other non-ASCII chars; without the
+    # BOM, Excel renders them as mojibake on a default-locale
+    # Windows install — which is half the wet-lab user base.
+    with out.open("w", newline="", encoding="utf-8-sig") as fo:
         w = csv.DictWriter(fo, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for rec in records:
