@@ -15,6 +15,7 @@ from .pose_rmsd import (
     extract_hetatm_ligand,
     pose_rmsd_symmetry_aware,
 )
+from .validity import attach_posebusters
 
 __all__ = [
     "DockingResult",
@@ -24,4 +25,5 @@ __all__ = [
     "attach_crystal_rmsd",
     "extract_hetatm_ligand",
     "pose_rmsd_symmetry_aware",
+    "attach_posebusters",
 ]
