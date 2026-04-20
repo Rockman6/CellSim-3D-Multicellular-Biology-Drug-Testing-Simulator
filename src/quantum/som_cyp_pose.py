@@ -55,6 +55,8 @@ def _normalise_elem(e: str) -> str:
         return "O"
     if e in ("S", "SA"):
         return "S"
+    if e in ("H", "HD", "HS"):
+        return "H"
     return e.title()
 
 
