@@ -63,6 +63,11 @@ static SimMode      gSimMode = MODE_SINGLE_CELL;
 // Simulation class so headless validation still works with the same code.
 struct SimSetup {
     bool   showOverlay      = true;   // visible until user clicks Start
+    // Light test mode: skips intracellular-particle init, molecule
+    // ball-and-stick rendering, DNA helix, and heavy interior physics
+    // so a 16 GB machine can drive one cell smoothly while still
+    // seeing pathogens, drugs, apoptotic bodies in 3D.
+    bool   lightMode        = false;
     int    initCells        = 5;      // seed count (1 = classic single-cell)
     float  glucoseMM        = 25.0f;
     float  glutamineMM      = 6.0f;
@@ -2395,6 +2400,32 @@ static void syncCellInstances() {
         // cytokinesis. The timer is still used by updatePhysics to reduce
         // motility for a short period (cortical reorganisation), but it is
         // now invisible to the renderer.
+        // Infection tint: sum up all intracellular viral load. At low
+        // load: subtle green tint; at high load: vivid cyan-green glow
+        // so you can SEE which cell is infected and by how much.
+        float viralLoad = 0.0f;
+        for (float x : c.intraVirions)    viralLoad += x;
+        for (float x : c.assembledVirions) viralLoad += x;
+        if (viralLoad > 0.0f) {
+            float f = fminf(1.0f, viralLoad / 100.0f);
+            // Shift toward pale cyan-green + brighten glow.
+            inst.color.x = inst.color.x * (1.0f - 0.35f * f) + 0.05f * f;
+            inst.color.y = inst.color.y * (1.0f - 0.35f * f) + 0.55f * f;
+            inst.color.z = inst.color.z * (1.0f - 0.35f * f) + 0.45f * f;
+            inst.color.w = fminf(0.55f, inst.color.w + 0.12f * f);
+            glow += 1.5f * f;
+        }
+        float bactLoad = 0.0f;
+        for (float x : c.intraBacteria) bactLoad += x;
+        if (bactLoad > 0.0f) {
+            float f = fminf(1.0f, bactLoad / 50.0f);
+            // Warm yellow-orange tint for bacterial infection.
+            inst.color.x = inst.color.x * (1.0f - 0.4f * f) + 0.75f * f;
+            inst.color.y = inst.color.y * (1.0f - 0.4f * f) + 0.55f * f;
+            inst.color.z = inst.color.z * (1.0f - 0.4f * f) + 0.08f * f;
+            inst.color.w = fminf(0.55f, inst.color.w + 0.15f * f);
+            glow += 1.2f * f;
+        }
         inst.glowIntensity = glow;
         gCellInstances.push_back(inst);
         gRenderCellSourceIndices.push_back(i);
@@ -3603,6 +3634,214 @@ static void renderApoptoticBodies(std::vector<GPUAtomInstance>& atoms) {
         ai.color = {rC, gC, bC};
         ai.pad = 0.0f;
         atoms.push_back(ai);
+    }
+}
+
+// ── Pathogen rendering (Phase 7) ────────────────────────────────────
+//
+// Free virions and bacteria render as distinct colored spheres in the
+// same GPUAtomInstance pipeline used for apoptotic bodies. Each species
+// gets a deterministic hue derived from its id — so different viruses
+// look different without hand-authored colours. Virions also get a
+// sparse "corona" of smaller spike points orbiting the capsid so you
+// can tell a flu virion (~300 spikes) from an icosahedral capsid.
+//
+// Scale policy:
+//   virion: render radius = radius_nm (nm) × 0.0008  → typ 0.04-0.08 wu
+//   bacterium: render radius scaled from length_um / 2 via UM_TO_WU
+// so a 2 µm E. coli occupies ~0.2 wu, roughly one-tenth a HeLa cell.
+static simd_float3 pathogenTint(const std::string& id, bool isVirus) {
+    // Deterministic hash → HSV hue.
+    uint32_t h = 2166136261u;
+    for (char c : id) { h ^= (uint8_t)c; h *= 16777619u; }
+    float hue = (float)(h & 0xFFFFFF) / (float)0xFFFFFF;
+    // Virus: cool blues/purples/teals. Bacterium: warm greens/yellows.
+    float baseH = isVirus ? (0.45f + 0.30f * hue)   // 0.45..0.75 (cyan→violet)
+                          : (0.18f + 0.18f * hue);  // 0.18..0.36 (yellow→green)
+    float s = 0.85f, val = 0.95f;
+    float hh = baseH * 6.0f;
+    int i = (int)hh;
+    float f = hh - i;
+    float p = val * (1.0f - s);
+    float q = val * (1.0f - s * f);
+    float t = val * (1.0f - s * (1.0f - f));
+    switch (i % 6) {
+        case 0: return simd_make_float3(val, t, p);
+        case 1: return simd_make_float3(q, val, p);
+        case 2: return simd_make_float3(p, val, t);
+        case 3: return simd_make_float3(p, q, val);
+        case 4: return simd_make_float3(t, p, val);
+        default: return simd_make_float3(val, p, q);
+    }
+}
+
+// Fibonacci-sphere receptor placement — evenly distributes N dots
+// around a cell so the receptor mosaic reads as a surface pattern rather
+// than a stripe. Keeps count small (48) so the scene isn't cluttered.
+static void renderCellReceptors(std::vector<GPUAtomInstance>& atoms) {
+    float t = (float)glfwGetTime();
+    // Color code per receptor class — matches PathogenKinetics profiles.
+    // Each cell flashes BRIGHTER on the receptor class whose pharmacophore
+    // is currently being engaged by a nearby bound virion (if any).
+    const struct { const char* id; simd_float3 col; } R[] = {
+        {"PT_GLYCOPROTEIN",      {1.00f, 0.85f, 0.25f}}, // yellow — sugar
+        {"PT_RECEPTOR_RTK",      {0.30f, 0.85f, 0.95f}}, // cyan — RTK
+        {"PT_RECEPTOR_GPCR",     {0.95f, 0.35f, 0.85f}}, // magenta — GPCR
+        {"PT_RECEPTOR_INTEGRIN", {0.55f, 1.00f, 0.45f}}, // green — integrin
+        {"PT_RECEPTOR_DEATH",    {1.00f, 0.25f, 0.25f}}, // red — death R
+        {"PT_RECEPTOR_TLR",      {0.80f, 0.55f, 1.00f}}, // lavender — TLR
+    };
+    const int NCLASS = (int)(sizeof(R) / sizeof(R[0]));
+    const int DOTS_PER_CELL = 48;
+    const float GOLDEN = 3.14159265f * (3.0f - sqrtf(5.0f));
+
+    for (const auto& c : gSim.cells) {
+        if (!c.alive) continue;
+        float surfR = c.radius * c.size * 1.02f;
+        // Build set of "hot" classes (engaged by any nearby bound virion).
+        float hot[NCLASS]; for (int i = 0; i < NCLASS; i++) hot[i] = 0.0f;
+        for (const Virion& v : gSim.gFreeVirions) {
+            if (v.stage != VirionStage::BOUND
+                && v.stage != VirionStage::ENTERING) continue;
+            if (v.specIdx < 0) continue;
+            const VirionSpec& vs = gPathogens().virionSpecs[v.specIdx];
+            std::string rcvId;
+            float s = PathogenKinetics::virionBindScore(vs, rcvId);
+            for (int i = 0; i < NCLASS; i++) {
+                if (rcvId == R[i].id) hot[i] = fmaxf(hot[i], s);
+            }
+        }
+        for (int i = 0; i < DOTS_PER_CELL; i++) {
+            float y   = 1.0f - (i / (float)(DOTS_PER_CELL - 1)) * 2.0f;
+            float rr  = sqrtf(fmaxf(0.0f, 1.0f - y * y));
+            float th  = GOLDEN * i;
+            float x   = cosf(th) * rr;
+            float z   = sinf(th) * rr;
+            int classIdx = i % NCLASS;
+            float intensity = 0.7f + 0.5f * hot[classIdx]
+                               * (0.6f + 0.4f * sinf(t * 5.0f + (float)i));
+            GPUAtomInstance ai;
+            ai.position = simd_make_float3(
+                c.position.x + x * surfR,
+                c.position.y + y * surfR,
+                c.position.z + z * surfR);
+            ai.radius = 0.06f + 0.02f * hot[classIdx];
+            ai.color = R[classIdx].col * intensity;
+            ai.pad = 0.0f;
+            atoms.push_back(ai);
+        }
+    }
+}
+
+static void renderPathogens(std::vector<GPUAtomInstance>& atoms) {
+    static int _rpLast = -1;
+    int now = (int)gSim.gFreeVirions.size() + (int)gSim.gFreeBacteria.size();
+    if (now != _rpLast) {
+        fprintf(stderr, "[renderPathogens] free virions=%zu bacteria=%zu "
+                "atoms-in-so-far=%zu\n",
+                gSim.gFreeVirions.size(), gSim.gFreeBacteria.size(),
+                atoms.size());
+        _rpLast = now;
+    }
+    float t = (float)glfwGetTime();
+    // Virions.
+    for (const Virion& v : gSim.gFreeVirions) {
+        if (v.specIdx < 0) continue;
+        const VirionSpec& vs = gPathogens().virionSpecs[v.specIdx];
+        float rWu = fmaxf(0.04f, vs.radius_nm * 0.0010f);
+        simd_float3 col = pathogenTint(vs.id, true);
+        // Bright pulse when bound — lets you SEE the spike engagement.
+        float pulse = 1.0f;
+        if (v.stage == VirionStage::BOUND || v.stage == VirionStage::ENTERING) {
+            pulse = 1.15f + 0.25f * sinf(t * 6.0f + (float)v.uid * 0.17f);
+        }
+        // Main capsid.
+        GPUAtomInstance ai;
+        ai.position = simd_make_float3(v.position.x, v.position.y, v.position.z);
+        ai.radius = rWu;
+        ai.color = col * pulse;
+        ai.pad = 0.0f;
+        atoms.push_back(ai);
+        // Sparse corona of smaller spike points for icosahedral /
+        // enveloped viruses. Keep count low (~8) so the scene is
+        // readable at scale.
+        if (vs.enveloped || vs.spikesPerVirion > 60) {
+            int nSpikes = 8;
+            for (int s = 0; s < nSpikes; s++) {
+                float ang = 6.2831853f * (float)s / (float)nSpikes
+                           + 0.3f * sinf(t * 1.2f + (float)v.uid);
+                float sx = cosf(ang) * rWu * 1.25f;
+                float sz = sinf(ang) * rWu * 1.25f;
+                GPUAtomInstance sp;
+                sp.position = simd_make_float3(ai.position.x + sx,
+                                               ai.position.y,
+                                               ai.position.z + sz);
+                sp.radius = rWu * 0.30f;
+                sp.color  = col * (0.75f * pulse);
+                sp.pad = 0.0f;
+                atoms.push_back(sp);
+            }
+        }
+    }
+    // Bacteria: rod-like two-sphere dumbbell for ROD / VIBRIO, single
+    // sphere for COCCUS. Keeps it visually distinct from virions even
+    // at a distance.
+    for (const Bacterium& b : gSim.gFreeBacteria) {
+        if (b.specIdx < 0) continue;
+        const BacteriumSpec& bs = gPathogens().bacteriumSpecs[b.specIdx];
+        simd_float3 col = pathogenTint(bs.id, false);
+        float halfLenWu = fmaxf(0.10f, (bs.length_um * 0.5f) * UM_TO_WU);
+        float widthWu   = fmaxf(0.06f, (bs.width_um * 0.5f) * UM_TO_WU);
+        // Pulse when adhering so adhesion is visible.
+        float pulse = 1.0f;
+        if (b.stage == BacteriumStage::ADHERING) {
+            pulse = 1.2f + 0.3f * sinf(t * 4.0f + (float)b.uid * 0.11f);
+        }
+        float yBase = b.position.y;
+        if (bs.shape == BacteriumShape::COCCUS) {
+            GPUAtomInstance ai;
+            ai.position = simd_make_float3(b.position.x, yBase, b.position.z);
+            ai.radius = halfLenWu;
+            ai.color = col * pulse;
+            ai.pad = 0.0f;
+            atoms.push_back(ai);
+        } else {
+            // Two caps + a mid sphere along runDir for the body.
+            simd_float3 dir = b.runDir;
+            float dn = sqrtf(dir.x*dir.x + dir.z*dir.z) + 1e-6f;
+            dir.x /= dn; dir.z /= dn;
+            int segs = 3;
+            for (int s = 0; s < segs; s++) {
+                float u = (float)s / (float)(segs - 1) - 0.5f; // -0.5, 0, +0.5
+                GPUAtomInstance ai;
+                ai.position = simd_make_float3(
+                    b.position.x + dir.x * halfLenWu * u * 2.0f,
+                    yBase,
+                    b.position.z + dir.z * halfLenWu * u * 2.0f);
+                ai.radius = widthWu;
+                ai.color = col * pulse;
+                ai.pad = 0.0f;
+                atoms.push_back(ai);
+            }
+        }
+        // Tiny flagellum dots for motile bacteria — a trailing pair of
+        // small points behind runDir gives a whip-like illusion at scale.
+        if (bs.flagella_count > 0) {
+            simd_float3 dir = b.runDir;
+            float dn = sqrtf(dir.x*dir.x + dir.z*dir.z) + 1e-6f;
+            dir.x /= dn; dir.z /= dn;
+            for (int f = 1; f <= 2; f++) {
+                GPUAtomInstance fa;
+                fa.position = simd_make_float3(
+                    b.position.x - dir.x * (halfLenWu + widthWu * f * 0.9f),
+                    yBase,
+                    b.position.z - dir.z * (halfLenWu + widthWu * f * 0.9f));
+                fa.radius = widthWu * 0.25f;
+                fa.color = col * 0.5f;
+                fa.pad = 0.0f;
+                atoms.push_back(fa);
+            }
+        }
     }
 }
 
@@ -5925,6 +6164,7 @@ static void uploadCellInterior(simd_float3 cellPos, float cellSize, float time, 
     // Apoptotic bodies use the same atom-instance pipeline so they are
     // drawn in the same pass as medium molecules — no extra shader.
     renderApoptoticBodies(allAtoms);
+    renderPathogens(allAtoms);
     bool renderPrimaryInterior = !soloFocusEnabled() || activeFocusCellIndex() == 0;
     int focusCellIdx = activeFocusCellIndex();
 
@@ -6889,7 +7129,12 @@ static void switchMode(SimMode newMode) {
 // the setup overlay, or whenever they re-open it and re-start.
 static void applySetupAndStartSimulation() {
     gSim.timeScale = gSetup.initialTimeScale;
-    gSim.init(MODE_SINGLE_CELL);
+    // Light / Test mode uses MODE_COLONY with 1 cell: skips the heavy
+    // intracellular-particle path entirely so a 16 GB machine can still
+    // drive the scene. Pathogens, drugs, apoptotic bodies all render.
+    SimMode chosenMode = gSetup.lightMode ? MODE_COLONY : MODE_SINGLE_CELL;
+    gSim.init(chosenMode);
+    gSimMode = chosenMode;
     // Seed additional cells to match gSetup.initCells. Place each cell
     // at its proper rest-on-floor Y (FLOOR_Y + radius × size × 0.85) so
     // the lower hemisphere doesn't clip through the substrate on the
@@ -6936,6 +7181,8 @@ static void applySetupAndStartSimulation() {
 // Apply one of the named templates to gSetup.
 static void applySetupTemplate(int idx) {
     gSetup.templateIdx = idx;
+    // Every non-Test template clears lightMode; the Test template sets it.
+    gSetup.lightMode = false;
     switch (idx) {
         case 0:   // HeLa Standard (DMEM HG + 10 % FBS, 5 % CO2 atmosphere)
             gSetup.initCells = 5;
@@ -6992,6 +7239,15 @@ static void applySetupTemplate(int idx) {
             gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
             gSetup.growthFactorNgML = 50.0f;
             gSetup.initialTimeScale = 60.0f;
+            break;
+        case 7:   // Test Mode (Lite — 1 cell, low memory, big button UI)
+            gSetup.initCells = 1;
+            gSetup.lightMode = true;
+            gSetup.glucoseMM = 25.0f;  gSetup.glutamineMM = 4.0f;
+            gSetup.aaPoolMM = 5.0f;    gSetup.o2MM = 0.20f;
+            gSetup.co2MM = 1.20f;      gSetup.pH = 7.40f;
+            gSetup.growthFactorNgML = 50.0f;
+            gSetup.initialTimeScale = 5.0f;
             break;
     }
 }
@@ -7220,7 +7476,8 @@ static void drawUI() {
             "Starvation",
             "Rich Medium",
             "Single Cell Detail",
-            "Dense Colony (400)"
+            "Dense Colony (400)",
+            "Test Mode (Lite 16GB)"
         };
         const int TPL_COUNT = sizeof(TPL_NAMES) / sizeof(TPL_NAMES[0]);
         for (int i = 0; i < TPL_COUNT; i++) {
@@ -7245,6 +7502,11 @@ static void drawUI() {
         ImGui::SliderFloat("pH",               &gSetup.pH,              6.5f,  8.0f,  "%.2f");
         ImGui::SliderFloat("Growth factors",   &gSetup.growthFactorNgML, 0.0f, 200.0f, "%.1f ng/mL");
         ImGui::SliderFloat("Initial timeScale",&gSetup.initialTimeScale, 0.1f, 100.0f, "%.1f×");
+        ImGui::Checkbox("Light / Test mode (1 cell, 16GB-friendly)", &gSetup.lightMode);
+        if (gSetup.lightMode) {
+            ImGui::TextColored(ImVec4(0.6f, 0.95f, 0.6f, 1.0f),
+                "✓ Skips intracellular-particle render. Big button panel.");
+        }
 
         ImGui::Separator();
         if (ImGui::Button("▶  Start simulation", ImVec2(-1, 36))) {
@@ -7361,6 +7623,289 @@ static void drawUI() {
                 }
             }
         }
+        ImGui::End();
+    }
+
+    // ── Pathogen Lab panel (right side, below Drug Lab) ──────────────────
+    // Inoculate virions / bacteria near a focused cell. Same physics-only
+    // discipline as the drug system: binding is driven by shape+chemistry
+    // compatibility (PathogenKinetics). No tropism flag. Watch the 3D view:
+    // free virions drift, bind, enter, replicate, bud, and on host lysis
+    // spill into the medium to infect neighbours.
+    {
+        float winW = 310;
+        float px = ImGui::GetIO().DisplaySize.x - winW - 10;
+        float py = 900.0f;
+        ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Pathogen Lab (virion + bacterium)");
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f),
+                           "Shape-driven binding — no tropism flags");
+        ImGui::Separator();
+
+        // Live counts.
+        ImGui::Text("Free virions   : %d", (int)gSim.gFreeVirions.size());
+        ImGui::Text("Free bacteria  : %d", (int)gSim.gFreeBacteria.size());
+        ImGui::Text("Infected cells : %d", gSim.statInfectedCells);
+        ImGui::Separator();
+
+        int nV = (int)gPathogens().virionSpecs.size();
+        int nB = (int)gPathogens().bacteriumSpecs.size();
+        if (nV == 0 && nB == 0) {
+            ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.3f, 1.0f),
+                               "No species loaded.");
+            ImGui::TextWrapped("Add entries to data/pathogens/virions.yaml "
+                               "or data/pathogens/bacteria.yaml then restart.");
+        }
+
+        if (nV > 0) {
+            static int vSel = 0;
+            if (vSel >= nV) vSel = 0;
+            std::vector<const char*> vn;
+            for (int i = 0; i < nV; i++) vn.push_back(gPathogens().virionSpecs[i].id.c_str());
+            ImGui::Combo("Virion", &vSel, vn.data(), nV);
+            const VirionSpec& vs = gPathogens().virionSpecs[vSel];
+            ImGui::TextColored(ImVec4(0.65f, 0.80f, 0.95f, 1.0f),
+                               "%s  r=%.0f nm  %s",
+                               vs.displayName.c_str(), vs.radius_nm,
+                               vs.enveloped ? "enveloped" : "naked");
+            ImGui::TextColored(ImVec4(0.60f, 0.75f, 0.90f, 1.0f),
+                               "spike: logP=%.1f MW=%.0f H%d/%d ar=%d",
+                               vs.spike_logP, vs.spike_mw, vs.spike_hbd,
+                               vs.spike_hba, vs.spike_aromatic);
+            // Predicted best receptor + score.
+            std::string rcv;
+            float s = PathogenKinetics::virionBindScore(vs, rcv);
+            ImGui::TextColored(ImVec4(0.85f, 0.95f, 0.65f, 1.0f),
+                               "best match: %s  score=%.2f",
+                               rcv.empty() ? "(none)" : rcv.c_str(), s);
+
+            static int vCount = 50;
+            ImGui::SliderInt("# to inoculate", &vCount, 1, 500);
+            if (ImGui::Button("Inoculate near focused cell", ImVec2(-1, 28))) {
+                float cx = 0.0f, cz = 0.0f;
+                if (!gSim.cells.empty()) {
+                    cx = gSim.cells[0].position.x;
+                    cz = gSim.cells[0].position.z;
+                }
+                gSim.seedVirion(vSel, cx, cz, vCount, 2.0f);
+            }
+        }
+
+        ImGui::Separator();
+
+        if (nB > 0) {
+            static int bSel = 0;
+            if (bSel >= nB) bSel = 0;
+            std::vector<const char*> bn;
+            for (int i = 0; i < nB; i++) bn.push_back(gPathogens().bacteriumSpecs[i].id.c_str());
+            ImGui::Combo("Bacterium", &bSel, bn.data(), nB);
+            const BacteriumSpec& bs = gPathogens().bacteriumSpecs[bSel];
+            const char* shapeName = "?";
+            switch (bs.shape) {
+                case BacteriumShape::COCCUS:     shapeName = "coccus"; break;
+                case BacteriumShape::ROD:        shapeName = "rod"; break;
+                case BacteriumShape::VIBRIO:     shapeName = "vibrio"; break;
+                case BacteriumShape::SPIRILLUM:  shapeName = "spirillum"; break;
+                case BacteriumShape::SPIROCHETE: shapeName = "spirochete"; break;
+            }
+            ImGui::TextColored(ImVec4(0.80f, 0.95f, 0.65f, 1.0f),
+                               "%s  %s  %.1fx%.1f µm  %s%s",
+                               bs.displayName.c_str(), shapeName,
+                               bs.length_um, bs.width_um,
+                               bs.gram == GramType::GRAM_POSITIVE ? "gram+ " : "gram- ",
+                               bs.has_lps_fringe ? "LPS" : "");
+            ImGui::TextColored(ImVec4(0.70f, 0.85f, 0.55f, 1.0f),
+                               "adh: logP=%.1f MW=%.0f  fla=%d  pili=%d",
+                               bs.adhesin_logP, bs.adhesin_mw,
+                               bs.flagella_count, bs.pili_count);
+            std::string rcv;
+            float s = PathogenKinetics::bacteriumBindScore(bs, rcv);
+            ImGui::TextColored(ImVec4(0.85f, 0.95f, 0.65f, 1.0f),
+                               "best match: %s  score=%.2f",
+                               rcv.empty() ? "(none)" : rcv.c_str(), s);
+
+            static int bCount = 10;
+            ImGui::SliderInt("# to inoculate ", &bCount, 1, 100);
+            if (ImGui::Button("Release bacteria near cell", ImVec2(-1, 28))) {
+                float cx = 0.0f, cz = 0.0f;
+                if (!gSim.cells.empty()) {
+                    cx = gSim.cells[0].position.x;
+                    cz = gSim.cells[0].position.z;
+                }
+                gSim.seedBacterium(bSel, cx, cz, bCount, 3.0f);
+            }
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Clear all pathogens", ImVec2(-1, 22))) {
+            gSim.gFreeVirions.clear();
+            gSim.gFreeBacteria.clear();
+        }
+
+        ImGui::End();
+    }
+
+    // ── Test Mode action buttons (lightMode only, left side) ──────────────
+    // One-click shortcuts to every "what happens when X interacts with the
+    // cell" scenario. Each button is self-contained: no typing required.
+    if (gSetup.lightMode) {
+        float winW = 300;
+        float px = 10.0f;
+        float py = 90.0f;
+        ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(winW, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("⚡ Test Actions (one click)");
+        ImGui::TextColored(ImVec4(0.85f, 0.9f, 1.0f, 1.0f),
+                           "Watch each action play out in 3D.");
+        ImGui::Separator();
+
+        float btnW = -1;
+        float btnH = 28;
+        auto seedAt = [&](float& cx, float& cz) {
+            if (!gSim.cells.empty()) {
+                cx = gSim.cells[0].position.x;
+                cz = gSim.cells[0].position.z;
+            } else { cx = 0.0f; cz = 0.0f; }
+        };
+
+        // ── VIRUSES ──
+        ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "Viruses");
+        int fluIdx = gPathogens().findVirion("flu_h1n1");
+        if (ImGui::Button("💥 Inoculate Flu (H1N1) × 50", ImVec2(btnW, btnH))) {
+            float cx, cz; seedAt(cx, cz);
+            fprintf(stderr, "[TestAction] flu: specIdx=%d seedPos=(%.2f,%.2f) "
+                    "cells=%zu pathogenSpecs=%zu\n",
+                    fluIdx, cx, cz, gSim.cells.size(),
+                    gPathogens().virionSpecs.size());
+            if (fluIdx >= 0) {
+                gSim.seedVirion(fluIdx, cx, cz, 50, 2.0f);
+                fprintf(stderr, "[TestAction] flu inoc done; gFreeVirions=%zu\n",
+                        gSim.gFreeVirions.size());
+            } else {
+                fprintf(stderr, "[TestAction] flu spec NOT FOUND\n");
+            }
+        }
+        int hbvIdx = gPathogens().findVirion("hbv_01");
+        if (ImGui::Button("🧬 Inoculate HBV × 30", ImVec2(btnW, btnH))
+            && hbvIdx >= 0) {
+            float cx, cz; seedAt(cx, cz);
+            gSim.seedVirion(hbvIdx, cx, cz, 30, 2.0f);
+        }
+        int adIdx = gPathogens().findVirion("adeno_tox");
+        if (ImGui::Button("⚔ Inoculate Adenovirus × 40 (lytic)",
+                          ImVec2(btnW, btnH)) && adIdx >= 0) {
+            float cx, cz; seedAt(cx, cz);
+            gSim.seedVirion(adIdx, cx, cz, 40, 2.0f);
+        }
+
+        ImGui::Separator();
+        // ── BACTERIA ──
+        ImGui::TextColored(ImVec4(0.55f, 1.0f, 0.65f, 1.0f), "Bacteria");
+        int ecIdx = gPathogens().findBacterium("ecoli_K12");
+        if (ImGui::Button("🦠 Release E. coli × 20",
+                          ImVec2(btnW, btnH)) && ecIdx >= 0) {
+            float cx, cz; seedAt(cx, cz);
+            gSim.seedBacterium(ecIdx, cx, cz, 20, 3.0f);
+        }
+        int lsIdx = gPathogens().findBacterium("listeria_EGDe");
+        if (ImGui::Button("⚠ Release Listeria × 15",
+                          ImVec2(btnW, btnH)) && lsIdx >= 0) {
+            float cx, cz; seedAt(cx, cz);
+            gSim.seedBacterium(lsIdx, cx, cz, 15, 3.0f);
+        }
+        int saIdx = gPathogens().findBacterium("saureus_tox");
+        if (ImGui::Button("☠ Release S. aureus × 15 (toxin)",
+                          ImVec2(btnW, btnH)) && saIdx >= 0) {
+            float cx, cz; seedAt(cx, cz);
+            gSim.seedBacterium(saIdx, cx, cz, 15, 3.0f);
+        }
+
+        ImGui::Separator();
+        // ── DRUGS ──
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.55f, 1.0f), "Drugs (chemistry-driven)");
+        auto applyDrugById = [&](const char* id, float conc_uM) {
+            applyDrugVisuals(id, conc_uM);
+        };
+        if (ImGui::Button("💊 Cisplatin 5 µM (DNA crosslinker)",
+                          ImVec2(btnW, btnH))) {
+            applyDrugById("cisplatin", 5.0f);
+        }
+        if (ImGui::Button("💊 Doxorubicin 2 µM (TopII poison)",
+                          ImVec2(btnW, btnH))) {
+            applyDrugById("doxorubicin", 2.0f);
+        }
+        if (ImGui::Button("💊 Paclitaxel 0.1 µM (tubulin)",
+                          ImVec2(btnW, btnH))) {
+            applyDrugById("paclitaxel", 0.1f);
+        }
+        if (ImGui::Button("💊 Staurosporine 1 µM (pan-kinase)",
+                          ImVec2(btnW, btnH))) {
+            applyDrugById("staurosporine", 1.0f);
+        }
+
+        ImGui::Separator();
+        // ── CELL-STATE SHORTCUTS ──
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "Cell state");
+        if (ImGui::Button("🔥 Force apoptosis on focused cell",
+                          ImVec2(btnW, btnH)) && !gSim.cells.empty()) {
+            SimCell& c = gSim.cells[0];
+            c.apo.state.p53_active = 1.0f;
+            c.apo.state.Bax_active = 0.9f;
+            c.apo.state.MOMP_pores = 0.9f;
+            c.damageLevel = 2.0f;
+            c.stress = 100.0f;
+            c.ROS = 100.0f;
+        }
+        if (ImGui::Button("💚 Heal cell (clear damage + stress)",
+                          ImVec2(btnW, btnH)) && !gSim.cells.empty()) {
+            SimCell& c = gSim.cells[0];
+            c.damageLevel = 0.0f;
+            c.stress = 0.0f;
+            c.ROS = 0.0f;
+            c.apo.state.p53_active = 0.0f;
+            c.apo.state.Bax_active = 0.0f;
+            c.apo.state.MOMP_pores = 0.0f;
+            c.apo.state.Bcl2 = 1.0f;
+            c.apoPhase = Apoptosis::ALIVE;
+            c.apoptosisPhase = 0;
+            c.pathogensReleased = false;
+        }
+        if (ImGui::Button("🧹 Clear pathogens + drugs + bodies",
+                          ImVec2(btnW, btnH))) {
+            gSim.gFreeVirions.clear();
+            gSim.gFreeBacteria.clear();
+            for (auto& c : gSim.cells) {
+                std::fill(c.intraVirions.begin(), c.intraVirions.end(), 0.0f);
+                std::fill(c.intraBacteria.begin(), c.intraBacteria.end(), 0.0f);
+                std::fill(c.assembledVirions.begin(),
+                          c.assembledVirions.end(), 0.0f);
+                c.pathogensReleased = false;
+            }
+            gSim.appliedDrugs.clear();
+            gApoBodies.clear();
+        }
+
+        ImGui::Separator();
+        // ── Live counters ──
+        if (!gSim.cells.empty()) {
+            const SimCell& c = gSim.cells[0];
+            ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.9f, 1.0f),
+                "Cell:  dmg=%.2f  stress=%.0f  ATP=%.0f",
+                c.damageLevel, c.stress, c.ATP);
+            ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.9f, 1.0f),
+                "Apop:  phase=%d  p53=%.2f  MOMP=%.2f",
+                (int)c.apoPhase, c.apo.state.p53_active, c.apo.state.MOMP_pores);
+        }
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f),
+            "Virions: %d free, %d bound, %d intra",
+            gSim.statVirionsFree, gSim.statVirionsBound, gSim.statVirionsIntra);
+        ImGui::TextColored(ImVec4(0.7f, 1.0f, 0.8f, 1.0f),
+            "Bacteria: %d free, %d intra",
+            gSim.statBacteriaFree, gSim.statBacteriaIntra);
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.6f, 1.0f),
+            "Apoptotic bodies: %d", (int)gApoBodies.size());
+
         ImGui::End();
     }
 
@@ -8024,6 +8569,30 @@ static void renderFrame(float time, float dt) {
             uploadCellInterior(cell.position, cell.radius * cell.size, time, dt);
             persistBoundDogmaState();
             persistBoundMitosisState();
+        } else {
+            // Colony / Test-Light mode: the heavy intracellular upload
+            // is skipped, but we still need pathogen spheres + apoptotic
+            // bodies visible. Build a minimal atom buffer ourselves.
+            std::vector<GPUAtomInstance> atoms;
+            std::vector<GPUBondInstance> bonds;
+            atoms.reserve(gSim.gFreeVirions.size() * 10
+                           + gSim.gFreeBacteria.size() * 5
+                           + gApoBodies.size() + gSim.cells.size() * 48 + 16);
+            renderCellReceptors(atoms);
+            renderApoptoticBodies(atoms);
+            renderPathogens(atoms);
+            // Upload to the same GPU buffer path the heavy branch uses.
+            if (!atoms.empty()) {
+                size_t sz = atoms.size() * sizeof(GPUAtomInstance);
+                if (!gMolRender.atomBuffer || gMolRender.atomBuffer.length < sz) {
+                    gMolRender.atomBuffer = [gCtx.device()
+                        newBufferWithLength:std::max(sz, (size_t)256)
+                                    options:MTLResourceStorageModeShared];
+                }
+                memcpy(gMolRender.atomBuffer.contents, atoms.data(), sz);
+            }
+            gMolRender.atomCount = (int)atoms.size();
+            gMolRender.bondCount = 0;
         }
 
         syncCellInstances();
@@ -8255,9 +8824,13 @@ static void renderFrame(float time, float dt) {
             }
         }
 
-        // 5. Molecules (single cell mode — render inside the cell, before membrane)
-        if (gSimMode == MODE_SINGLE_CELL && gMolRender.atomCount > 0
-            && gCtx.moleculeAtomPipeline()) {
+        // 5. Molecules / pathogens / apoptotic bodies (atom pipeline).
+        // Used to be SINGLE_CELL-only, but pathogens + apoptotic bodies
+        // live in this buffer too — they must render in Test/Light mode
+        // (MODE_COLONY with 1 cell) as well. The buffer size drives draw
+        // count, so if the heavy intracellular path isn't active, only
+        // the lighter pathogen/body atoms are drawn.
+        if (gMolRender.atomCount > 0 && gCtx.moleculeAtomPipeline()) {
             struct MolUniforms {
                 simd_float4x4 viewProjection;
                 simd_float3   cameraPos;
