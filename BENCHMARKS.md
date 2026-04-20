@@ -171,6 +171,31 @@ Vina alone to triage kinase inhibitor series. Use it as a pocket-
 fit / pose-sanity pass, then rescore with xTB single-point or FEP
 for ranking.
 
+**Strain diagnostic sidebar.** Running the new UFF-ensemble
+strain check (Layer 1.3 `src/dock/strain.py`) on the 6 EGFR
+compounds reveals the mechanism:
+
+| compound | ΔG pred | strain (kcal/mol) | ratio | band |
+|---|:-:|:-:|:-:|:-:|
+| erlotinib   | −7.23 | +46 | 1.75 | acceptable |
+| gefitinib   | −8.18 | +91 | 2.20 | acceptable |
+| AG-1478     | −7.52 | +24 | 1.49 | good |
+| lapatinib   | −9.36 | +79 | 1.80 | acceptable |
+| 4-anilinoquinazoline | −7.64 | +15 | 1.36 | good |
+| tyrphostin AG-494    | −7.92 | +18 | 1.38 | good |
+
+The tight binders (erlotinib, gefitinib, lapatinib) all have
+absolute strain > 45 kcal/mol; the weak parent compounds have
+< 20. Vina is scoring the tight quinazolines "well" by forcing
+them into strained conformations that put their ATP-hinge H-bond
+in range, not by finding physically reasonable poses. Strain-
+penalised rescoring (ΔG + α · strain, α ∈ {0.1, 0.25, 0.5, 1.0})
+improves Spearman from −0.486 to −0.429 — still negative. Strain
+does not rescue the ranking, but it correctly flags which poses
+the biologist should not trust: `strain_kcalmol > 30` on a Vina-
+scored kinase hit is a red flag that the compound needs FEP
+before going to assay.
+
 ### Cross-system take-away (for biologists)
 
 Use CellSim's Vina layer for ranking across **wide** affinity ranges
