@@ -59,6 +59,9 @@ usage: cellsim <subcommand> [args...]
   som-validate  check SoM predictor against literature sites
                 -> src/quantum/som_validation.py
 
+  cyp-inhibit  CYP3A4 inhibition / DDI-risk screen (1TQN dock)
+                -> src/dock/cyp_inhibition.py
+
   md-ligand   vacuum Langevin MD on a SMILES
                 -> src/md/simulate.py
 
@@ -143,6 +146,7 @@ case "${1:-}" in
     dft)         shift; exec python -m src.quantum.dft "$@" ;;
     som)         shift; exec python -m src.quantum.metabolism "$@" ;;
     som-validate) shift; exec python -m src.quantum.som_validation "$@" ;;
+    cyp-inhibit)  shift; exec python -m src.dock.cyp_inhibition "$@" ;;
     md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
     md-protein)  shift; exec python -m src.md.protein "$@" ;;
     md-view)     shift; exec python -m src.md.protein_viewer "$@" ;;
