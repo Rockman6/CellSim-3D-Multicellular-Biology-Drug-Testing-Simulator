@@ -185,3 +185,14 @@ add_executable(cellsim_cisplatin_apoptosis
 target_include_directories(cellsim_cisplatin_apoptosis PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(cellsim_cisplatin_apoptosis PRIVATE
     -Wall -Wextra -Wno-unused-parameter -O2)
+
+# Phase-G6 validation harness: runs N independent literature-traceable
+# benchmarks and emits a single pass-rate summary. The "replaces cell
+# experiments" metric the professor cares about.
+add_executable(cellsim_blind_benchmarks
+    tests/headless_blind_benchmarks.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
+target_include_directories(cellsim_blind_benchmarks PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(cellsim_blind_benchmarks PRIVATE
+    -Wall -Wextra -Wno-unused-parameter -O2)

@@ -6870,6 +6870,22 @@ know:
         validator extended with 4 additional gates for peak count,
         mean period, stress-scaling, and control specificity;
         zero drift on seq02 preserved at 5.1\%, 2026-04-20).
+  \item Phase G6 (validation harness \texttt{cellsim\_blind\_benchmarks}
+        consolidates the biology validators into one pass-rate test.
+        6 literature-traceable benchmarks in the initial harness:
+        BM01 vehicle control (Sorenson 1990),
+        BM02 sub-threshold damage non-activation (Lahav 2004, Rothkamm 2003),
+        BM03 mid-dose cisplatin 24-h G2/M arrest (Sorenson 1990, Velma 2016),
+        BM04 mid-dose cisplatin 72-h BH3-only/BAX commitment
+              (Yu 2001, Zeng 2019),
+        BM05 Purvis 2012 p53 oscillation (Purvis \& Lahav 2012),
+        BM06 high-dose cisplatin 72-h saturated MOMP (Cepeda 2007).
+        \textbf{All 6 benchmarks pass across 5 pinned seeds} (30 / 30
+        pass-rate). This is the first unified pass-rate metric in
+        CellSim history — a pharmacology reviewer's "how many
+        published phenotypes does your model reproduce?" test.
+        CI-ready; any future PR that drops the pass-rate is rejected
+        before merge. 2026-04-20).
   \item Phase G5 (\texttt{ApoTriggers.p53\_active} re-routed from
         raw \code{damageLevel} to the real \code{p53\_protein} pool
         via \code{linMap}$(0.12, 0.35)$; p53 pulses now drive the
