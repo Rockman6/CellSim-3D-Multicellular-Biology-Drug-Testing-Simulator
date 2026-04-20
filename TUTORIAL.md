@@ -127,6 +127,20 @@ Safe to delete the SQLite file any time to invalidate; automatic
 on force-field bumps since the FF version is baked into the cache
 key.
 
+### Exporting poses for PyMOL / ChimeraX
+
+Add `--export-poses-dir DIR` and CellSim writes `DIR/<compound>.sdf`
+(RDKit V2000 with ΔG / K_d / crystal-RMSD / pocket_ok as SDF
+properties) and `DIR/<compound>.pdb` (MODEL-separated with REMARK
+annotations) for every successfully docked compound:
+
+```bash
+cellsim dock --smi compounds.smi --receptor target.pdb \
+    --export-poses-dir run/poses --out-csv run/report.csv
+```
+
+Then in PyMOL: `File → Open → run/poses/top_hit.sdf`.
+
 ## 5. Single-compound tools
 
 Want just the ADMET for one SMILES?
