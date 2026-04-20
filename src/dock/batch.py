@@ -224,6 +224,9 @@ def _worker(task: tuple) -> dict:
             herg_risk=admet.herg_risk,
             herg_alerts=(",".join(admet.herg_alerts)
                          if admet.herg_alerts else ""),
+            mutagenic_risk=admet.mutagenic_risk,
+            mutagenic_alerts=(",".join(admet.mutagenic_alerts)
+                              if admet.mutagenic_alerts else ""),
         )
 
     def _mc_fields() -> dict:
@@ -359,6 +362,7 @@ def _write_csv(records: list[dict], out: Path) -> None:
             "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
             "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
             "bbb_permeable", "herg_risk", "herg_alerts",
+            "mutagenic_risk", "mutagenic_alerts",
             "n_poses", "seed", "exhaustiveness", "wall_s",
             "ok", "reason"]
     with out.open("w", newline="") as fo:
