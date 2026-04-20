@@ -2785,7 +2785,18 @@ private:
 
         // ── Build the multi-threshold trigger vector ────────────────
         ApoTriggers tr;
-        tr.p53_active       = Apoptosis::linMap(c.damageLevel,   Apoptosis::P53_K,     Apoptosis::P53_F);
+        // ── Phase G5: route p53_active from the real p53_protein pool
+        // (ATM→p53↔MDM2 axis from G2+G3+G4) rather than from raw
+        // damageLevel. K=0.12 sits just above the analytical baseline
+        // p53_ss = 0.089 (so healthy cells have p53_active≈0) and
+        // below the sustained-damage pulse-mean (~0.15–0.20) so the
+        // integrated p53 signal across pulses drives PUMA → BAX →
+        // MOMP commitment. F=0.35 is the pulse-peak amplitude.
+        // The previous damageLevel→p53_active mapping only fired at
+        // catastrophic damage (>=0.60), missing physiologic
+        // cisplatin-induced apoptosis driven by p53 pulses at
+        // sub-catastrophic damage (~0.30, Zeng 2019, Cepeda 2007).
+        tr.p53_active       = Apoptosis::linMap(c.p53_protein,   0.12f,                0.35f);
         tr.ROS_stress       = Apoptosis::linMap(c.ROS,           Apoptosis::ROS_K,     Apoptosis::ROS_F);
         tr.mito_dysfunction = Apoptosis::linMap(c.mitoPotential, Apoptosis::MITO_K,    Apoptosis::MITO_F);
         tr.ATP_collapse     = Apoptosis::linMap(c.atpDangerTimer,Apoptosis::ATP_K,     Apoptosis::ATP_F);

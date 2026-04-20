@@ -174,3 +174,14 @@ add_executable(cellsim_cisplatin_arrest
 target_include_directories(cellsim_cisplatin_arrest PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(cellsim_cisplatin_arrest PRIVATE
     -Wall -Wextra -Wno-unused-parameter -O2)
+
+# Phase-G5 biology validator: cisplatin-induced apoptosis via
+# p53 → PUMA → BAX → MOMP → caspase cascade; benchmarked against
+# Zeng 2019 / Cepeda 2007.
+add_executable(cellsim_cisplatin_apoptosis
+    tests/headless_cisplatin_apoptosis.cpp
+    src/simulation/biochem/Bioagent.cpp
+    src/simulation/biochem/TargetLibrary.cpp)
+target_include_directories(cellsim_cisplatin_apoptosis PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(cellsim_cisplatin_apoptosis PRIVATE
+    -Wall -Wextra -Wno-unused-parameter -O2)
