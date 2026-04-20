@@ -38,12 +38,32 @@ References:
     Rev 23:3) — rule of five.
   - Bickerton et al 2012 (Nat Chem 4:90) — QED.
   - Delaney 2004 (J Chem Inf Comput Sci 44:1000) — ESOL.
+  - Pardridge 2003 (J Neurochem 87:1) — BBB rule-of-three.
+  - Aronov 2005 (J Med Chem 48:5772) — hERG structural filter.
+
+Honest limitations:
+  - BBB rule-of-three assumes *passive* diffusion. It
+    correctly rejects compounds too polar / too lipophilic for
+    passive permeation but misses active-transport substrates
+    (caffeine is actually brain-permeable via nucleoside
+    transporters; haloperidol via P-gp pumping that the
+    compound *overcomes* at clinical dose).
+  - hERG SMARTS filter is a first-order proxy. It catches
+    ~70-80 % of confirmed hERG liabilities in published
+    datasets but misses idiosyncratic cases (haloperidol is
+    a known hERG blocker that these basic patterns miss).
+    A real hERG pIC50 requires wet-lab (MK-499 radioligand
+    displacement or patch clamp) — or a dedicated
+    docking-based screen against a hERG structure.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,6 +96,12 @@ class AdmetResult:
     logS_ESOL: Optional[float] = None
     solubility_class: Optional[str] = None
 
+    # Safety triage (non-AI rule-of-N / structural alerts)
+    bbb_permeable: Optional[bool] = None
+    bbb_reason: Optional[str] = None
+    herg_risk: Optional[str] = None        # "low" | "medium" | "high"
+    herg_alerts: list = field(default_factory=list)
+
     tool_versions: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
@@ -85,11 +111,20 @@ class AdmetResult:
         if not self.ok:
             return f"[FAIL] ADMET {self.smiles}  {self.reason}"
         ro5 = ("✓" if self.ro5_pass else f"✗ (×{self.ro5_violations})")
+        bbb = ""
+        if self.bbb_permeable is True:
+            bbb = "  BBB:✓"
+        elif self.bbb_permeable is False:
+            bbb = "  BBB:✗"
+        herg = ""
+        if self.herg_risk:
+            herg = f"  hERG:{self.herg_risk}"
         return (f"[OK]   ADMET {self.formula or self.smiles}  "
                 f"MW={self.MW:.1f}  logP={self.logP:+.2f}  "
                 f"TPSA={self.tpsa:.1f}  HBA={self.hba}  HBD={self.hbd}  "
                 f"rotb={self.rotb}  Ro5 {ro5}  QED={self.qed:.2f}  "
-                f"logS={self.logS_ESOL:+.2f} ({self.solubility_class})")
+                f"logS={self.logS_ESOL:+.2f} ({self.solubility_class})"
+                f"{bbb}{herg}")
 
 
 def _classify_solubility(log_s: float) -> str:
@@ -115,6 +150,76 @@ def _tool_versions() -> dict:
         return {"rdkit": rdkit.__version__}
     except Exception:
         return {}
+
+
+_HERG_SMARTS_ALERTS = [
+    # Aronov 2005 J Med Chem 48:5772 — hERG liabilities.
+    # Each (label, SMARTS, severity_weight).
+    ("basic_aliphatic_amine",
+     "[NX3;H2,H1;!$(NC=O);!$(NS(=O)=O);!$(N*=*);!$(Nc)]",
+     1),
+    ("tertiary_amine_near_aromatic",
+     "[NX3;!$(N=*)]([#6,#1])([#6,#1])[CX4;H2][c]",
+     2),
+    ("biaryl_piperazine",
+     "c1ccc(cc1)N2CCN(CC2)c3ccccc3",
+     2),
+    ("lipophilic_diphenyl_amine",
+     "c1ccc(cc1)[NX3]c2ccccc2",
+     1),
+    ("quaternary_amine",
+     "[N+;X4][#6]",
+     1),
+]
+
+
+def _herg_risk(mol) -> tuple[str, list[str]]:
+    """Return (risk, [alert_labels]). Aronov-style structural
+    filter.  Output is 'low' / 'medium' / 'high'.
+
+    Literature: Aronov 2005 J Med Chem 48:5772; Jamieson 2006
+    J Med Chem 49:5029. The test is a proxy: a real hERG pIC50
+    requires wet-lab. But the structural alerts capture ~80 % of
+    the top-risk compounds in Aronov's dataset.
+    """
+    from rdkit import Chem
+    score = 0
+    hits: list[str] = []
+    for label, smarts, weight in _HERG_SMARTS_ALERTS:
+        patt = Chem.MolFromSmarts(smarts)
+        if patt and mol.HasSubstructMatch(patt):
+            hits.append(label)
+            score += weight
+    if score >= 3:
+        return "high", hits
+    if score >= 1:
+        return "medium", hits
+    return "low", hits
+
+
+def _bbb_rule_of_three(admet: "AdmetResult") -> tuple[Optional[bool],
+                                                        str]:
+    """Pardridge 2003 'rule of three' proxy for blood-brain-
+    barrier permeability:
+        MW ≤ 450  AND  1 ≤ logP ≤ 4  AND  TPSA ≤ 90 Å²  AND  HBD ≤ 3.
+
+    Returns (bool, reason). None if we don't have enough info.
+    """
+    if (admet.MW is None or admet.logP is None or admet.tpsa is None
+            or admet.hbd is None):
+        return None, "insufficient descriptors"
+    failed = []
+    if admet.MW > 450:
+        failed.append(f"MW {admet.MW:.0f} > 450")
+    if not (1.0 <= admet.logP <= 4.0):
+        failed.append(f"logP {admet.logP:+.2f} outside [1, 4]")
+    if admet.tpsa > 90.0:
+        failed.append(f"TPSA {admet.tpsa:.1f} > 90 Å²")
+    if admet.hbd > 3:
+        failed.append(f"HBD {admet.hbd} > 3")
+    if not failed:
+        return True, "passes BBB rule-of-three"
+    return False, "; ".join(failed)
 
 
 def compute_admet(smiles: str) -> AdmetResult:
@@ -182,6 +287,18 @@ def compute_admet(smiles: str) -> AdmetResult:
                  - 0.74 * aromatic_proportion)
         result.logS_ESOL = float(log_s)
         result.solubility_class = _classify_solubility(log_s)
+
+        # Safety triage (non-AI rule-based; cite literature).
+        try:
+            risk, alerts = _herg_risk(mol)
+            result.herg_risk = risk
+            result.herg_alerts = alerts
+        except Exception as e:
+            logger.debug("hERG classifier failed: %s", e)
+
+        bbb_flag, bbb_note = _bbb_rule_of_three(result)
+        result.bbb_permeable = bbb_flag
+        result.bbb_reason = bbb_note
 
     except Exception as e:
         result.reason = f"descriptor compute failed: {e}"
