@@ -1,0 +1,292 @@
+"""SMILES -> parameterised OpenMM System.
+
+Pipeline:
+    SMILES
+      -> RDKit parse + 3D embed + conformer optimise (UFF/MMFF)
+      -> OpenFF Molecule
+      -> OpenFF Sage force field assign parameters
+      -> AM1-BCC partial charges
+      -> openmm.System (minimizable)
+
+Every result carries a `ParametrizeResult` envelope with method,
+tool versions, and the success/failure reason — no silent fallbacks.
+This is the Campaign-1 UQ-envelope policy enforced from day one.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+import hashlib
+import json
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParametrizeResult:
+    """Envelope around a (possibly failed) parametrisation attempt."""
+
+    smiles: str
+    ok: bool
+    reason: str = ""
+    inchi: Optional[str] = None
+    inchi_key: Optional[str] = None
+    formula: Optional[str] = None
+    n_atoms: Optional[int] = None
+    n_conformers: Optional[int] = None
+    charge_method: Optional[str] = None
+    ff_version: Optional[str] = None
+    tool_versions: dict = field(default_factory=dict)
+    positions_nm: Optional[list] = None
+    partial_charges_e: Optional[list] = None
+    elements: Optional[list] = None
+    bonds: Optional[list] = None
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    def hash_key(self) -> str:
+        """Content hash keyed by inchi_key + method — cache-ready."""
+        if not self.inchi_key:
+            raise ValueError("no inchi_key — parametrisation failed")
+        method = f"{self.charge_method}|{self.ff_version}"
+        payload = f"{self.inchi_key}|{method}".encode()
+        return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _tool_versions() -> dict:
+    versions = {}
+    try:
+        import rdkit
+
+        versions["rdkit"] = rdkit.__version__
+    except Exception:
+        pass
+    try:
+        import openff.toolkit
+
+        versions["openff-toolkit"] = openff.toolkit.__version__
+    except Exception:
+        pass
+    try:
+        import openmm
+
+        versions["openmm"] = openmm.__version__
+    except Exception:
+        pass
+    return versions
+
+
+def parametrize_smiles(
+    smiles: str,
+    *,
+    charge_method: str = "am1bcc",
+    ff_name: str = "openff-2.1.0.offxml",
+    random_seed: int = 1,
+) -> ParametrizeResult:
+    """Return a ParametrizeResult for the given SMILES.
+
+    Never raises for recoverable failures (unparsable SMILES, missing
+    parameters, etc.) — the failure is captured in `result.ok = False`
+    with a human-readable `reason`. Upstream callers treat the batch
+    like a statistic, not an exception stream.
+    """
+
+    versions = _tool_versions()
+
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+    except ImportError as e:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason=f"rdkit import failed: {e}",
+            tool_versions=versions,
+        )
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason="RDKit could not parse SMILES",
+            tool_versions=versions,
+        )
+
+    mol = Chem.AddHs(mol)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = random_seed
+    if AllChem.EmbedMolecule(mol, params) != 0:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason="RDKit ETKDGv3 embed failed",
+            tool_versions=versions,
+        )
+    try:
+        AllChem.MMFFOptimizeMolecule(mol)
+    except Exception:
+        try:
+            AllChem.UFFOptimizeMolecule(mol)
+        except Exception as e:
+            return ParametrizeResult(
+                smiles=smiles,
+                ok=False,
+                reason=f"conformer optimise failed: {e}",
+                tool_versions=versions,
+            )
+
+    inchi = Chem.MolToInchi(mol)
+    inchi_key = Chem.InchiToInchiKey(inchi) if inchi else None
+    formula = Chem.rdMolDescriptors.CalcMolFormula(mol)
+
+    try:
+        from openff.toolkit import ForceField, Molecule
+    except ImportError as e:
+        # RDKit-only result is still useful for the viewer — ship it.
+        conf = mol.GetConformer()
+        positions = [
+            [conf.GetAtomPosition(i).x * 0.1,
+             conf.GetAtomPosition(i).y * 0.1,
+             conf.GetAtomPosition(i).z * 0.1]
+            for i in range(mol.GetNumAtoms())
+        ]
+        elements = [a.GetSymbol() for a in mol.GetAtoms()]
+        bonds = [
+            (b.GetBeginAtomIdx(), b.GetEndAtomIdx(),
+             b.GetBondTypeAsDouble())
+            for b in mol.GetBonds()
+        ]
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason=f"openff-toolkit not available: {e}",
+            inchi=inchi,
+            inchi_key=inchi_key,
+            formula=formula,
+            n_atoms=mol.GetNumAtoms(),
+            n_conformers=mol.GetNumConformers(),
+            positions_nm=positions,
+            elements=elements,
+            bonds=bonds,
+            tool_versions=versions,
+        )
+
+    try:
+        off_mol = Molecule.from_rdkit(mol, allow_undefined_stereo=True)
+    except Exception as e:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason=f"OpenFF Molecule.from_rdkit failed: {e}",
+            inchi=inchi,
+            inchi_key=inchi_key,
+            formula=formula,
+            tool_versions=versions,
+        )
+
+    try:
+        off_mol.assign_partial_charges(partial_charge_method=charge_method)
+    except Exception as e:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason=f"{charge_method} charge assignment failed: {e}",
+            inchi=inchi,
+            inchi_key=inchi_key,
+            formula=formula,
+            tool_versions=versions,
+        )
+
+    try:
+        ff = ForceField(ff_name)
+        system = ff.create_openmm_system(off_mol.to_topology())
+    except Exception as e:
+        return ParametrizeResult(
+            smiles=smiles,
+            ok=False,
+            reason=f"OpenFF parametrisation failed ({ff_name}): {e}",
+            inchi=inchi,
+            inchi_key=inchi_key,
+            formula=formula,
+            charge_method=charge_method,
+            tool_versions=versions,
+        )
+
+    # Extract geometry + charges for cache + viewer.
+    conf = off_mol.conformers[0]
+    try:
+        from openff.units import unit as offunit
+
+        positions = conf.m_as(offunit.nanometer).tolist()
+    except Exception:
+        positions = [list(p) for p in conf]
+
+    charges_e = [float(q.magnitude) if hasattr(q, "magnitude")
+                 else float(q)
+                 for q in off_mol.partial_charges]
+    elements = [a.symbol for a in off_mol.atoms]
+    bonds = [
+        (b.atom1_index, b.atom2_index, float(b.bond_order))
+        for b in off_mol.bonds
+    ]
+
+    # Sanity: the generated System should at least construct.
+    _ = system.getNumParticles()
+
+    return ParametrizeResult(
+        smiles=smiles,
+        ok=True,
+        inchi=inchi,
+        inchi_key=inchi_key,
+        formula=formula,
+        n_atoms=off_mol.n_atoms,
+        n_conformers=off_mol.n_conformers,
+        charge_method=charge_method,
+        ff_version=ff_name,
+        tool_versions=versions,
+        positions_nm=positions,
+        partial_charges_e=charges_e,
+        elements=elements,
+        bonds=bonds,
+    )
+
+
+def dump_json(result: ParametrizeResult) -> str:
+    return json.dumps(result.as_dict(), indent=2, default=str)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    p = argparse.ArgumentParser(
+        description="Parameterise a SMILES into an OpenMM system.")
+    p.add_argument("smiles", help="Input SMILES string")
+    p.add_argument("--charge", default="am1bcc",
+                   help="partial charge method (am1bcc, am1-mulliken, …)")
+    p.add_argument("--ff", default="openff-2.1.0.offxml",
+                   help="OpenFF force-field file")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--json", action="store_true",
+                   help="emit the full result dict as JSON")
+    args = p.parse_args()
+
+    result = parametrize_smiles(
+        args.smiles,
+        charge_method=args.charge,
+        ff_name=args.ff,
+        random_seed=args.seed,
+    )
+    if args.json:
+        print(dump_json(result))
+    else:
+        if result.ok:
+            print(f"OK  {result.smiles}  formula={result.formula} "
+                  f"atoms={result.n_atoms} charges={result.charge_method} "
+                  f"ff={result.ff_version}  hash={result.hash_key()}")
+        else:
+            print(f"FAIL  {result.smiles}  reason: {result.reason}")

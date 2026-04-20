@@ -1,0 +1,12 @@
+# Ten canonical drugs spanning diverse chemotypes for Layer 1.1 smoke test.
+# Format: SMILES  name
+CC(=O)OC1=CC=CC=C1C(=O)O	aspirin
+CC(C)CC1=CC=C(C=C1)C(C)C(=O)O	ibuprofen
+CN1CCC[C@H]1c2cccnc2	nicotine
+C1=CC=C(C(=C1)C(=O)O)NC(=O)C	paracetamol_off_by_one
+CC(C)NCC(O)COc1ccc2ccccc2c1	propranolol
+CN1C=NC2=C1C(=O)N(C(=O)N2C)C	caffeine
+CC(=O)Nc1ccc(O)cc1	acetaminophen
+CC12CCC3C(C1CCC2=O)CCC4=CC(=O)CCC34C	testosterone
+Cl[Pt](Cl)(N)N	cisplatin
+CC1=C(C(=C(C(=C1Cl)Cl)Cl)Cl)Cl	pentachlorotoluene
