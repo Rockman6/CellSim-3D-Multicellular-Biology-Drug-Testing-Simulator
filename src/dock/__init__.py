@@ -19,6 +19,7 @@ from .validity import attach_posebusters
 from .batch import BatchConfig, run_batch
 from .pocket_detect import PocketCandidate, detect_pockets
 from .refine import refine_pose_openff
+from .export import export_poses_sdf, export_poses_pdb
 
 __all__ = [
     "DockingResult",
@@ -34,4 +35,6 @@ __all__ = [
     "PocketCandidate",
     "detect_pockets",
     "refine_pose_openff",
+    "export_poses_sdf",
+    "export_poses_pdb",
 ]
