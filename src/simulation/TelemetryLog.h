@@ -66,6 +66,10 @@ public:
 
     // Per-frame call. Throttles itself to populationSampleBiosec spacing.
     void tick(const Simulation& sim, float bio_seconds, float wall_seconds) {
+        // Phase P1: wall_seconds is accepted for API compatibility but
+        // writePopulationRow / writeDivisionRow emit 0.00 for the wall_sec
+        // CSV column so persisted content is reproducible run-to-run.
+        // Real wall-clock perf data belongs in logs/perf.txt.
         if (!popF_) return;
         // Always log NEW divisions (event-driven, not sampled).
         int newDivisions = sim.statDivisions - prevDivisions_;
@@ -206,7 +210,11 @@ public:
             "%.4f,%.4f,%.4f,"
             "%.4f,%.4f,%.4f,%.4f,%.4f"
             "\n",
-            wall_seconds, bio_seconds, bio_seconds/3600.0, bio_seconds/86400.0,
+            // Phase P1: wall_sec emitted as deterministic 0.00 so headless
+            // CSVs are bit-identical across runs (wall-clock is the only
+            // currently-observed non-determinism in content). Real wall-clock
+            // perf data lives in logs/perf.txt side-file, not diffed by G0.
+            0.0, bio_seconds, bio_seconds/3600.0, bio_seconds/86400.0,
             alive, sim.statDeaths, sim.statDivisions,
             phase[0], phase[1], phase[2], phase[3],
             fate[0], fate[1], fate[2], fate[3], necrotic, senescent,
@@ -259,7 +267,9 @@ public:
         double n = alive > 0 ? (double)alive : 1.0;
         fprintf(divF_,
             "%.2f,%.0f,%.4f,%d,%d,%.4f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-            wall_seconds, bio_seconds, bio_seconds/3600.0,
+            // Phase P1: wall_sec emitted as deterministic 0.00 — see note
+            // in writePopulationRow above.
+            0.0, bio_seconds, bio_seconds/3600.0,
             alive, sim.statDivisions,
             sumBio/n, sumATP/n, sumDmg/n, sumRepl/n,
             sim.nutrients.mean(MS_GLUCOSE),
