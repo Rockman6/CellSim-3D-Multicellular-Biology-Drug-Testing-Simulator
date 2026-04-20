@@ -43,8 +43,22 @@ platforms via OpenMM.
   OpenCL > CPU), minimises, sets Maxwell-Boltzmann velocities at
   the setpoint temperature with a seeded RNG, Langevin NVT for the
   requested steps, reports per-frame telemetry.
-- `viewer.py` — matplotlib animation (GIF / MP4) with 3D
-  ball-and-stick trajectory + T / E / RMSD telemetry panel.
+- `viewer.py` — matplotlib animation (GIF / MP4) for a ligand
+  trajectory: 3D ball-and-stick + T / E / RMSD panel.
+- `protein.py` — `load_protein_pdb(pdb_path, *, ff_protein,
+  ff_water, ph, padding_nm, …) → ProteinSystemResult` (PDBFixer +
+  AMBER14-all + TIP3P-FB solvation + energy minimisation) and
+  `short_protein_md(result, n_steps, …) → ProteinTrajectoryResult`
+  (Langevin NVT spot-check that also records per-frame Cα
+  positions + Cα RMSD + residue metadata for the viewer).
+- `protein_viewer.py` — matplotlib animation of a protein
+  trajectory: 3D Cα trace coloured along sequence + T / E /
+  Cα-RMSD panel. Run:
+  ```bash
+  conda activate cellsim
+  python -m src.md.protein_viewer benchmarks/md/1ubq.pdb \
+      --md-steps 2000 --save-every 50 --save 1ubq_md.gif
+  ```
 
 ## Viewer quickstart
 ```bash
