@@ -131,6 +131,9 @@ jobs:
       - name: SoM smoke (Layer 1.4, CYP3A4 BDE on 3 drugs)
         run: python -u tests/quantum/test_som_smoke.py
 
+      - name: SoM heme-access smoke (Layer 1.4, dock + Fe-distance filter)
+        run: python -u tests/quantum/test_som_heme_access_smoke.py
+
       - name: DFT smoke (Layer 1.4, PySCF B3LYP/def2-SVP)
         run: python -u tests/quantum/test_dft_smoke.py
 
