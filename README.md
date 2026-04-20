@@ -64,9 +64,10 @@ omit `--center` / `--box` and CellSim auto-detects pockets via fpocket
 | **1.2 MD** | Classical Langevin MD, solvated protein loader (AMBER14 + TIP3P) | ✅ 1 ps ubiquitin Cα RMSD 0.74 Å |
 | **1.3 Docking** | Vina + Meeko + PoseBusters + fpocket auto-site | ✅ mini-bench 2/3 canonical gate |
 | **1.4 Quantum** | xTB GFN2 single-point + CYP3A4 SoM predictor (BDE) | ✅ 10/10 sane + 3/3 SoM smoke |
-| **1.5 Coarse-grained** | Martini 3 membrane / bilayer MD | ⏳ scaffold pending |
-| **1.6 UQ** | Monte-Carlo over Vina seeds → ΔG ± 95 % CI | ✅ MVP shipped; Sobol pending |
-| **1.7 Blind harness** | PDBBind scale gate + red-team slot | ⏳ scale harness pending |
+| **1.5 Coarse-grained** | Martini 3 membrane / bilayer MD | ⏳ scaffold only |
+| **1.6 UQ** | Monte-Carlo / Sobol / split-conformal for ΔG bounds | ✅ triad shipped |
+| **1.7 Blind harness** | PDBBind scale gate + red-team slot | ⏳ 3-cocrystal mini-bench shipped; PDBBind scale pending |
+| **x-cut cache** | SQLite physics-prior memoisation (AM1-BCC, Vina, xTB) | ✅ shipped; wired into Layers 1.1 / 1.3 / 1.4 |
 
 **Cross-cutting UX:**
 
@@ -80,6 +81,11 @@ omit `--center` / `--box` and CellSim auto-detects pockets via fpocket
 - `src/dock/pocket_detect.py` — auto-binding-site detection so any
   receptor PDB works out-of-box.
 - `src/uq/dock_mc.py` — honest ΔG ± CI from N-seed Monte-Carlo.
+- `src/cache/` — content-addressed SQLite cache for every
+  expensive physics call; pass `--cache /path/to/c.sqlite` to
+  `cellsim dock` and repeat runs short-circuit identical
+  (ligand, receptor, box, seed) tuples (~1000× per-compound
+  Vina speedup, ~19× end-to-end on a small screen).
 
 ## Non-AI discipline
 

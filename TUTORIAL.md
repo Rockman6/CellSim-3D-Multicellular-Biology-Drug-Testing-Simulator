@@ -114,6 +114,19 @@ in the CSV.
 `--profile-top-k 10` auto-generates the per-compound dashboard
 PNGs for your top 10 hits.
 
+### Caching repeat screens
+
+Add `--cache /tmp/my_screen/cache.sqlite` (or any path) to store the
+expensive Vina and AM1-BCC results content-addressed by the
+(ligand, receptor, search box, exhaustiveness, seed) tuple. The
+second run of an identical batch reads every compound from cache
+instead of recomputing — **~1000× per-compound Vina speedup, ~19×
+end-to-end on a small screen** (larger wins on bigger libraries).
+
+Safe to delete the SQLite file any time to invalidate; automatic
+on force-field bumps since the FF version is baked into the cache
+key.
+
 ## 5. Single-compound tools
 
 Want just the ADMET for one SMILES?
