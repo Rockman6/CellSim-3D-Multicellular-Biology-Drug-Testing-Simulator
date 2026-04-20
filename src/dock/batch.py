@@ -220,6 +220,10 @@ def _worker(task: tuple) -> dict:
             QED=round(admet.qed, 3) if admet.qed is not None else None,
             logS=round(admet.logS_ESOL, 2),
             solubility=admet.solubility_class,
+            bbb_permeable=admet.bbb_permeable,
+            herg_risk=admet.herg_risk,
+            herg_alerts=(",".join(admet.herg_alerts)
+                         if admet.herg_alerts else ""),
         )
 
     def _mc_fields() -> dict:
@@ -354,6 +358,7 @@ def _write_csv(records: list[dict], out: Path) -> None:
             "crystal_rmsd_A", "pocket_ok", "geometry_ok", "pb_all_ok",
             "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
             "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
+            "bbb_permeable", "herg_risk", "herg_alerts",
             "n_poses", "seed", "exhaustiveness", "wall_s",
             "ok", "reason"]
     with out.open("w", newline="") as fo:
