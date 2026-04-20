@@ -356,12 +356,18 @@ def dock_ligand(
     seed: int = 1,
     cpu: int = 0,
     timeout_s: int = 900,
+    cache: Optional[Any] = None,
 ) -> DockingResult:
     """Dock a ligand SMILES into a prepared receptor PDB.
 
     `receptor_pdb` should be a pre-minimised PDB (e.g. from
     `src/md/protein.load_protein_pdb(...).minimised_positions_nm`
     dumped via OpenMM's PDBFile.writeFile).
+
+    If `cache` is provided (an `src.cache.Cache` instance), an
+    identical (ligand, receptor, search box, exhaustiveness, seed,
+    num_modes) tuple is short-circuited from the store instead of
+    re-running Vina (~5 s → ms). Only `ok=True` results are cached.
 
     Returns a `DockingResult` with up to `num_modes` poses sorted by
     Vina score ascending (best first).
@@ -402,6 +408,49 @@ def dock_ligand(
             result.ligand_formula = Chem.rdMolDescriptors.CalcMolFormula(mol)
     except Exception:
         pass
+
+    # -------- cache lookup ------------------------------------
+    # Key the cache entry on (ligand + receptor + search box + Vina
+    # knobs + seed). Compound + receptor hashes are already
+    # content-addressed so the key is stable across renames.
+    cache_key = None
+    cache_method = None
+    if cache is not None:
+        try:
+            from src.cache.hashing import compound_hash, method_key
+            lig_h = compound_hash(ligand_smiles)
+            rec_h = result.receptor_hash
+            if lig_h is not None and rec_h is not None:
+                cache_key = f"{lig_h}+{rec_h}"
+                # Truncate center/box floats to 3 dp so tiny
+                # floating-point noise doesn't miss the cache.
+                cache_method = method_key(
+                    "vina.dock",
+                    (versions.get("vina-cli")
+                     or versions.get("vina-python") or "unknown"),
+                    {
+                        "cx": round(center_A[0], 3),
+                        "cy": round(center_A[1], 3),
+                        "cz": round(center_A[2], 3),
+                        "bx": round(box_size_A[0], 3),
+                        "by": round(box_size_A[1], 3),
+                        "bz": round(box_size_A[2], 3),
+                        "exh": exhaustiveness,
+                        "modes": num_modes,
+                        "seed": seed,
+                    })
+                hit = cache.get(cache_key, cache_method)
+                if hit is not None:
+                    logger.debug("vina cache HIT %s / %s",
+                                 cache_key, cache_method)
+                    try:
+                        return _inflate_docking_result(hit.value)
+                    except Exception as e:
+                        logger.debug("vina cache inflate failed: %s", e)
+                        # Fall through and recompute on corrupt rows.
+        except Exception as e:
+            logger.debug("vina cache lookup failed: %s", e)
+            cache_key = None
 
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="cellsim-dock-") as tmp:
@@ -477,6 +526,34 @@ def dock_ligand(
 
     result.best_kcalmol = result.poses[0].affinity_kcalmol
     result.ok = True
+
+    # -------- cache put (only ok=True) ------------------------
+    if cache is not None and cache_key is not None:
+        try:
+            cache.put(cache_key, cache_method, result.as_dict())
+        except Exception as e:
+            logger.debug("vina cache put failed: %s", e)
+    return result
+
+
+def _inflate_docking_result(value: dict) -> DockingResult:
+    """Reconstruct a DockingResult (including DockingPose list) from
+    a cached JSON dict."""
+    pose_dicts = value.pop("poses", None) or []
+    poses = []
+    for pd in pose_dicts:
+        pf = {k: v for k, v in pd.items()
+              if k in DockingPose.__dataclass_fields__}
+        poses.append(DockingPose(**pf))
+    fields = {k: v for k, v in value.items()
+              if k in DockingResult.__dataclass_fields__}
+    # Center / box can come back as lists; normalise to tuples.
+    if isinstance(fields.get("center_A"), list):
+        fields["center_A"] = tuple(fields["center_A"])
+    if isinstance(fields.get("box_size_A"), list):
+        fields["box_size_A"] = tuple(fields["box_size_A"])
+    result = DockingResult(**fields)
+    result.poses = poses
     return result
 
 

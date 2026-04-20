@@ -39,7 +39,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +246,7 @@ def xtb_single_point(
     method: str = "gfn2",
     random_seed: int = 1,
     timeout_s: int = 300,
+    cache: Optional[Any] = None,
 ) -> XtbResult:
     """Run one GFN2-xTB single-point on a SMILES.
 
@@ -269,6 +270,36 @@ def xtb_single_point(
     if xtb_bin is None:
         result.reason = "xtb binary not on PATH (activate cellsim env)"
         return result
+
+    # -------- cache lookup ------------------------------------
+    cache_key = None
+    cache_method = None
+    if cache is not None:
+        try:
+            from src.cache.hashing import compound_hash, method_key
+            cache_key = compound_hash(smiles)
+            cache_method = method_key(
+                "xtb.single_point",
+                versions.get("xtb-cli", "unknown"),
+                {
+                    "method": method,
+                    "charge": charge,
+                    "mult": multiplicity,
+                    "solvent": solvent or "vacuum",
+                    "seed": random_seed,
+                })
+            if cache_key is not None:
+                hit = cache.get(cache_key, cache_method)
+                if hit is not None:
+                    logger.debug("xtb cache HIT %s / %s",
+                                 cache_key, cache_method)
+                    return XtbResult(**{
+                        k: v for k, v in hit.value.items()
+                        if k in XtbResult.__dataclass_fields__
+                    })
+        except Exception as e:
+            logger.debug("xtb cache lookup failed: %s", e)
+            cache_key = None
 
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="cellsim-xtb-") as tmp:
@@ -351,6 +382,13 @@ def xtb_single_point(
         result.reason = "parse gap: no total energy in xtb output"
         return result
     result.ok = True
+
+    # -------- cache put (only ok=True) ------------------------
+    if cache is not None and cache_key is not None:
+        try:
+            cache.put(cache_key, cache_method, result.as_dict())
+        except Exception as e:
+            logger.debug("xtb cache put failed: %s", e)
     return result
 
 
