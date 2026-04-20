@@ -103,12 +103,21 @@ def run_som_validation(
     yaml_path: str | Path,
     *,
     dft_verify: int = 0,
+    heme_accessibility: bool = False,
+    max_fe_distance_A: float = 10.0,
+    cache_path: Optional[str] = None,
 ) -> SoMValidationResult:
     """Run the SoM literature-validation harness.
 
     `dft_verify`: if > 0, apply verify_som_dft(top_n=dft_verify) on
     each prediction before checking against the SMARTS. Much slower
     (minutes per compound) but more accurate.
+
+    `heme_accessibility`: if True, dock each compound into CYP3A4
+    (1TQN) and re-rank SoM candidates by (accessible first, then
+    BDE ascending). Matches the biological mechanism: only C-H
+    bonds within `max_fe_distance_A` of the heme iron can be
+    oxidised by the ferryl species.
     """
     import yaml as pyyaml
     from rdkit import Chem
@@ -122,6 +131,15 @@ def run_som_validation(
         dft_verified=dft_verify,
     )
     t0 = time.time()
+
+    # Open optional cache (shared across compounds).
+    _cache = None
+    if cache_path:
+        try:
+            from src.cache import Cache
+            _cache = Cache(cache_path)
+        except Exception as e:
+            logger.debug("cache open failed: %s", e)
 
     for cfg in entries_cfg:
         p = SoMValidationPoint(
@@ -151,14 +169,43 @@ def run_som_validation(
             except Exception as e:
                 print(f"  DFT rescoring skipped: {e}")
 
-        p.ok = True
-        p.method_used = som.method
+        # Heme-accessibility re-rank (CYP3A4 pose docking).
+        pose_top1_idx = None
+        pose_top1_elem = None
+        pose_top1_bde = None
+        if heme_accessibility:
+            try:
+                from src.quantum.som_cyp_pose import \
+                    predict_cyp_som_with_heme_access
+                cyp = predict_cyp_som_with_heme_access(
+                    p.smiles,
+                    max_fe_distance_A=max_fe_distance_A,
+                    exhaustiveness=16, num_modes=3,
+                    cache=_cache)
+                if cyp.ok and cyp.accessible_rank:
+                    top_acc = cyp.accessible_rank[0]
+                    pose_top1_idx = top_acc["parent_atom_idx"]
+                    pose_top1_elem = top_acc["parent_element"]
+                    pose_top1_bde = top_acc["bde_kcalmol"]
+                    p.method_used = (som.method +
+                                     f" + heme_access(<{max_fe_distance_A} Å)")
+            except Exception as e:
+                print(f"  heme-accessibility rescoring failed: {e}")
 
-        # Top-1 candidate.
-        top = som.candidates[0]
-        p.pred_top1_idx = top.parent_atom_idx
-        p.pred_top1_element = top.parent_element
-        p.pred_top1_bde = top.bde_kcalmol
+        p.ok = True
+        if p.method_used is None:
+            p.method_used = som.method
+
+        # Top-1 candidate: use heme-filtered rank if available.
+        if pose_top1_idx is not None:
+            p.pred_top1_idx = pose_top1_idx
+            p.pred_top1_element = pose_top1_elem
+            p.pred_top1_bde = pose_top1_bde
+        else:
+            top = som.candidates[0]
+            p.pred_top1_idx = top.parent_atom_idx
+            p.pred_top1_element = top.parent_element
+            p.pred_top1_bde = top.bde_kcalmol
 
         # Check correctness: rebuild the RDKit mol from the SAME
         # pathway the predictor used (so atom indices match), then
@@ -197,9 +244,24 @@ if __name__ == "__main__":
     ap.add_argument("--dft-verify", type=int, default=0, metavar="N",
                     help="after xTB top-N ranking, DFT-rescore those "
                          "N for every compound (slow but paper-grade)")
+    ap.add_argument("--heme-access", action="store_true",
+                    help="dock each compound into CYP3A4 (1TQN) "
+                         "and re-rank SoM candidates by Fe-atom "
+                         "accessibility (only atoms within 10 Å of "
+                         "heme iron are kept)")
+    ap.add_argument("--max-fe", type=float, default=10.0,
+                    help="Fe-distance cutoff when --heme-access "
+                         "(default 10.0 Å)")
+    ap.add_argument("--cache", default=None,
+                    help="SQLite cache for repeated runs")
     args = ap.parse_args()
 
-    r = run_som_validation(args.yaml, dft_verify=args.dft_verify)
+    r = run_som_validation(
+        args.yaml,
+        dft_verify=args.dft_verify,
+        heme_accessibility=args.heme_access,
+        max_fe_distance_A=args.max_fe,
+        cache_path=args.cache)
     print()
     print(r.summary())
     print()
