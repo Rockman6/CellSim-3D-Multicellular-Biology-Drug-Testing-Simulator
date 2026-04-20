@@ -6,20 +6,26 @@ on:
     paths:
       - "src/chem/**"
       - "src/md/**"
+      - "src/dock/**"
       - "tests/chem/**"
       - "tests/md/**"
+      - "tests/dock/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
+      - "benchmarks/dock/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
     paths:
       - "src/chem/**"
       - "src/md/**"
+      - "src/dock/**"
       - "tests/chem/**"
       - "tests/md/**"
+      - "tests/dock/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
+      - "benchmarks/dock/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -53,11 +59,16 @@ jobs:
 
       - name: Env report
         run: |
-          python -c "import rdkit, openff.toolkit, openmm, pdbfixer; \
+          python -c "import rdkit, openff.toolkit, openmm, pdbfixer, \
+              vina, meeko, posebusters; \
             print('rdkit', rdkit.__version__); \
             print('openff-toolkit', openff.toolkit.__version__); \
             print('openmm', openmm.__version__); \
-            print('pdbfixer', getattr(pdbfixer, '__version__', '?'))"
+            print('pdbfixer', getattr(pdbfixer, '__version__', '?')); \
+            print('vina', vina.__version__); \
+            print('meeko', meeko.__version__); \
+            print('posebusters', posebusters.__version__)"
+          which vina
           echo "AMBERHOME=$AMBERHOME"
 
       - name: chem smoke_10 (Layer 1.1, full tier ≥ 8/10)
@@ -68,6 +79,12 @@ jobs:
 
       - name: md protein smoke (Layer 1.2, 1UBQ solvate + 1 ps MD)
         run: python -u tests/md/test_protein_load.py
+
+      - name: dock prep smoke (Layer 1.3, Meeko receptor + ligand)
+        run: python -u tests/dock/test_prep_smoke.py
+
+      - name: dock re-docking gate (Layer 1.3, 1STP biotin)
+        run: python -u tests/dock/test_redocking.py
 
   scale:
     name: scale (workflow_dispatch only)
