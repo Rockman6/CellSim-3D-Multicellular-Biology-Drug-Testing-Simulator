@@ -273,7 +273,8 @@ and SMARTS patterns pinning the expected heavy-atom. Harness in
 | Method | aspirin<br/>(methyl → salicylate) | midazolam<br/>(1′-OH, imidazole methyl) | diazepam<br/>(N-demethyl) | aggregate |
 |---|:-:|:-:|:-:|:-:|
 | xTB BDE only | ✗ (picks O-H) | ✗ | ✗ | 0/3 |
-| + DFT rescore top-3 | ✓ matches methyl | ✗ (picks benzylic CH₂) | ✗ (picks benzylic CH₂) | **1/3** |
+| + DFT rescore top-3 | ✓ matches methyl | ✗ (picks benzylic CH₂) | ✗ (picks benzylic CH₂) | 1/3 |
+| + **heme-access ≤10 Å** (no DFT) | ✓ methyl | ✓ imidazole methyl (Fe-dist 4.79 Å) | ✗ Vina best-pose 9.85 Å from Fe | **2/3** |
 
 Honest interpretation of the 1/3 DFT result:
 
@@ -285,9 +286,12 @@ Honest interpretation of the 1/3 DFT result:
   (4-hydroxymidazolam, temazepam) but not the clinically
   reported *primary*. BDE-ranking ≠ kinetic preference —
   CYP active-site orientation also constrains which H can
-  reach the heme iron. A future PR adds "distance-to-heme"
-  scoring via docking into a CYP3A4 structure, which is
-  expected to lift the primary sites back to rank 1.
+  reach the heme iron. **Commit `8211bd0` closes this gap
+  with a heme-accessibility filter** (dock into 1TQN,
+  measure Fe-atom distance per candidate, keep only
+  accessible ones). Result: 1/3 → **2/3** in 6.4 s. See
+  the updated table above; midazolam now correctly lands
+  on the imidazole methyl (Fe-dist 4.79 Å).
 
 This is a genuine scientific limitation of BDE-only SoM
 prediction, now documented with a reproducible literature
