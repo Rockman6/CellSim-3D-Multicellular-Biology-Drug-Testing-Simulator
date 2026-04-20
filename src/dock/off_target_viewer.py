@@ -97,13 +97,19 @@ def render_off_target_result(
     xmax = 0.0
     ax.set_xlim(xmin, xmax)
 
-    # Annotate each bar with ΔG + K_d + drug_score
+    # Annotate each bar with ΔG + K_d + drug_score + strain.
+    # Strain flag is the biologist-facing "is this hit trustworthy"
+    # signal. A suspicious/reject strain on an off-target hit means
+    # Vina is forcing a non-physical pose — the ΔG is cheating.
     for i, e in enumerate(ranked):
         kd = _kd_label(e.kd_implied_nM)
         drug = (f"  drug={e.pocket_drug_score:.2f}"
                 if e.pocket_drug_score is not None else "")
+        strain = ""
+        if e.strain_band:
+            strain = f"  strain={e.strain_band}"
         ax.text(e.dG_kcalmol + 0.1, i,
-                f"{e.dG_kcalmol:+.2f}  |  K_d ≈ {kd}{drug}",
+                f"{e.dG_kcalmol:+.2f}  |  K_d ≈ {kd}{drug}{strain}",
                 va="center", fontsize=9, color="#1c1c1c")
 
     # Selectivity annotation

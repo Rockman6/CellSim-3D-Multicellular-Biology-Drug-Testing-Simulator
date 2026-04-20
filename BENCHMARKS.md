@@ -245,15 +245,25 @@ One compound vs N receptors, auto-pocket each.
 
 Biotin vs 4 receptors (1STP / 3PTB / 1M17 / 1UBQ), exhaustiveness=16:
 
-| Rank | target | ΔG (kcal/mol) | drug score | selectivity ΔΔG |
-|---|---|:-:|:-:|---|
-| 1 | streptavidin (1STP) | −7.44 | 0.80 | — (reference) |
-| 2 | trypsin (3PTB) | −5.95 | 0.44 | +1.50 vs rank 1 |
-| 3 | ubiquitin (1UBQ) | −3.91 | 0.54 | — |
+| Rank | target | ΔG (kcal/mol) | drug score | strain band | selectivity ΔΔG |
+|---|---|:-:|:-:|:-:|---|
+| 1 | streptavidin (1STP) | −7.44 | 0.80 | acceptable | — (reference) |
+| 2 | EGFR kinase (1M17) | −6.03 | 0.53 | acceptable | +1.41 vs rank 1 |
+| 3 | trypsin (3PTB) | −5.95 | 0.44 | **suspicious** | +1.49 vs rank 1 |
+|  — | ubiquitin (1UBQ) | — | — | — | fpocket found no pocket |
 
-Ranking is correct (biotin's biological target at rank 1, ubiquitin
-with no real pocket at rank 3). Selectivity ΔΔG ~ 1.5 kcal/mol is
-small because Vina saturates on the tight streptavidin side.
+Ranking is correct (biotin's biological target at rank 1). The
+strain column is the wet-lab trust signal: biotin-in-trypsin
+scores tight ΔG on Vina's empirical function but only via a
+*strained* conformation (`strain:suspicious`). A biologist sees
+the strain flag and correctly discounts the trypsin off-target
+hit rather than chasing it.
+
+Ubiquitin is correctly triaged as "no druggable pocket" by
+fpocket and skipped from ranking.
+
+Selectivity ΔΔG ~ 1.4 kcal/mol is small because Vina saturates
+on the tight streptavidin side.
 
 Reproducer: `cellsim off-target --ligand-smiles "…" --receptors "…"`.
 
