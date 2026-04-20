@@ -1,0 +1,65 @@
+# Trypsin S1-pocket binder calibration set.
+#
+# Six benzamidine-scaffold analogs with published K_i against
+# bovine trypsin. K_i spans 10^-7 M to 10^-3 M — about 4 kcal/mol
+# of affinity range, narrower than streptavidin's 12 kcal/mol but
+# much better-behaved for Vina (no tight-binder saturation).
+#
+# Sources:
+#   Mares-Guia & Shaw 1965 J Biol Chem 240:1579
+#   Markwardt 1974 Methods Enzymol 34:435
+#   Hassounah et al 1989 Biochem Pharmacol (PABA numbers)
+#   Stürzebecher et al 1983 Thromb Res 29:635
+
+receptor:
+  pdb: benchmarks/dock/3ptb.pdb
+  crystal_center_A: [-1.76, 14.46, 16.92]
+  search_box_A: [18.0, 18.0, 18.0]
+
+entries:
+  - name: 4-aminobenzamidine
+    smiles: "NC(=N)c1ccc(N)cc1"
+    Ki_M: 8.0e-7
+    dG_expt_kcalmol: -8.3
+    source_notes: |
+      Stürzebecher 1983; the para-amino enhances affinity via
+      H-bond donation into the S1 pocket back-wall.
+
+  - name: 4-chlorobenzamidine
+    smiles: "NC(=N)c1ccc(Cl)cc1"
+    Ki_M: 4.0e-6
+    dG_expt_kcalmol: -7.4
+    source_notes: |
+      Para-Cl electron-withdrawing; Stürzebecher series.
+
+  - name: benzamidine
+    smiles: "NC(=N)c1ccccc1"
+    Ki_M: 2.0e-5
+    dG_expt_kcalmol: -6.4
+    source_notes: |
+      Mares-Guia & Shaw 1965 (canonical trypsin inhibitor; 3PTB
+      cocrystal). K_i ~ 20 µM.
+
+  - name: 4-hydroxybenzamidine
+    smiles: "NC(=N)c1ccc(O)cc1"
+    Ki_M: 2.5e-5
+    dG_expt_kcalmol: -6.3
+    source_notes: |
+      Para-OH; similar to benzamidine, slight H-bond enhancement
+      but offset by desolvation penalty.
+
+  - name: 4-nitrobenzamidine
+    smiles: "NC(=N)c1ccc([N+](=O)[O-])cc1"
+    Ki_M: 1.5e-4
+    dG_expt_kcalmol: -5.2
+    source_notes: |
+      Strong electron-withdrawing NO2 destabilises the amidinium
+      protonation; weaker binder.
+
+  - name: guanidine
+    smiles: "N=C(N)N"
+    Ki_M: 1.0e-3
+    dG_expt_kcalmol: -4.1
+    source_notes: |
+      Bare guanidinium; lacks the aryl ring that anchors the
+      benzamidine scaffold. Very weak inhibitor.
