@@ -159,7 +159,9 @@ Reproducer: `cellsim uq ... ` (see `src/uq/calibration.py`).
 
 One compound vs N receptors, auto-pocket each.
 
-Biotin vs 3 receptors (1STP / 3PTB / 1UBQ), exhaustiveness=16:
+![biotin off-target panel](docs/images/off_target_biotin.png)
+
+Biotin vs 4 receptors (1STP / 3PTB / 1M17 / 1UBQ), exhaustiveness=16:
 
 | Rank | target | ΔG (kcal/mol) | drug score | selectivity ΔΔG |
 |---|---|:-:|:-:|---|
