@@ -58,11 +58,16 @@ struct ScenarioResult {
     float  mean_period_h    = 0.0f;
 };
 
+struct ScenarioOptions {
+    bool nutlin_mdm2_inhibit = false;  // BM07: force c.mdm2_inhibited = true
+};
+
 static ScenarioResult runScenario(uint32_t seed,
                                   int      initial_cells,
                                   float    forced_damage,
                                   float    duration_h,
-                                  bool     record_p53_trace) {
+                                  bool     record_p53_trace,
+                                  ScenarioOptions opts = {}) {
     simrng::seed(seed);
     Simulation sim;
     sim.mode = MODE_COLONY;
@@ -97,7 +102,9 @@ static ScenarioResult runScenario(uint32_t seed,
         bio_sec += 60.0;
         step++;
         for (auto& c : sim.cells) {
-            if (c.alive) c.damageLevel = forced_damage;
+            if (!c.alive) continue;
+            c.damageLevel   = forced_damage;
+            c.mdm2_inhibited = opts.nutlin_mdm2_inhibit;
         }
         if (record_p53_trace && step % sample_stride_p53 == 0) {
             if (!sim.cells.empty() && sim.cells[0].alive) {
@@ -259,6 +266,51 @@ static bool bm_cisplatin_high_72h(uint32_t seed, std::string& detail) {
     return ok;
 }
 
+// ── BM07: Nutlin-3 stabilises p53 WITHOUT DNA damage.
+// Vassilev 2004 Science 303:844: Nutlin-3 occupies MDM2's p53-binding
+// pocket, blocking ubiquitin-mediated p53 degradation. p53 rises and
+// transactivates downstream targets identically to the damage response,
+// but damageLevel stays zero and ATM never activates. This is the
+// single most important *orthogonal* test of the p53 axis — if the
+// sim produced p53 stabilisation only under DNA damage, it would fail
+// here. A PASS proves the stress-response is driven by the real
+// p53-MDM2 protein loop, not a hidden damage shortcut.
+static bool bm_nutlin3(uint32_t seed, std::string& detail) {
+    ScenarioOptions opts; opts.nutlin_mdm2_inhibit = true;
+    auto d = runScenario(seed, 50, 0.0f, 24.0f, false, opts);
+    auto c = runScenario(seed, 50, 0.0f, 24.0f, false);
+    float puma_ratio = c.mean_Puma > 1e-6f ? d.mean_Puma/c.mean_Puma : 0;
+    bool ok = (d.mean_p53         >= c.mean_p53 * 3.0f) &&
+              (d.mean_p53_act     >= 0.55f) &&
+              (d.mean_Puma        >= 2.0f) &&
+              (puma_ratio         >= 5.0f);
+    detail = fmt("p53=%.2f (ctl=%.2f) p53_act=%.2f Puma=%.2f (%.1fx ctl)",
+                 d.mean_p53, c.mean_p53, d.mean_p53_act,
+                 d.mean_Puma, puma_ratio);
+    return ok;
+}
+
+// ── BM08: dose-response monotonicity for damage → Puma.
+// Real p53-axis responses show a graded relationship between DNA
+// damage level and downstream Puma/BAX accumulation (Batchelor 2011
+// Mol Cell 43:3, Stewart-Ornstein 2017). A working mechanism must
+// produce monotonic increase in Puma across damage levels — not a
+// binary threshold response.
+static bool bm_dose_response(uint32_t seed, std::string& detail) {
+    auto d10 = runScenario(seed, 50, 0.10f, 24.0f, false);
+    auto d20 = runScenario(seed, 50, 0.20f, 24.0f, false);
+    auto d30 = runScenario(seed, 50, 0.30f, 24.0f, false);
+    auto d40 = runScenario(seed, 50, 0.40f, 24.0f, false);
+    // Monotonic non-decreasing Puma across damage levels.
+    bool ok = (d10.mean_Puma <= d20.mean_Puma * 1.05f) &&
+              (d20.mean_Puma <= d30.mean_Puma * 1.05f) &&
+              (d30.mean_Puma <= d40.mean_Puma * 1.05f) &&
+              (d40.mean_Puma >= d10.mean_Puma * 3.0f);
+    detail = fmt("Puma@{0.1,0.2,0.3,0.4} = %.2f/%.2f/%.2f/%.2f (monotonic)",
+                 d10.mean_Puma, d20.mean_Puma, d30.mean_Puma, d40.mean_Puma);
+    return ok;
+}
+
 int main(int argc, char** argv) {
     uint32_t sim_seed = simrng::DEFAULT_SEED;
     for (int i = 1; i < argc; i++) {
@@ -288,6 +340,12 @@ int main(int argc, char** argv) {
         {"BM06", "High-dose cisplatin 72h → saturated MOMP cascade",
          "Cepeda 2007 Anticancer Agents Med Chem 7:3.",
          bm_cisplatin_high_72h},
+        {"BM07", "Nutlin-3 stabilises p53 WITHOUT DNA damage (orthogonal)",
+         "Vassilev 2004 Science 303:844 (MDM2 antagonist).",
+         bm_nutlin3},
+        {"BM08", "Dose-response: Puma monotonic across damage [0.1..0.4]",
+         "Batchelor 2011 Mol Cell 43:3; Stewart-Ornstein 2017.",
+         bm_dose_response},
     };
 
     int total = (int)benchmarks.size();

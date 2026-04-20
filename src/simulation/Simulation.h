@@ -320,6 +320,17 @@ struct SimCell {
     //   Lev Bar-Or R et al. 2000 PNAS 97:11250 — early oscillator model
     float p53_protein = 0.089f;
     float MDM2_protein = 0.21f;
+    // Phase G6.2: Nutlin-3 / MDM2-antagonist orthogonal perturbation.
+    // Vassilev 2004 Science 303:844 showed Nutlin-3 binds the p53-
+    // binding pocket of MDM2, blocking ubiquitination of p53 WITHOUT
+    // DNA damage. This flag simulates saturating Nutlin binding:
+    // effective MDM2-mediated p53 degradation is set to zero (i.e.
+    // p53 is no longer cleared even though damageLevel=0). It is
+    // the strongest orthogonal test that the p53 axis is driven by
+    // the real MDM2 machinery — if p53 rises under Nutlin without
+    // ATM activation, the code must be going through the protein
+    // loop, not a damage shortcut.
+    bool mdm2_inhibited = false;
     // Phase G3: MDM2 mRNA as explicit intermediate between p53
     // transactivation and MDM2 protein synthesis. Required for
     // Purvis-2012-style oscillation; Geva-Zatorsky 2006 showed the
@@ -2391,8 +2402,13 @@ private:
             const float k_p53_basal  = 1.0f;    // per sdt
             const float k_p53_deg    = 10.0f;   // per sdt, at MDM2=1, ATM=0
             const float atm_shield   = 0.70f;
-            float eff_mdm2 =
-                c.MDM2_protein * (1.0f - c.ATM_active * atm_shield);
+            // Phase G6.2: Nutlin-3 short-circuits MDM2-mediated p53
+            // degradation by occupying MDM2's p53-binding pocket
+            // (Vassilev 2004). Under saturating Nutlin, effective MDM2
+            // for p53-degradation is zero regardless of ATM status.
+            float eff_mdm2 = c.mdm2_inhibited
+                ? 0.0f
+                : c.MDM2_protein * (1.0f - c.ATM_active * atm_shield);
             float p53_deg_rate =
                 k_p53_deg * eff_mdm2 / (K_d + c.p53_protein);
             float dp53 = (k_p53_basal - p53_deg_rate * c.p53_protein) * sdt;
