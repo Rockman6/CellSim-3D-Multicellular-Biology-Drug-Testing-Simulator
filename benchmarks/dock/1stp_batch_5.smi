@@ -1,0 +1,10 @@
+# Tiny batch-screen validation: biotin (true streptavidin binder) +
+# four non-binders. A correctly-ranking docking pipeline puts biotin
+# first.
+#
+# Columns: smiles<TAB>name
+OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12	biotin_TRUE_BINDER
+CC(=O)OC1=CC=CC=C1C(=O)O	aspirin_negative
+CN1C=NC2=C1C(=O)N(C(=O)N2C)C	caffeine_negative
+CC(C)CC1=CC=C(C=C1)C(C)C(=O)O	ibuprofen_negative
+CC(=O)Nc1ccc(O)cc1	acetaminophen_negative

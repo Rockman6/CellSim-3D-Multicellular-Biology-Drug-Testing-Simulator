@@ -16,6 +16,7 @@ from .pose_rmsd import (
     pose_rmsd_symmetry_aware,
 )
 from .validity import attach_posebusters
+from .batch import BatchConfig, run_batch
 
 __all__ = [
     "DockingResult",
@@ -26,4 +27,6 @@ __all__ = [
     "extract_hetatm_ligand",
     "pose_rmsd_symmetry_aware",
     "attach_posebusters",
+    "BatchConfig",
+    "run_batch",
 ]
