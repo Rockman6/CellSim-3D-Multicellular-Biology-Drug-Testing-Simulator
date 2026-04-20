@@ -52,7 +52,13 @@ logger = logging.getLogger(__name__)
 
 
 def _normalise_elem(e: str) -> str:
-    """AutoDock PDBQT atom types → periodic-table element."""
+    """AutoDock PDBQT atom types → periodic-table element.
+
+    AutoDock-Vina emits subtype codes (A=aromatic C, NA=acceptor
+    N, HD=donor H, etc.); collapse these to plain element symbols
+    so downstream graph/bond-order inference sees a chemistry-
+    correct element list.
+    """
     e = e.upper()
     if e in ("A", "G", "GA", "C"):
         return "C"
@@ -62,6 +68,8 @@ def _normalise_elem(e: str) -> str:
         return "O"
     if e in ("S", "SA"):
         return "S"
+    if e in ("H", "HD", "HS"):
+        return "H"
     return e.title()
 
 
