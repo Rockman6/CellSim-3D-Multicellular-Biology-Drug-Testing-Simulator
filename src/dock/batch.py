@@ -99,6 +99,11 @@ class BatchConfig:
     strain_ensemble_n: int = 20       # conformers for UFF ensemble;
                                       # PoseBusters default is 100
                                       # (slower, tighter ratio CI)
+    strain_gate: bool = True          # if top-1 pose is strain-
+                                      # rejected, fall through to
+                                      # the next good/acceptable
+                                      # pose. Keeps the reported ΔG
+                                      # physically trustworthy.
 
 
 def _triage_call(record: dict) -> tuple[str, str]:
@@ -298,25 +303,54 @@ def _worker(task: tuple) -> dict:
         )
 
     strain_result = None
+    strain_promoted_from: Optional[int] = None  # 1-indexed pose rank
     if cfg.run_strain and r.ok and r.poses:
         try:
             from src.dock.strain import ligand_strain
-            strain_result = ligand_strain(
-                r.poses[0].elements, r.poses[0].positions_A,
-                r.ligand_smiles,
-                ensemble_n=cfg.strain_ensemble_n)
+            # Strain-aware top-pose selection. Score every pose;
+            # if the best-ΔG pose is strain-rejected, promote the
+            # best-ΔG pose that passes strain (band good /
+            # acceptable). Tag the record with which rank was
+            # promoted so biologists see that it isn't the raw
+            # Vina #1. If NO pose passes, keep pose #1 (current
+            # behaviour — honesty: Vina couldn't find any
+            # physically-reasonable pose for this compound).
+            pose_strains = []
+            for i, pose in enumerate(r.poses):
+                s = ligand_strain(
+                    pose.elements, pose.positions_A,
+                    r.ligand_smiles,
+                    ensemble_n=cfg.strain_ensemble_n)
+                pose_strains.append((i, pose, s))
+
+            top_i, top_pose, top_strain = pose_strains[0]
+            if (cfg.strain_gate and top_strain.ok
+                    and top_strain.band == "reject"):
+                for i, pose, s in pose_strains:
+                    if s.ok and s.band in ("good", "acceptable"):
+                        top_i, top_pose, top_strain = i, pose, s
+                        strain_promoted_from = i + 1
+                        # Rewrite r.poses so downstream consumers
+                        # (CSV dG_kcalmol, strain_* fields, SDF
+                        # export) see the promoted pose as rank 1.
+                        r.poses[0] = pose
+                        break
+            strain_result = top_strain
         except Exception as e:
             logger.debug("strain failed for %s: %s", name, e)
 
     def _strain_fields() -> dict:
         if strain_result is None or not strain_result.ok:
             return {}
-        return dict(
+        out = dict(
             strain_band=strain_result.band,
             strain_kcalmol=round(
                 strain_result.strain_kcalmol, 2),
             strain_ratio=round(strain_result.energy_ratio, 3),
         )
+        if strain_promoted_from is not None:
+            out["strain_promoted_from_rank"] = strain_promoted_from
+        return out
 
     def _mc_fields() -> dict:
         if mc_stats is None or not mc_stats.ok:
@@ -456,6 +490,9 @@ def _progress_line(i: int, n: int, rec: dict) -> None:
               "pocket:n/a")
         if rec.get("strain_band"):
             tag += f"  strain:{rec['strain_band']}"
+        if rec.get("strain_promoted_from_rank"):
+            tag += (f"  (promoted pose #"
+                    f"{rec['strain_promoted_from_rank']})")
     else:
         tag = "FAIL"
         pb = (rec.get("reason") or "?")[:60]
@@ -473,6 +510,7 @@ def _write_csv(records: list[dict], out: Path) -> None:
             "mc_n_ok", "mc_n_samples",
             "crystal_rmsd_A", "pocket_ok", "geometry_ok", "pb_all_ok",
             "strain_band", "strain_kcalmol", "strain_ratio",
+            "strain_promoted_from_rank",
             "MW", "logP", "TPSA", "HBA", "HBD", "rotb",
             "ro5_pass", "ro5_violations", "QED", "logS", "solubility",
             "bbb_permeable", "herg_risk", "herg_alerts",
@@ -550,6 +588,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "(default: on). Strain flags Vina poses "
                          "that score well but are conformationally "
                          "non-physical; adds ~1 s per compound.")
+    ap.add_argument("--no-strain-gate", action="store_true",
+                    help="disable the strain-aware top-pose "
+                         "promotion (default: on). When on, a "
+                         "strain-rejected top pose is replaced by "
+                         "the best-ΔG pose whose strain is good/"
+                         "acceptable; the reported ΔG stays "
+                         "physically trustworthy.")
     ap.add_argument("--strain-ensemble", type=int, default=20,
                     metavar="N",
                     help="number of conformers for the UFF-ensemble "
@@ -603,6 +648,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         export_poses_dir=args.export_poses_dir,
         run_strain=not args.no_strain,
         strain_ensemble_n=args.strain_ensemble,
+        strain_gate=not args.no_strain_gate,
     )
     records = run_batch(
         args.smi, cfg, workers=args.workers, out_csv=args.out_csv)
