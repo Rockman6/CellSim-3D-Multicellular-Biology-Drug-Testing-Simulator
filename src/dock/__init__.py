@@ -18,6 +18,7 @@ from .pose_rmsd import (
 from .validity import attach_posebusters
 from .batch import BatchConfig, run_batch
 from .pocket_detect import PocketCandidate, detect_pockets
+from .refine import refine_pose_openff
 
 __all__ = [
     "DockingResult",
@@ -32,4 +33,5 @@ __all__ = [
     "run_batch",
     "PocketCandidate",
     "detect_pockets",
+    "refine_pose_openff",
 ]
