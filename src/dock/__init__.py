@@ -26,6 +26,7 @@ from .off_target import (
     off_target_screen,
 )
 from .off_target_viewer import render_off_target_result
+from .cyp_inhibition import CypInhibitionResult, cyp3a4_inhibition
 
 __all__ = [
     "DockingResult",
@@ -47,4 +48,6 @@ __all__ = [
     "OffTargetResult",
     "off_target_screen",
     "render_off_target_result",
+    "CypInhibitionResult",
+    "cyp3a4_inhibition",
 ]
