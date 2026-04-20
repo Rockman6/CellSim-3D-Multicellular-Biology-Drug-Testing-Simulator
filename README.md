@@ -1,148 +1,159 @@
-# CellSim — Computational Cell Biology Simulator & In Silico Drug Testing Platform
+# CellSim
 
-A high-performance, real-time 3D cell biology simulator with integrated pharmacology for in silico drug testing. Built with C++20 and Apple Metal for GPU-accelerated rendering.
+**Open-source, non-AI, physics-first drug-discovery triage platform.**
 
-![Platform](https://img.shields.io/badge/platform-macOS-blue)
-![Language](https://img.shields.io/badge/language-C%2B%2B20-orange)
-![GPU](https://img.shields.io/badge/GPU-Apple%20Metal-silver)
-![License](https://img.shields.io/badge/license-MIT-green)
+CellSim is the in-silico front of a wet-lab shortlist. Drop in a
+receptor PDB and a list of SMILES, walk away for coffee, come back
+to a ranked CSV with ΔG ± CI, pocket-fit flags, ADMET descriptors,
+and one-page drug profile dashboards for your top hits.
 
-## Screenshots
+Every method is physics-grounded (classical force fields, semi-
+empirical QM, alchemical free energy, flux-balance analysis) and
+every rate constant cites a PMID or a cached physics calculation.
+No neural scoring, no learned potentials, no black-box surrogates —
+see [`MISSION.md`](MISSION.md) for the discipline and
+[`GOAL`](GOAL) for the 5-campaign roadmap.
 
-| Early Colony — Organelle Detail | Dense Colony — Drug Treatment |
-|:---:|:---:|
-| ![Early Colony](docs/cellsim-early-colony.png) | ![Dense Colony with Drug Test](docs/cellsim-dense-colony-drug-test.png) |
+> **Status:** Campaign 1 (Atomic → Molecular Foundation) is in
+> progress. The pre-restart HeLa / p53 / cisplatin cell prototype
+> is frozen under [`OLD/`](OLD/) as a regression snapshot (still
+> builds; still passes its 8 headless validators).
 
-## Overview
+## Quickstart — first docking run in 5 minutes
 
-CellSim models individual cells as autonomous agents with full intracellular biology — CDK/Cyclin cell cycle ODE, dual-pathway metabolism, Warburg effect, nutrient diffusion, contact inhibition, telomere erosion, and apoptosis. Users can apply chemotherapy drugs (Cisplatin, Doxorubicin, Paclitaxel, 5-FU) and observe dose-dependent cell kill, phase arrest, and resistance emergence in real time.
-
-## Features
-
-### Cell Biology Engine
-- **CDK/Cyclin ODE** — Novak-Tyson 7-variable model (CycD, Rb, E2F, CycE, CycA, CycB, p21) driving G1→S→G2→M phase transitions
-- **Fick Diffusion Field** — 64×64 grid for O₂, glucose, CO₂, pH, and drug concentration with Dirichlet boundary conditions
-- **Dual-Pathway Metabolism** — glycolysis + oxidative phosphorylation with Warburg switch under hypoxia
-- **Contact Inhibition** — Hippo-YAP pathway: mechanical pressure → p21/p27 induction → reversible G0 arrest at confluence
-- **Telomere Erosion** — 20bp loss per division → replicative senescence (Hayflick limit)
-- **Multi-Timescale Architecture** — FAST (Ca²⁺), MEDIUM (ATP/ROS/stress), SLOW (cell cycle/genome)
-
-### Drug Testing Platform
-- **4 Pre-built Drugs**: Cisplatin, Doxorubicin, Paclitaxel, 5-Fluorouracil
-- **PhysiPKPD Pharmacodynamics** — Hill equation dose-response (EC50, Hill coefficient)
-- **4 Mechanisms of Action**: anti-proliferative, pro-apoptotic, DNA damage, mitochondrial toxin
-- **Drug Diffusion** — Fick diffusion of drug through tissue with cellular uptake/efflux
-- **Resistance Mutations** — MDR pump upregulation via stochastic mutation at division
-- **Application Modes** — uniform bath or point injection with wash-out
-
-### Visualization & Analysis
-- **3D Metal Rendering** — translucent bio-luminescent cells with GLB organelle models (nucleus, ER, Golgi, mitochondria)
-- **ImGui Research Interface** — population stats, CDK/Cyclin ODE readout, metabolism panel, drug treatment controls
-- **ImPlot Time-Series** — live plots of population dynamics, ATP, stress, phase distribution
-- **CSV Data Export** — population time-series + per-cell snapshots with native Save dialog
-
-## Build
-
-### Prerequisites (macOS)
 ```bash
-# Xcode Command Line Tools
-xcode-select --install
+# 1. Install the environment (one-time).
+conda env create -f environment.yml      # or mamba
+conda activate cellsim
 
-# Homebrew + build tools
-brew install cmake
-
-# vcpkg package manager
-git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-~/vcpkg/bootstrap-vcpkg.sh
-
-# Dependencies
-~/vcpkg/vcpkg install glfw3 glm "imgui[glfw-binding,metal-binding]" implot nlohmann-json stb cgltf
+# 2. Run the end-to-end biologist workflow on a bundled cocrystal.
+python -m src.dock.batch \
+    --smi benchmarks/dock/1stp_batch_5.smi \
+    --receptor benchmarks/dock/1stp.pdb \
+    --out-csv /tmp/run/report.csv \
+    --mc 4 --profile-top-k 3 \
+    --crystal-pdb benchmarks/dock/1stp.pdb \
+    --crystal-resname BTN
 ```
 
-### Build & Run
-```bash
-cd CellSim
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/CellSim
+Output:
+
+```
+RANK  NAME                    ΔG(kcal)   K_d       POCKET  RMSD    Ro5  QED   logS
+   1  biotin_TRUE_BINDER        -7.44    3.5 µM    ✓       1.96 Å  ✓    0.49  -1.53
+   2  ibuprofen_negative        -7.36    4.1 µM    ?       -       ✓    0.82  -3.09
+   3  aspirin_negative          -6.66   13.0 µM    ✓       -       ✓    0.55  -1.99
+   4  acetaminophen_negative    -6.31   23.8 µM    ?       -       ✓    0.59  -1.97
+   5  caffeine_negative         -5.48   95.7 µM    ?       -       ✓    0.54  -0.87
 ```
 
-### Organelle Models
-Place GLB files in `assets/models/`:
-- `nucleus.glb`, `smooth ER.glb`, `rough ER.glb`, `golgi apparatus.glb`, `mitochondria.glb`
+Plus `profile_01_biotin_TRUE_BINDER.png`, `profile_02_...png`,
+`profile_03_...png` — one-page dashboards showing 3D + charges,
+predicted CYP3A4 sites-of-metabolism, HOMO/LUMO, and the full
+Lipinski / QED / logS datasheet.
 
-## Usage
+If you do **not** know the binding-site coordinates of your target,
+omit `--center` / `--box` and CellSim auto-detects pockets via fpocket
+(the canonical non-ML geometric pocket finder).
 
-### Controls
-| Input | Action |
-|-------|--------|
-| Drag | Rotate camera |
-| Right-drag | Pan |
-| Scroll | Zoom |
-| ESC | Quit |
+## What CellSim can do today
 
-### Drug Testing Workflow
-1. Let colony grow to confluence (~500 cells) at 20× speed
-2. Open **Drug Treatment** panel
-3. Select drug (e.g., Cisplatin) and set concentration (e.g., 2 µM = EC50)
-4. Click **Apply Uniform**
-5. Observe viability drop, phase distribution changes, cell death
-6. Click **WASH OUT** — survivors resume growth
-7. **Export CSV** for quantitative analysis
+| Layer | What it does | Status |
+|---|---|---|
+| **1.1 Chem** | SMILES → OpenFF-parametrised system (AM1-BCC charges) | ✅ 9/10 full tier, 10/10 RDKit tier |
+| **1.2 MD** | Classical Langevin MD, solvated protein loader (AMBER14 + TIP3P) | ✅ 1 ps ubiquitin Cα RMSD 0.74 Å |
+| **1.3 Docking** | Vina + Meeko + PoseBusters + fpocket auto-site | ✅ mini-bench 2/3 canonical gate |
+| **1.4 Quantum** | xTB GFN2 single-point + CYP3A4 SoM predictor (BDE) | ✅ 10/10 sane + 3/3 SoM smoke |
+| **1.5 Coarse-grained** | Martini 3 membrane / bilayer MD | ⏳ scaffold pending |
+| **1.6 UQ** | Monte-Carlo over Vina seeds → ΔG ± 95 % CI | ✅ MVP shipped; Sobol pending |
+| **1.7 Blind harness** | PDBBind scale gate + red-team slot | ⏳ scale harness pending |
 
-## Scientific Basis
+**Cross-cutting UX:**
 
-### Cell Cycle Model
-Novak-Tyson minimal CDK/Cyclin oscillator with checkpoint gates:
-- **G1/S checkpoint**: CycE/CDK2 > threshold, Rb phosphorylated, p21 < 0.5
-- **G2/M checkpoint**: CycB/CDK1 (MPF) > threshold, DNA damage cleared
-- **Contact inhibition**: Hippo-YAP → p27 induction at confluence
+- `src/dock/batch.py` — one-command ranked screen with MC error bars
+  and optional `--profile-top-k` auto-dashboards.
+- `src/chem/profile.py` — six-panel per-compound profile combining
+  3D charges, SoM predictions, HOMO/LUMO, BDE chart, and
+  Ro5 / QED / logS callouts.
+- `src/chem/admet.py` — Lipinski / TPSA / QED / ESOL solubility
+  (all published formulae; no ML).
+- `src/dock/pocket_detect.py` — auto-binding-site detection so any
+  receptor PDB works out-of-box.
+- `src/uq/dock_mc.py` — honest ΔG ± CI from N-seed Monte-Carlo.
 
-### Pharmacodynamics (adapted from PhysiPKPD)
+## Non-AI discipline
+
+CellSim is strictly physics-first and non-AI by design. This is
+load-bearing, not a preference. Every prediction must trace to a
+physics calculation or a literature-cited empirical formula. See
+[`MISSION.md`](MISSION.md) §"No black-box / no AI surrogates" for
+the five ground rules and the narrow "ML as accelerator only"
+exception clause.
+
+Explicitly excluded:
+
+- ML potentials (MACE / NequIP / OrbNet / Allegro) as the force path.
+- GNINA CNN-scored docking as the primary evidence (Vina only; GNINA
+  may ship as an explicitly labeled fast-guess alongside).
+- "Deep ensembles" for UQ. Sobol + Monte-Carlo + MAPIE conformal
+  (post-hoc, non-parametric) only.
+
+## Validation that runs on every PR
+
+[`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) provisions
+the `cellsim` conda env and runs the full gate stack in ~15 min:
+
+1. `tests/chem/test_parametrize_smoke.py` — 10 canonical drugs →
+   OpenMM system (Layer 1.1).
+2. `tests/chem/test_admet_smoke.py` — Lipinski / QED / logS sanity.
+3. `tests/md/test_ligand_vacuum.py --max 3 --gate 3` — 10-ps vacuum
+   Langevin (Layer 1.2).
+4. `tests/md/test_protein_load.py` — 1UBQ load + solvate + minimise +
+   1-ps MD.
+5. `tests/dock/test_prep_smoke.py` — Meeko PDBQT prep.
+6. `tests/dock/test_redocking.py` — 1STP biotin top-1 ≤ 2.5 Å AND
+   top-3 best < 2.0 Å.
+7. `tests/dock/test_pocket_detect_smoke.py` — fpocket finds biotin
+   pocket within 3 Å.
+8. `tests/dock/test_mini_bench.py` — 3-cocrystal aggregate pose
+   recovery ≥ 66 %.
+9. `tests/quantum/test_xtb_smoke.py` — 10-drug GFN2 sanity.
+10. `tests/quantum/test_som_smoke.py` — 3-drug CYP3A4 BDE smoke.
+11. `tests/uq/test_mc_dock_smoke.py` — 4-seed MC dock sanity.
+
+A regression in any gate blocks merge.
+
+## Layout
+
 ```
-dC_internal/dt = uptake × C_external − efflux × C_internal
-dDamage/dt = Hill(C_int, EC50, n) × maxEffect − repairRate × Damage
-Hill(C, EC50, n) = C^n / (EC50^n + C^n)
+src/
+  chem/      Layer 1.1  parametrise, ADMET, profile dashboard
+  md/        Layer 1.2  OpenMM MD driver, PDBFixer protein loader
+  dock/      Layer 1.3  Vina + Meeko + PoseBusters + fpocket + batch
+  quantum/   Layer 1.4  xTB GFN2, CYP3A4 SoM predictor
+  cg/        Layer 1.5  Martini 3 (scaffold; not populated yet)
+  cache/     cross-cut  SQLite + HDF5 physics-prior cache (scaffold)
+  uq/        Layer 1.6  Monte-Carlo dock, Sobol (pending)
+  bridge/    cross-cut  Layer-1 → Layer-2 rate-law emitter (future)
+  core/      physics-neutral RNG, telemetry, constants
+benchmarks/
+  chembl/    10 canonical drugs
+  md/        1UBQ ubiquitin
+  dock/      1STP / 1M17 / 3PTB cocrystals + mini_bench.yaml
+tests/       one folder per src/ module, same smoke pattern
+OLD/         frozen pre-restart Campaign-2 prototype (builds; passes
+             its own 8 headless validators as regression snapshot)
+docs/        strategic plan, professor debriefs, campaign scope
+scripts/     CLI utilities (fetch_pdb, fetch_chembl_sample, ...)
 ```
 
-### Drug Parameters
+## How to cite
 
-| Drug | EC50 (µM) | Hill | Mechanism | Reference |
-|------|-----------|------|-----------|-----------|
-| Cisplatin | 2.0 | 1.5 | DNA damage | PMC2751448 |
-| Doxorubicin | 0.5 | 2.0 | DNA damage + mito toxin | PMC1501422 |
-| Paclitaxel | 0.01 | 2.5 | M-phase arrest | PMC2751448 |
-| 5-Fluorouracil | 5.0 | 1.2 | S-phase block + DNA damage | BioModels |
-
-
-
-
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=Rockman6%2FCellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator&type=date&legend=top-left" />
- </picture>
-</a>
-
-## References
-
-1. Novak B & Tyson JJ (2008). "Design principles of biochemical oscillators." *Nat Rev Mol Cell Biol* 9:981-991.
-2. Ghaffarizadeh A et al. (2018). "PhysiCell: An open source physics-based cell simulator for 3-D multicellular systems." *PLoS Comput Biol* 14:e1005991.
-3. Bergman D et al. (2023). "PhysiPKPD: A pharmacokinetics and pharmacodynamics module for PhysiCell." *GigaByte*.
-4. Green DR & Kroemer G (2004). "The pathophysiology of mitochondrial cell death." *Science* 305:626-629.
-5. Delarue M et al. (2018). "Compressive stress inhibits proliferation in tumor spheroids through a volume limitation." *Dev Cell*.
-6. Blackburn EH (2001). "Switching and signaling at the telomere." *Cell* 106:661-673.
-7. Casciari JJ et al. (1992). "Variations in tumor cell growth rates and metabolism with oxygen concentration, glucose concentration, and extracellular pH." *Biotechnol Bioeng*.
-8. Vander Heiden MG et al. (2009). "Understanding the Warburg effect." *Science* 324:1029-1033.
+Every prediction in CellSim carries its method provenance (tool
+version, force field, seed, search parameters). To cite a run,
+include the commit SHA and the `provenance` block from the relevant
+result envelope in your publication's methods.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
-
-Portions adapted from PhysiPKPD (BSD-3), PhysiCell (BSD-3), and BioModels Database (CC0).
-
-
+MIT. See [`LICENSE`](LICENSE).
