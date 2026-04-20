@@ -51,7 +51,10 @@ from src.dock import (  # noqa: E402
     attach_posebusters,
     dock_ligand,
 )
-from src.uq import monte_carlo_dock  # noqa: E402
+
+# src.uq.monte_carlo_dock imports src.dock internally, so it's
+# imported lazily inside the worker to avoid a circular-import
+# failure at module load time.
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +113,7 @@ def _worker(task: tuple) -> dict:
     dock_seed = cfg.seed
     if cfg.mc_samples >= 2:
         try:
+            from src.uq import monte_carlo_dock  # lazy: see module top
             mc_stats = monte_carlo_dock(
                 receptor_pdb=cfg.receptor_pdb,
                 ligand_smiles=smiles,
