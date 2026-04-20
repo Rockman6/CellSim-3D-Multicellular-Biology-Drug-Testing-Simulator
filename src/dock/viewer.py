@@ -247,6 +247,19 @@ def render_dock_result(
             f"top-1 crystal RMSD = {best.rmsd_vs_reference_A:.2f} Å "
             f"  |  best-of-top-3 = "
             f"{min(p.rmsd_vs_reference_A for p in poses[:3] if p.rmsd_vs_reference_A is not None):.2f} Å")
+
+    # Strain badge. Skips silently if the diagnostic fails (e.g.
+    # RDKit connectivity inference mismatches on this ligand).
+    try:
+        from src.dock.strain import ligand_strain
+        s = ligand_strain(best.elements, best.positions_A,
+                           result.ligand_smiles, ensemble_n=20)
+        if s.ok:
+            title_lines.append(
+                f"top-1 strain = {s.strain_kcalmol:+.1f} kcal/mol  "
+                f"(UFF ratio {s.energy_ratio:.2f}, {s.band}-band)")
+    except Exception:
+        pass
     fig.suptitle("\n".join(title_lines), fontsize=10)
 
     plt.tight_layout()
