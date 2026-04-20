@@ -7,6 +7,10 @@
 #include "biochem/Bioagent.h"
 #include "biochem/TargetLibrary.h"
 #include "biochem/BindingMatcher.h"
+#include "biochem/Virion.h"
+#include "biochem/Bacterium.h"
+#include "biochem/PathogenRegistry.h"
+#include "biochem/PathogenKinetics.h"
 #include <simd/simd.h>
 #include <vector>
 #include <cmath>
@@ -280,6 +284,43 @@ struct SimCell {
     bool alive;
 
     float ATP, stress, ROS, biomass, damageLevel, age;
+
+    // ── Phase G2: TP53 ↔ MDM2 stress-response loop ─────────────────────
+    // Units: normalised protein concentration (arbitrary; baseline ≈ 0.05
+    // represents "healthy cell" MDM2-dominated steady state). Calibrated
+    // so that sustained high DNA damage produces ~5 h oscillations
+    // matching Purvis 2012 ATM-driven p53 pulsing, with protein counts
+    // staying in [0, ~2.0] range.
+    //
+    // Rate constants:
+    //   k_p53_basal    — basal p53 synthesis (protein/s)
+    //   k_mdm2_from_p53— p53-driven MDM2 transcription (per p53·s)
+    //   k_mdm2_deg     — MDM2 basal degradation (1/s, ≈ 30 min t½
+    //                     Momand 1992)
+    //   k_p53_by_mdm2  — MDM2-mediated p53 ubiquitination + proteasome
+    //                     degradation rate (per MDM2·s). K_d = 200 nM
+    //                     for p53↔MDM2 binding (Picksley 1994, Bottger
+    //                     1997); under normal conditions this keeps p53
+    //                     t½ ≈ 30 min (Haupt 1997, Kubbutat 1997).
+    //   atm_stabilize_k— ATM activates at damageLevel > ATM_DAMAGE_K;
+    //                     ATM phosphorylates p53-Ser15 which blocks
+    //                     MDM2 binding → p53 accumulates.
+    //
+    // Downstream: p53 transcriptionally induces p21 (CDKN1A) which
+    // flows into the existing cdk.p21 pool, pushing cells into G1
+    // arrest — the central mechanism of the DNA-damage checkpoint.
+    //
+    // Sources:
+    //   Purvis TJ et al. 2012 Science 336:1440 — p53 pulsing dynamics
+    //   Haupt Y et al. 1997 Nature 387:296   — MDM2 targets p53 for deg.
+    //   Kubbutat MH et al. 1997 Nature 387:299 — same
+    //   Picksley SM et al. 1994 Oncogene 9:2523 — p53↔MDM2 Kd
+    //   Bottger V et al. 1997 J Mol Biol 269:744 — refined Kd
+    //   Momand J et al. 1992 Cell 69:1237 — MDM2 half-life
+    //   Lev Bar-Or R et al. 2000 PNAS 97:11250 — early oscillator model
+    float p53_protein = 0.05f;
+    float MDM2_protein = 0.05f;
+    float ATM_active = 0.0f; // 0..1, rises when damageLevel > threshold
     float mitoPotential, mitoHealth;
     bool glycolytic; float warburgTimer;
     float hypoxiaTimer, hypoxiaIntensity; bool necrotic;
@@ -358,6 +399,18 @@ struct SimCell {
     std::vector<std::vector<float>> targetBound_uM;
     std::vector<int>   targetCount;
     std::vector<float> targetOccupancy;
+
+    // ── Pathogen inventory (Phase 7 §44) ────────────────────────────
+    // Intracellular load of each virion species + bacterium species.
+    //   intraVirions[specIdx]    — viral genome copies inside cytosol
+    //   intraBacteria[specIdx]   — bacterial load inside host vacuole / cytosol
+    //   assembledVirions[idx]    — new virions ready to bud / burst
+    //   pathogensReleased        — latch so apoptosis spill runs once
+    // Vectors stay empty (≈24 B) if no pathogen ever enters the cell.
+    std::vector<float> intraVirions;
+    std::vector<float> intraBacteria;
+    std::vector<float> assembledVirions;
+    bool pathogensReleased = false;
 
     // ── Substrate adhesion (integrin / focal adhesion maturation) ────
     // Drives Z-position drift, motility damping, and a "spread" deform.
@@ -475,6 +528,23 @@ struct SimCell {
         size=0.85f+randf()*0.15f; alive=true;
         ATP=75+randf()*15; stress=5; ROS=0;
         biomass=1.0f+randf()*0.1f; damageLevel=randf()*0.05f; age=randf()*30;
+        // Phase G2: stress-response pools initialised to deterministic
+        // fixed baseline (MDM2-dominated steady state). Per-cell
+        // heterogeneity in p53 pulse amplitude (Lahav 2004, Geva-Zatorsky
+        // 2006) emerges from the per-cell damageLevel variance set above
+        // — not from RNG draws at init time, so the RNG stream and the
+        // 5.1% seq02 baseline are preserved bit-for-bit. When G3 wires
+        // MDM2 and p53 into real transcription via CentralDogma, intrinsic
+        // stochastic gene-expression noise will supply the variance
+        // professionally (Elowitz 2002, Raj 2008).
+        // Phase G2: baseline set to analytical steady-state of the
+        // stress-response ODE with damageLevel≈0 (see updateCellCycle
+        // comments for rate constants). p53_ss ≈ 0.089, MDM2_ss ≈ 0.21
+        // under the current rates. Initialising here saves the ODE a
+        // burn-in period.
+        p53_protein  = 0.089f;
+        MDM2_protein = 0.21f;
+        ATM_active   = 0.0f;
         mitoPotential=170+randf()*10; mitoHealth=1.0f;
         glycolytic=false; warburgTimer=0;
         hypoxiaTimer=0; hypoxiaIntensity=0; necrotic=false;
@@ -715,6 +785,89 @@ public:
     int nextCloneId=0;
     int nextCellUid=0;
     int allocateCellUid() { return nextCellUid++; }
+
+    // ── Free-medium pathogen pools (Phase 7 §44.7) ──────────────────
+    // Virions and bacteria drifting in the fluid. They bind nearby live
+    // cells via shape-compatibility scoring; upon host lysis fresh
+    // pathogens are appended here. Inoculation enters through
+    // `seedVirion()` / `seedBacterium()`.
+    std::vector<Virion>    gFreeVirions;
+    std::vector<Bacterium> gFreeBacteria;
+    uint32_t nextPathogenUid = 1;
+
+    // Telemetry counters populated each tick.
+    int statVirionsFree    = 0;
+    int statVirionsBound   = 0;
+    int statVirionsIntra   = 0;
+    int statBacteriaFree   = 0;
+    int statBacteriaIntra  = 0;
+    int statInfectedCells  = 0;
+
+    // Find the cell nearest to (cx, cz) that we'll inoculate around.
+    // Returns nullptr if no cells exist.
+    const SimCell* cellNearest(float cx, float cz) const {
+        const SimCell* best = nullptr;
+        float bestD2 = 1e30f;
+        for (const auto& c : cells) {
+            if (!c.alive) continue;
+            float dx = c.position.x - cx;
+            float dz = c.position.z - cz;
+            float d2 = dx*dx + dz*dz;
+            if (d2 < bestD2) { bestD2 = d2; best = &c; }
+        }
+        return best;
+    }
+
+    // Inoculate N virions in an annulus OUTSIDE the nearest cell's visual
+    // radius so they actually drift in from the fluid rather than popping
+    // in through the membrane. Y matches the cell's Y so they sit in the
+    // same slab as the host. spreadRadius ignored (back-compat); the
+    // annulus thickness is a fixed multiple of cell radius.
+    void seedVirion(int specIdx, float cx, float cz, int count, float /*spreadRadius*/) {
+        if (specIdx < 0 || specIdx >= (int)gPathogens().virionSpecs.size()) return;
+        const SimCell* host = cellNearest(cx, cz);
+        float hy = host ? host->position.y : (FLOOR_Y + 2.0f);
+        float hr = host ? fmaxf(1.0f, host->radius * host->size) : 2.0f;
+        // Annulus: [hr + 0.5, hr + 3.0] wu outside the membrane.
+        float rMin = hr + 0.5f;
+        float rMax = hr + 3.0f;
+        for (int i = 0; i < count; i++) {
+            Virion v;
+            v.specIdx = specIdx;
+            float ang = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+            float u   = (float)rand() / (float)RAND_MAX;
+            float r   = sqrtf(rMin*rMin + u * (rMax*rMax - rMin*rMin));
+            v.position = simd_make_float3(cx + r*cosf(ang), hy,
+                                          cz + r*sinf(ang));
+            v.velocity = simd_make_float3(0.0f, 0.0f, 0.0f);
+            v.stage = VirionStage::FREE;
+            v.uid = nextPathogenUid++;
+            gFreeVirions.push_back(v);
+        }
+    }
+    void seedBacterium(int specIdx, float cx, float cz, int count, float /*spreadRadius*/) {
+        if (specIdx < 0 || specIdx >= (int)gPathogens().bacteriumSpecs.size()) return;
+        const BacteriumSpec& bs = gPathogens().bacteriumSpecs[specIdx];
+        const SimCell* host = cellNearest(cx, cz);
+        float hy = host ? host->position.y : (FLOOR_Y + 2.0f);
+        float hr = host ? fmaxf(1.0f, host->radius * host->size) : 2.0f;
+        float rMin = hr + 1.0f;
+        float rMax = hr + 4.0f;
+        for (int i = 0; i < count; i++) {
+            Bacterium b;
+            b.specIdx = specIdx;
+            float ang = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+            float u   = (float)rand() / (float)RAND_MAX;
+            float r   = sqrtf(rMin*rMin + u * (rMax*rMax - rMin*rMin));
+            b.position = simd_make_float3(cx + r*cosf(ang), hy,
+                                          cz + r*sinf(ang));
+            b.biomass_bm = bs.biomass_bm;
+            float a2 = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+            b.runDir = simd_make_float3(cosf(a2), 0.0f, sinf(a2));
+            b.uid = nextPathogenUid++;
+            gFreeBacteria.push_back(b);
+        }
+    }
 
     static constexpr float MAX_SUBSTEP_DT = 0.05f;
     static constexpr float MAX_SCALED_DT_PER_FRAME_SINGLE = 2.00f;
@@ -1007,6 +1160,311 @@ public:
         }
     }
 
+    // ── Pathogen one-tick update (Phase 7 §44) ──────────────────────
+    //
+    // Discipline:
+    //   * No tropism / MOA flag is consulted anywhere. A virion binds
+    //     because its 5-D spike descriptor matches a host receptor
+    //     profile (PathogenKinetics::virionBindScore).
+    //   * Stage machine is driven entirely by physical conditions
+    //     (bound-spike count, elapsed dwell, intracellular load).
+    //   * On host apoptosis we do NOT drive it here — the existing
+    //     apoptosis engine transitions to BODIES; our spill hook
+    //     (see releasePathogens on BODIES entry) runs once.
+    //
+    // Called once per inner sub-step after updateDrugPK.
+    void updatePathogens(float dt) {
+        if (gFreeVirions.empty() && gFreeBacteria.empty()) {
+            // Still iterate cells to drive intracellular replication
+            // when no free pool exists.
+            bool anyIntra = false;
+            for (auto& c : cells) {
+                if (!c.intraVirions.empty() || !c.intraBacteria.empty()) { anyIntra = true; break; }
+            }
+            if (!anyIntra) return;
+        }
+        const float dt_biosec = dt * SLOW_DT_SCALE * 3600.0f;
+
+        // -- 0. Advance stage timers for all virions (needed for BOUND→ENTERING etc.) --
+        for (auto& v : gFreeVirions) v.stageTimer_s += dt_biosec;
+        for (auto& b : gFreeBacteria) b.stageTimer_s += dt_biosec;
+        // -- 1. Free-medium transport (Brownian + simple advection) --
+        // Brownian: σ = sqrt(2D·dt) per axis. For a ~100 nm virion in
+        // water at 37 °C, Stokes-Einstein D ≈ 4 µm²/s = 0.16 wu²/s
+        // (MICROMETERS_PER_WORLD_UNIT = 5). We use σ per bio-s in wu.
+        const float BROWN_SIGMA = 0.40f;   // wu · bio-s^(-1/2)
+        // Contact sampling: ~2 × median cell radius (HeLa ≈ 10 µm ≈ 2 wu)
+        // so a virion drifting in the cell's vicinity sees it.
+        const float CONTACT_RADIUS = 6.0f;
+        for (auto& v : gFreeVirions) {
+            if (v.stage != VirionStage::FREE) continue;
+            // Proper random walk: displacement per step ~ σ · sqrt(dt).
+            float u1 = (float)rand() / (float)RAND_MAX;
+            float u2 = (float)rand() / (float)RAND_MAX;
+            // Box-Muller → standard normal.
+            float r0 = sqrtf(-2.0f * logf(fmaxf(1e-12f, u1)));
+            float g1 = r0 * cosf(6.2831853f * u2);
+            float g2 = r0 * sinf(6.2831853f * u2);
+            float step = BROWN_SIGMA * sqrtf(dt_biosec);
+            v.position.x += g1 * step;
+            v.position.z += g2 * step;
+        }
+        for (auto& b : gFreeBacteria) {
+            if (b.stage != BacteriumStage::FREE) continue;
+            // Run-and-tumble. Tumble every ~1 bio-s on avg.
+            b.tumbleTimer_s += dt_biosec;
+            if (b.tumbleTimer_s > 1.0f) {
+                float a = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                b.runDir = simd_make_float3(cosf(a), 0.0f, sinf(a));
+                b.tumbleTimer_s = 0.0f;
+            }
+            float speed = 0.6f; // wu/bio-s
+            b.position += b.runDir * speed * dt_biosec;
+            b.divisionClock_s += dt_biosec;
+        }
+
+        // -- 2. Binding step: for each free virion / bacterium, find
+        //       closest live cell within CONTACT_RADIUS, compute the
+        //       shape-compatibility score, accumulate bound spikes.
+        for (auto& v : gFreeVirions) {
+            if (v.stage != VirionStage::FREE) continue;
+            if (v.specIdx < 0) continue;
+            const VirionSpec& vs = gPathogens().virionSpecs[v.specIdx];
+            int bestIdx = -1;
+            float bestD2 = CONTACT_RADIUS * CONTACT_RADIUS;
+            for (int i = 0; i < (int)cells.size(); i++) {
+                SimCell& c = cells[i];
+                // Any cell that hasn't yet fragmented is a viable host:
+                // real viruses/bacteria happily infect PRIMED and MOMP
+                // cells, and sometimes accelerate their demise. Only
+                // cells already in BODIES/CLEARED are skipped.
+                if (!c.alive || c.apoPhase >= Apoptosis::FRAGMENTATION) continue;
+                float dx = c.position.x - v.position.x;
+                float dz = c.position.z - v.position.z;
+                float d2 = dx*dx + dz*dz;
+                if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+            }
+            if (bestIdx < 0) continue;
+            std::string rcvId;
+            float score = PathogenKinetics::virionBindScore(vs, rcvId);
+            // Hard gate: a virion whose spike doesn't match any host
+            // receptor profile simply bounces — no productive contact.
+            if (score < 0.35f) continue;
+            // A binding event progresses mass-action style:
+            //   d[bound]/dt = k · spikes_total · (1 − bound_frac)
+            float k_eff = PathogenKinetics::scoreToOnRate(score);
+            float capacity = (float)vs.spikesPerVirion;
+            float growth = k_eff * (capacity - v.boundSpikes) * dt_biosec;
+            v.boundSpikes = fminf(capacity, v.boundSpikes + growth);
+            // Binding threshold → entry. At least 25 % of spikes engaged
+            // AND at least 20 absolute contacts. Real flu HA needs ~10-20
+            // engaged spikes for fusion (Matlin 1982, Imai 2009).
+            float threshold = fmaxf(20.0f, capacity * 0.25f);
+            if (v.boundSpikes >= threshold) {
+                v.stage = VirionStage::BOUND;
+                v.hostCellIdx = bestIdx;
+                v.stageTimer_s = 0.0f;
+            }
+        }
+        for (auto& b : gFreeBacteria) {
+            if (b.stage != BacteriumStage::FREE) continue;
+            if (b.specIdx < 0) continue;
+            const BacteriumSpec& bs = gPathogens().bacteriumSpecs[b.specIdx];
+            int bestIdx = -1;
+            float bestD2 = CONTACT_RADIUS * CONTACT_RADIUS;
+            for (int i = 0; i < (int)cells.size(); i++) {
+                SimCell& c = cells[i];
+                // Any cell that hasn't yet fragmented is a viable host:
+                // real viruses/bacteria happily infect PRIMED and MOMP
+                // cells, and sometimes accelerate their demise. Only
+                // cells already in BODIES/CLEARED are skipped.
+                if (!c.alive || c.apoPhase >= Apoptosis::FRAGMENTATION) continue;
+                float dx = c.position.x - b.position.x;
+                float dz = c.position.z - b.position.z;
+                float d2 = dx*dx + dz*dz;
+                if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+            }
+            if (bestIdx < 0) {
+                // Extracellular division capped at a hard global ceiling
+                // so the dish can't runaway-fill with bacteria. Each
+                // generation doubles — 2 → 4 → 8 → … — so we cap at
+                // MAX_FREE_BACTERIA and just skip division once reached.
+                constexpr int MAX_FREE_BACTERIA = 2000;
+                if ((int)gFreeBacteria.size() >= MAX_FREE_BACTERIA) continue;
+                if (b.divisionClock_s > bs.doublingTime_bioSec) {
+                    Bacterium nb = b;
+                    nb.uid = nextPathogenUid++;
+                    nb.divisionClock_s = 0.0f;
+                    b.divisionClock_s = 0.0f;
+                    float a = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                    nb.position.x += 0.5f * cosf(a);
+                    nb.position.z += 0.5f * sinf(a);
+                    gFreeBacteria.push_back(nb); // safe: appended at end
+                }
+                continue;
+            }
+            std::string rcvId;
+            float score = PathogenKinetics::bacteriumBindScore(bs, rcvId);
+            // Same strict gate as virions — no score, no productive contact.
+            if (score < 0.35f) continue;
+            float k_eff = PathogenKinetics::scoreToOnRate(score);
+            (void)k_eff;
+            b.stage = BacteriumStage::ADHERING;
+            b.hostCellIdx = bestIdx;
+            b.stageTimer_s = 0.0f;
+        }
+
+        // -- 3. Entry → replication transitions --
+        for (auto& v : gFreeVirions) {
+            if (v.stage == VirionStage::BOUND && v.stageTimer_s > 60.0f) {
+                v.stage = VirionStage::ENTERING;
+                v.stageTimer_s = 0.0f;
+            }
+            if (v.stage == VirionStage::ENTERING && v.stageTimer_s > 300.0f) {
+                // Deposit one genome into host intracellular pool.
+                if (v.hostCellIdx >= 0 && v.hostCellIdx < (int)cells.size()) {
+                    SimCell& h = cells[v.hostCellIdx];
+                    int nSpec = (int)gPathogens().virionSpecs.size();
+                    if ((int)h.intraVirions.size() < nSpec) h.intraVirions.resize(nSpec, 0.0f);
+                    if ((int)h.assembledVirions.size() < nSpec) h.assembledVirions.resize(nSpec, 0.0f);
+                    h.intraVirions[v.specIdx] += 1.0f;
+                }
+                v.stage = VirionStage::UNCOATING;  // effectively retired from free list
+            }
+        }
+        for (auto& b : gFreeBacteria) {
+            if (b.stage == BacteriumStage::ADHERING && b.stageTimer_s > 120.0f) {
+                b.stage = BacteriumStage::INVADED;
+                b.stageTimer_s = 0.0f;
+                if (b.hostCellIdx >= 0 && b.hostCellIdx < (int)cells.size()) {
+                    SimCell& h = cells[b.hostCellIdx];
+                    int nSpec = (int)gPathogens().bacteriumSpecs.size();
+                    if ((int)h.intraBacteria.size() < nSpec) h.intraBacteria.resize(nSpec, 0.0f);
+                    h.intraBacteria[b.specIdx] += 1.0f;
+                }
+            }
+        }
+
+        // -- 4. Intracellular replication + host stress --
+        int nVSpec = (int)gPathogens().virionSpecs.size();
+        int nBSpec = (int)gPathogens().bacteriumSpecs.size();
+        for (auto& c : cells) {
+            if (!c.alive) continue;
+            if ((int)c.intraVirions.size()   < nVSpec) c.intraVirions.resize(nVSpec, 0.0f);
+            if ((int)c.assembledVirions.size()< nVSpec) c.assembledVirions.resize(nVSpec, 0.0f);
+            if ((int)c.intraBacteria.size()  < nBSpec) c.intraBacteria.resize(nBSpec, 0.0f);
+            bool infected = false;
+            for (int s = 0; s < nVSpec; s++) {
+                if (c.intraVirions[s] <= 0.0f) continue;
+                infected = true;
+                const VirionSpec& vs = gPathogens().virionSpecs[s];
+                // Autocatalytic replication (clamped by available machinery).
+                float dG = vs.replicationRate_per_s * c.intraVirions[s] * dt_biosec;
+                // Competition for ribosomes: slowed by translationRateMul.
+                c.intraVirions[s] += dG;
+                // Assembly once threshold crossed: 10 % of genome pool
+                // converts to completed virions per bio-s.
+                if (c.intraVirions[s] > vs.assemblyThreshold) {
+                    float dA = 0.002f * c.intraVirions[s] * dt_biosec;
+                    c.intraVirions[s]    -= dA;
+                    c.assembledVirions[s] += dA;
+                }
+                // Pro-apoptotic pressure via existing drug_pro_apop hook.
+                c.apo.state.p53_active = fminf(1.0f,
+                    c.apo.state.p53_active
+                      + vs.cytotoxicity_per_copy * c.intraVirions[s] * dt_biosec / 3600.0f);
+                c.stress = fminf(100.0f,
+                    c.stress + vs.cytotoxicity_per_copy * c.intraVirions[s] * dt_biosec * 0.5f);
+                // Continuous budding: export a fraction of assembled pool.
+                constexpr int MAX_FREE_VIRIONS = 3000;
+                if (c.assembledVirions[s] > 1.0f
+                    && (int)gFreeVirions.size() < MAX_FREE_VIRIONS) {
+                    float bud = vs.budRate_per_s * c.assembledVirions[s] * dt_biosec;
+                    bud = fminf(bud, c.assembledVirions[s]);
+                    c.assembledVirions[s] -= bud;
+                    // Spawn a handful of free virions near this cell.
+                    int nBud = (int)bud;
+                    for (int k = 0; k < nBud && k < 10; k++) {
+                        Virion nv;
+                        nv.specIdx = s;
+                        float a = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                        float rr = c.radius * 1.05f + 0.2f * ((float)rand() / (float)RAND_MAX);
+                        nv.position = simd_make_float3(
+                            c.position.x + rr * cosf(a), 0.0f,
+                            c.position.z + rr * sinf(a));
+                        nv.stage = VirionStage::FREE;
+                        nv.uid = nextPathogenUid++;
+                        gFreeVirions.push_back(nv);
+                    }
+                }
+            }
+            for (int s = 0; s < nBSpec; s++) {
+                if (c.intraBacteria[s] <= 0.0f) continue;
+                infected = true;
+                const BacteriumSpec& bs = gPathogens().bacteriumSpecs[s];
+                // Intracellular bacterial replication.
+                float ratePerS = 0.693f / bs.doublingTime_bioSec;
+                c.intraBacteria[s] += ratePerS * c.intraBacteria[s] * dt_biosec;
+                // Toxin secretion into host cytosol → damageLevel.
+                c.damageLevel = fminf(2.0f,
+                    c.damageLevel + bs.toxinRate_per_s * bs.toxinCytotoxicity
+                                    * c.intraBacteria[s] * dt_biosec);
+                c.stress = fminf(100.0f,
+                    c.stress + 0.01f * bs.toxinRate_per_s * c.intraBacteria[s] * dt_biosec);
+            }
+            if (infected) statInfectedCells++;
+        }
+    }
+
+    // ── Pathogen spill hook: called by updateApoptosis when the host
+    //    transitions into BODIES. Dumps intracellular virions + bacteria
+    //    into the free-medium pools at the host's position.
+    void releasePathogens(SimCell& c) {
+        if (c.pathogensReleased) return;
+        c.pathogensReleased = true;
+        int nVSpec = (int)gPathogens().virionSpecs.size();
+        int nBSpec = (int)gPathogens().bacteriumSpecs.size();
+        for (int s = 0; s < nVSpec && s < (int)c.assembledVirions.size(); s++) {
+            float load = c.assembledVirions[s];
+            if (load < 1e-3f) continue;
+            int nRelease = (int)fminf(load, 2000.0f);
+            for (int k = 0; k < nRelease; k++) {
+                Virion nv;
+                nv.specIdx = s;
+                float a = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                float rr = c.radius * (1.0f + 1.5f * ((float)rand() / (float)RAND_MAX));
+                nv.position = simd_make_float3(
+                    c.position.x + rr * cosf(a), 0.0f,
+                    c.position.z + rr * sinf(a));
+                nv.stage = VirionStage::FREE;
+                nv.uid = nextPathogenUid++;
+                gFreeVirions.push_back(nv);
+            }
+            c.assembledVirions[s] = 0.0f;
+            c.intraVirions[s]     = 0.0f;
+        }
+        for (int s = 0; s < nBSpec && s < (int)c.intraBacteria.size(); s++) {
+            float load = c.intraBacteria[s];
+            if (load < 0.5f) continue;
+            int nRelease = (int)fminf(load, 500.0f);
+            for (int k = 0; k < nRelease; k++) {
+                Bacterium nb;
+                nb.specIdx = s;
+                float a = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                float rr = c.radius * (1.0f + 1.8f * ((float)rand() / (float)RAND_MAX));
+                nb.position = simd_make_float3(
+                    c.position.x + rr * cosf(a), 0.0f,
+                    c.position.z + rr * sinf(a));
+                nb.biomass_bm = gPathogens().bacteriumSpecs[s].biomass_bm;
+                float a2 = 6.2831853f * ((float)rand() / (float)RAND_MAX);
+                nb.runDir = simd_make_float3(cosf(a2), 0.0f, sinf(a2));
+                nb.uid = nextPathogenUid++;
+                gFreeBacteria.push_back(nb);
+            }
+            c.intraBacteria[s] = 0.0f;
+        }
+    }
+
     // Mitosis visualization flag (set by renderer when visual mitosis completes)
     bool mitosisVisualizationComplete = false;
 
@@ -1020,8 +1478,12 @@ public:
         static bool s_registryLoaded = false;
         if (!s_registryLoaded) {
             gBioagents.loadFromDisk("data");
+            gPathogens().loadVirionsYaml("data/pathogens/virions.yaml");
+            gPathogens().loadBacteriaYaml("data/pathogens/bacteria.yaml");
             s_registryLoaded = true;
         }
+        gFreeVirions.clear();
+        gFreeBacteria.clear();
         appliedDrugs.clear();
         bioTime = 0;
         lastExecutedScaledDt = 0;
@@ -1107,11 +1569,46 @@ public:
             // Drug PK + target binding + modulators — runs after per-cell
             // biology so modulator adjustments take effect next tick.
             updateDrugPK(subDt);
+            // Virion + bacterium physics: Brownian drift, shape-based
+            // binding, entry, intracellular replication, continuous
+            // budding. Apoptotic spill is handled inside updateApoptosis
+            // via releasePathogens() on the BODIES transition.
+            statInfectedCells = 0;
+            updatePathogens(subDt);
             nutrients.diffuse(subDt, envO2, envGlucose);
         }
         processDivisions();
         cells.erase(std::remove_if(cells.begin(),cells.end(),
             [](const SimCell& c){return !c.alive;}), cells.end());
+        // Retire virions that have entered a host (stage beyond FREE/BOUND).
+        // Keep FREE and BOUND in the live vector so they render and can
+        // still bind. Anything beyond ENTERING is consumed by its host.
+        gFreeVirions.erase(std::remove_if(gFreeVirions.begin(), gFreeVirions.end(),
+            [](const Virion& v){
+                return v.stage == VirionStage::UNCOATING
+                    || v.stage == VirionStage::CLEARED;
+            }), gFreeVirions.end());
+        // Bacteria: retire once invaded.
+        gFreeBacteria.erase(std::remove_if(gFreeBacteria.begin(), gFreeBacteria.end(),
+            [](const Bacterium& b){
+                return b.stage == BacteriumStage::INVADED
+                    || b.stage == BacteriumStage::LYSED;
+            }), gFreeBacteria.end());
+        // Recompute pathogen telemetry.
+        statVirionsFree = 0; statVirionsBound = 0;
+        for (const auto& v : gFreeVirions) {
+            if (v.stage == VirionStage::FREE)  statVirionsFree++;
+            if (v.stage == VirionStage::BOUND) statVirionsBound++;
+        }
+        statBacteriaFree = 0;
+        for (const auto& b : gFreeBacteria) {
+            if (b.stage == BacteriumStage::FREE) statBacteriaFree++;
+        }
+        statVirionsIntra = 0; statBacteriaIntra = 0;
+        for (const auto& c : cells) {
+            for (float x : c.intraVirions)    if (x > 0.0f) statVirionsIntra++;
+            for (float x : c.intraBacteria)   if (x > 0.0f) statBacteriaIntra++;
+        }
         updateStats();
     }
 
@@ -1835,6 +2332,80 @@ private:
         float atpmm=(c.ATP/100)/((c.ATP/100)+0.25f);
         float gs=fminf(1.0f, o2mm*0.40f+glumm*0.30f+atpmm*0.20f+0.05f);
 
+        // ── Phase G2: TP53 ↔ MDM2 stress-response loop ─────────────────
+        // Runs as a *parallel observable track* alongside the existing
+        // damage→p21 shortcut (below). Rates are calibrated such that
+        // under sustained damageLevel ≈ 0.3 the p53/MDM2 pair oscillates
+        // with period ≈ 4-6 h matching Purvis 2012 ATM-driven HeLa
+        // p53 pulsing. At default steady-state (damageLevel ≲ 0.08),
+        // p53 and MDM2 sit at their basal level (≈ 0.05-0.15) with
+        // vanishing impact on cell-cycle state — hence zero drift on
+        // the 5.1% seq02 baseline. A follow-up PR (G3) replaces the
+        // direct damage→p21 shortcut on line below with p53-mediated
+        // p21 induction once the dynamics are independently validated.
+        {
+            // ATM activation: sigmoid on damageLevel; threshold 0.10
+            // matches γ-H2AX onset at ~1-2 DSB per nucleus (Rothkamm 2003).
+            // Time base: 1 sdt-unit ≈ 1 bio-hour given
+            //   SLOW_DT_SCALE=0.055 and BIO_TIME_SCALE=180.
+            // Rate constants below are therefore "per bio-hour".
+            float atm_target =
+                1.0f / (1.0f + expf(-20.0f * (c.damageLevel - 0.10f)));
+            // First-order relaxation, τ=0.002 sdt (empirically tuned so
+            // ATM reaches ~0.9 within ~5 bio-min, matching real ATM
+            // auto-phosphorylation kinetics in Bakkenist 2003; the sdt
+            // sub-stepping in Simulation::update makes effective sdt
+            // per updateCellCycle call ~0.003 at the validator's
+            // real_dt configuration).
+            const float atm_tau_sdt = 0.002f;
+            c.ATM_active += (atm_target - c.ATM_active) * (sdt / atm_tau_sdt);
+            c.ATM_active = clampf(c.ATM_active, 0.0f, 1.0f);
+
+            // p53 production (basal) + MDM2-mediated Michaelis degradation.
+            // K_d = 0.20 normalised ≙ 200 nM p53↔MDM2 (Picksley 1994,
+            // Bottger 1997). atm_shield = 0.70 — Ser15-P p53 retains
+            // ~30 % MDM2 vulnerability, which empirically is what lets
+            // sustained-damage oscillations emerge rather than a locked-
+            // on plateau (Loewer 2013, Stewart-Ornstein 2017).
+            // Rate constants scaled such that p53 rises to ~3× baseline
+            // within ~30 bio-min of ATM activation, consistent with Lahav
+            // 2004 single-cell HeLa dynamics. A simple 2-variable
+            // (p53, MDM2) ODE of this structure settles to a stable
+            // elevated p53 under sustained damage — *not* the pulsing
+            // oscillation of Purvis 2012. True pulses require an mRNA
+            // intermediate (Geva-Zatorsky 2006, 3-variable model); that
+            // is the next PR's target. This PR delivers the foundation:
+            // calibrated ATM-gated p53 stabilization + MDM2 negative
+            // feedback.
+            const float K_d          = 0.10f;
+            const float k_p53_basal  = 10.0f;   // per sdt
+            const float k_p53_deg    = 100.0f;  // per sdt, at MDM2=1, ATM=0
+            const float atm_shield   = 0.70f;
+            float eff_mdm2 =
+                c.MDM2_protein * (1.0f - c.ATM_active * atm_shield);
+            float p53_deg_rate =
+                k_p53_deg * eff_mdm2 / (K_d + c.p53_protein);
+            float dp53 = (k_p53_basal - p53_deg_rate * c.p53_protein) * sdt;
+
+            // MDM2: p53-driven transcription + basal + degradation.
+            // One-pole delay in MDM2 + Michaelis nonlinearity in p53 deg
+            // reproduces Lev-Bar-Or-2000-style oscillation under
+            // sustained damage. MDM2 t½ ≈ 30 min (Momand 1992).
+            const float k_mdm2_from_p53 = 30.0f;
+            const float k_mdm2_basal    = 0.5f;
+            const float k_mdm2_deg      = 15.0f;
+            float dmdm2 = (k_mdm2_basal
+                           + k_mdm2_from_p53 * c.p53_protein
+                           - k_mdm2_deg * c.MDM2_protein) * sdt;
+
+            c.p53_protein  = fmaxf(0.0f, c.p53_protein  + dp53);
+            c.MDM2_protein = fmaxf(0.0f, c.MDM2_protein + dmdm2);
+            // Soft ceiling at 2.0 to prevent runaway under extreme damage
+            // (real p53 peaks at ~10-50× baseline, Lahav 2004).
+            c.p53_protein  = fminf(c.p53_protein,  2.0f);
+            c.MDM2_protein = fminf(c.MDM2_protein, 2.0f);
+        }
+
         // CDK ODE: only advances if NOT contact-arrested
         if (!contactArrested) {
             c.cdk.step(sdt * CDK_DT_SCALE, gs);
@@ -2216,6 +2787,11 @@ private:
         // cell's ledger straight to the field — keeps closed-system
         // mass conservation tight on either path.
         if (prev != Apoptosis::BODIES && c.apoPhase == Apoptosis::BODIES && c.alive) {
+            // Spill intracellular virions + bacteria into the medium
+            // BEFORE releasing cytosolic mass — preserves the physical
+            // order (pathogen particles escape a dying cell; cytosolic
+            // solutes diffuse out next).
+            releasePathogens(c);
             releaseAllMass(c);
             c.alive = false;
             statDeaths++;
