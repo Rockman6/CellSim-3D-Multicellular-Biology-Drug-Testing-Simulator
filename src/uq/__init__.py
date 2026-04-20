@@ -9,8 +9,14 @@ from .dock_mc import (
     DockingMCResult,
     monte_carlo_dock,
 )
+from .sobol import (
+    SobolResult,
+    sobol_dock,
+)
 
 __all__ = [
     "DockingMCResult",
     "monte_carlo_dock",
+    "SobolResult",
+    "sobol_dock",
 ]

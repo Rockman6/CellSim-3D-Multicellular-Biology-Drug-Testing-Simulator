@@ -54,6 +54,8 @@ dependencies:
 
   # UQ + stats (non-AI)
   - salib>=1.4                # Sobol, Morris, FAST sensitivity
+                              # (conda-forge pkg is "salib"; Python
+                              # import name is "SALib")
   - mapie>=0.8                # post-hoc conformal prediction wrapper
   - numpy>=1.26
   - scipy>=1.11
