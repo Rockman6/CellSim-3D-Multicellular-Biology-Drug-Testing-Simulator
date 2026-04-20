@@ -17,16 +17,22 @@ validators as a regression snapshot. The new top-level `src/` tree
 is scaffolded but not yet populated; each layer's source is added in
 a dedicated PR.
 
-## Campaign 1 — Atomic → Molecular Foundation (Years 1–2)
+## Campaign 1 — Atomic → Molecular Foundation (Years 1–2, non-AI)
 
-- 1.1 Chem foundation (RDKit + OpenFF + charges)          — next PR
-- 1.2 Classical MD (OpenMM + ff14SB + TIP3P)
-- 1.3 Docking + FEP (GNINA + perses)
+Per the 2026-04-20 non-AI amendment (see `MISSION.md`), Campaign 1
+is 7 layers, no ML potentials. Original Layer 1.5 (MACE-OFF23) was
+removed; the coarse-grained, UQ, and blind-validation layers
+renumbered accordingly.
+
+- 1.1 Chem foundation (RDKit + OpenFF + AM1-BCC)          — DONE
+- 1.2 Classical MD (OpenMM + ff14SB + TIP3P)              — DONE (MVP)
+- 1.3 Docking + FEP (AutoDock Vina primary + perses FEP)
 - 1.4 Quantum (xtb + PySCF)
-- 1.5 ML potential (MACE-OFF23)
-- 1.6 Coarse-grained (Martini 3)
-- 1.7 UQ scaffold (MAPIE conformal + deep ensembles)
-- 1.8 Blind-validation harness (PDBBind / CASF / PoseBusters / ChEMBL)
+- 1.5 Coarse-grained (Martini 3)
+- 1.6 UQ (Sobol + Monte-Carlo + parameter sweeps; MAPIE conformal
+  as post-hoc statistical wrapper only)
+- 1.7 Blind-validation harness (PDBBind / CASF / PoseBusters /
+  ChEMBL)
 
 Every layer ships **numeric harness + minimal viewer** in lockstep.
 See `docs/campaign1_scope.md` for exit criteria.

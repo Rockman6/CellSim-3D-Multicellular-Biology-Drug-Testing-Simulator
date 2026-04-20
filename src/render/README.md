@@ -26,14 +26,16 @@ that touched `SimCell` stays in OLD/.
 - `render/plot/` — live time-series / scatter / heatmap widgets.
 
 ## Per-layer viewer targets (bound to Campaign-1 layers)
+Per the 2026-04-20 non-AI amendment: 7 layers, no ML potential.
 - 1.1 ligand ball-and-stick with per-atom charge colouring.
 - 1.2 protein ribbon + solvent skin, RMSD gauge.
-- 1.3 receptor + docked pose overlay, ΔG bar with CI.
+- 1.3 receptor + docked pose overlay, ΔG bar with CI (AutoDock Vina
+  primary; GNINA CNN shown as labeled fast-guess only).
 - 1.4 ESP isosurface + HOMO/LUMO density.
-- 1.5 side-by-side MACE vs classical + residual heatmap.
-- 1.6 Martini bilayer + area-per-lipid live plot.
-- 1.7 calibration curve + reliability diagram.
-- 1.8 blind-bench dashboard (pass/fail tiles + r-scatter + red-team
+- 1.5 Martini bilayer + area-per-lipid live plot.
+- 1.6 sensitivity tornado plot + Sobol index bars + calibration
+  curve (SALib + MAPIE outputs).
+- 1.7 blind-bench dashboard (pass/fail tiles + r-scatter + red-team
   leaderboard).
 
 ## Exit test
