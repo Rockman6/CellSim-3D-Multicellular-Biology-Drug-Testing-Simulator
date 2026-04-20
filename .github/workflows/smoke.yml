@@ -116,6 +116,9 @@ jobs:
       - name: dock refine smoke (Layer 1.3, post-dock MM minimise)
         run: python -u tests/dock/test_refine_smoke.py
 
+      - name: dock strain smoke (Layer 1.3, UFF ensemble ratio via PoseBusters)
+        run: python -u tests/dock/test_strain_smoke.py
+
       - name: dock vina cache smoke (cache hit speed-up)
         run: python -u tests/dock/test_vina_cache.py
 
