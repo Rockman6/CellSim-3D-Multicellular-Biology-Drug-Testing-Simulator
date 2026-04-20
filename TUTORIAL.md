@@ -77,6 +77,17 @@ The shortlist has the same columns as the full CSV but filters
 out `deprioritise` and `drop` rows, so you can paste it straight
 into a wet-lab handoff meeting.
 
+You can also regenerate a shortlist from any existing CSV later
+(useful for merging several runs or re-filtering with custom
+verdicts):
+
+```bash
+./scripts/cellsim shortlist run/full.csv --out run/shortlist.csv
+# or: keep only 'follow_up' rows
+./scripts/cellsim shortlist run/full.csv --out run/tight.csv \
+    --verdicts follow_up
+```
+
 Whenever `cellsim dock` writes a CSV via `--out-csv`, it also
 writes a `<name>.triage.png` next to it — the 4-panel dashboard
 below appears automatically, no extra command needed. To
