@@ -94,9 +94,28 @@ def sample_alchemical_windows(
         Context as _Context,
         VerletIntegrator as Verlet,
         LocalEnergyMinimizer as _Min,
+        Platform,
     )
-    from openmmtools import mcmc, states
+    from openmmtools import mcmc, states, cache
     from openmmtools.alchemy import AlchemicalState
+
+    # Prefer the fastest available platform: Metal (Apple silicon
+    # OpenMM 8.2+) → OpenCL (works on Apple silicon via Metal shim,
+    # Intel, AMD, NVIDIA) → CUDA → CPU. On an M5 Max this gives a
+    # ~5-10× speedup over CPU. openmmtools' context cache uses the
+    # first platform available in its list unless we pin one.
+    _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+    _chosen_platform = None
+    for _name in _preferred:
+        try:
+            _p = Platform.getPlatformByName(_name)
+            cache.global_context_cache.platform = _p
+            _chosen_platform = _name
+            break
+        except Exception:
+            continue
+    logger.info(
+        "FEP sampling platform: %s", _chosen_platform or "default")
 
     t0 = time.time()
     schedule = _default_lambda_schedule(n_windows)
