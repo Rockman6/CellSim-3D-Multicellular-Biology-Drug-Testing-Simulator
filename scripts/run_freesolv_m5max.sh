@@ -110,25 +110,47 @@ echo ""
 ls -la "${OUT_DIR}/"
 echo ""
 
-# Bundle for transfer
+# Local verdict preview — run cellsim fep-report on the result so
+# you see PASS/FAIL/partial before WeChat'ing the tarball. Also
+# writes report.md + parity.png INTO the output dir so the tarball
+# Henry receives has the verdict baked in. Uses --yaml to auto-set
+# expected-rows so a killed-early run is flagged 'partial'.
+echo "============================================================"
+echo "Local verdict preview (cellsim fep-report)"
+echo "============================================================"
+if ./scripts/cellsim fep-report "${OUT_DIR}" \
+        --yaml benchmarks/fep/freesolv_12.yaml \
+        --out-dir "${OUT_DIR}" 2>&1 | tee -a "${OUT_DIR}/run.log"; then
+    VERDICT_EXIT=0
+else
+    VERDICT_EXIT=$?
+fi
+echo ""
+
+# Bundle for transfer — after the analyser so report.md + parity.png
+# are inside the tarball.
 TARBALL="freesolv_m5max_${STAMP}.tar.gz"
 tar czf "${TARBALL}" -C run/fep "${STAMP}/"
 echo "Created: ${TARBALL}  ($(du -h ${TARBALL} | cut -f1))"
 echo ""
 echo "Send this tarball back to Henry (WeChat / email / Google Drive /"
-echo "AirDrop). It contains the CSV, the env report, the doctor log, and"
-echo "the full stdout log — Henry will analyse locally."
+echo "AirDrop). It now contains report.md + parity.png with the verdict"
+echo "ALREADY computed — Henry just opens them to read the numbers."
 echo ""
 
-# Notify on completion (silent if terminal-notifier isn't installed)
+# Notify on completion (silent if terminal-notifier isn't installed).
+# Report-exit takes precedence over the gate's raw exit: a partial
+# run (exit 1 from --expected check) is a more useful status than
+# 'gate passed per compound present'.
+FINAL_EXIT=${VERDICT_EXIT:-${EXIT_CODE}}
 if command -v terminal-notifier >/dev/null 2>&1; then
-    STATUS=$([ $EXIT_CODE -eq 0 ] && echo "PASS" || echo "FAIL")
+    STATUS=$([ $FINAL_EXIT -eq 0 ] && echo "PASS" || echo "FAIL")
     terminal-notifier \
         -title "CellSim FreeSolv FEP" \
-        -subtitle "${STATUS} (exit ${EXIT_CODE})" \
+        -subtitle "${STATUS} (exit ${FINAL_EXIT})" \
         -message "Tarball ready: ${TARBALL}. Send it to Henry." \
         -sound Glass \
         -activate com.apple.Terminal 2>/dev/null || true
 fi
 
-exit ${EXIT_CODE}
+exit ${FINAL_EXIT}

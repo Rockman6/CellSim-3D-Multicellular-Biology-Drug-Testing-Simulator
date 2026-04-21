@@ -94,7 +94,12 @@ The script will:
    - = ~2.2 ns simulated MD per compound × 12 = 26 ns total
 5. Write everything to `run/fep/<timestamp>/` and bundle into
    `freesolv_m5max_<timestamp>.tar.gz`.
-6. Fire a macOS notification ("CellSim FreeSolv FEP: PASS/FAIL")
+6. **Auto-run `cellsim fep-report`** on the result — writes
+   `report.md` + `parity.png` into the output dir and prints the
+   PASS/FAIL verdict on your terminal *before* you send. So you
+   see immediately whether the gate cleared; Henry gets the
+   verdict pre-computed inside the tarball.
+7. Fire a macOS notification ("CellSim FreeSolv FEP: PASS/FAIL")
    when complete.
 
 Expected wall time:
@@ -131,6 +136,9 @@ The tarball contains:
 | `doctor.log` | cellsim doctor output | Catches env drift between machines |
 | `run.log` | Full pipeline stdout | Contains per-compound ΔG, per-window GHMC acceptance, wall times, any NaN warnings |
 | `freesolv_results.csv` | 12-row CSV of predictions | The numbers Henry analyses |
+| `report.md` | Auto-generated PASS/FAIL verdict + per-compound table | Henry can read it in a text editor; doesn't need to re-run the analyser |
+| `parity.png` | Predicted vs experimental scatter w/ ±1.5 kcal/mol gate band | Visual sanity for the professor debrief |
+| `table.csv` | Normalised CSV (adds abs_residual, sign_correct, flags) | Consumable by the Campaign-2 prior-emitter |
 
 ## What Henry specifically wants in the CSV
 
