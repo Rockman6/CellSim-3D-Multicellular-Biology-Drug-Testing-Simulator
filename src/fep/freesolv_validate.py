@@ -1,0 +1,211 @@
+"""Milestone A accuracy gate: hydration ΔG vs FreeSolv.
+
+Runs compute_hydration_dg on every compound in a FreeSolv YAML,
+compares to published experimental values, and reports MAE,
+Pearson r, Spearman ρ. Gates on MAE ≤ 1.5 kcal/mol.
+
+At production parameters (≥ 50 ps per window × 11 windows × 2
+legs per compound) a 12-compound run takes ~hours on a GPU;
+this is deliberately a workflow_dispatch / manual target, not
+a PR gate.
+
+Usage:
+    cellsim fep-freesolv benchmarks/fep/freesolv_12.yaml \\
+        --production-steps 25000 --n-windows 11 \\
+        --out-csv /tmp/freesolv/results.csv
+
+Set --production-steps 200 for a quick end-to-end sanity pass
+(~20 s per compound × 12 = ~5 min, MAE will be large —
+undersampled — but ranking is informative).
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import logging
+import sys
+import time
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FreeSolvPoint:
+    name: str
+    smiles: str
+    dG_expt_kcalmol: float
+    dG_pred_kcalmol: Optional[float] = None
+    uncertainty_kcalmol: Optional[float] = None
+    residual_kcalmol: Optional[float] = None
+    wall_seconds: Optional[float] = None
+    ok: bool = False
+    reason: str = ""
+
+
+@dataclass
+class FreeSolvResult:
+    yaml_path: str
+    entries: list = field(default_factory=list)
+    n_ok: int = 0
+    n_total: int = 0
+    mae_kcalmol: Optional[float] = None
+    rmse_kcalmol: Optional[float] = None
+    pearson_r: Optional[float] = None
+    spearman_rho: Optional[float] = None
+    wall_seconds: Optional[float] = None
+
+    def summary(self) -> str:
+        lines = [
+            f"[FreeSolv validation]  {self.yaml_path}",
+            f"  n = {self.n_total}  ok = {self.n_ok}  "
+            f"wall = {(self.wall_seconds or 0):.1f} s",
+        ]
+        if self.mae_kcalmol is not None:
+            gate = "✓ PASS" if self.mae_kcalmol <= 1.5 else "✗ FAIL"
+            lines.append(
+                f"  MAE = {self.mae_kcalmol:.2f} kcal/mol  "
+                f"(Milestone A gate ≤ 1.5 → {gate})")
+        if self.rmse_kcalmol is not None:
+            lines.append(
+                f"  RMSE = {self.rmse_kcalmol:.2f} kcal/mol")
+        if self.pearson_r is not None:
+            lines.append(
+                f"  Pearson r = {self.pearson_r:+.3f}")
+        if self.spearman_rho is not None:
+            lines.append(
+                f"  Spearman ρ = {self.spearman_rho:+.3f}")
+        for p in self.entries:
+            if not p.ok:
+                lines.append(f"  ! {p.name:<18s} FAIL: {p.reason}")
+            else:
+                lines.append(
+                    f"    {p.name:<18s}  expt={p.dG_expt_kcalmol:+.2f}  "
+                    f"pred={p.dG_pred_kcalmol:+.2f}  "
+                    f"resid={p.residual_kcalmol:+.2f}  "
+                    f"({p.wall_seconds:.1f} s)")
+        return "\n".join(lines)
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def run_freesolv_validation(
+    yaml_path: str | Path,
+    *,
+    n_windows: int = 11,
+    n_production_steps: int = 25000,
+    n_equilibration_steps: int = 2500,
+    sample_stride: int = 250,
+    seed: int = 1,
+) -> FreeSolvResult:
+    """Run the FreeSolv subset and compute MAE + correlations."""
+    import yaml as pyyaml
+    import numpy as np
+
+    from src.fep import compute_hydration_dg
+
+    data = pyyaml.safe_load(Path(yaml_path).read_text())
+    result = FreeSolvResult(yaml_path=str(yaml_path))
+    t0 = time.time()
+
+    for entry in data.get("entries", []):
+        p = FreeSolvPoint(
+            name=entry["name"],
+            smiles=entry["smiles"],
+            dG_expt_kcalmol=float(entry["dG_hydration_kcalmol"]))
+        print(f"[freesolv] {p.name}  {p.smiles}", flush=True)
+        ts = time.time()
+        r = compute_hydration_dg(
+            p.smiles,
+            n_windows=n_windows,
+            n_equilibration_steps=n_equilibration_steps,
+            n_production_steps=n_production_steps,
+            sample_stride=sample_stride, seed=seed)
+        p.wall_seconds = time.time() - ts
+        if r.ok:
+            p.dG_pred_kcalmol = r.dG_hydration_kcalmol
+            p.uncertainty_kcalmol = r.uncertainty_kcalmol
+            p.residual_kcalmol = (
+                r.dG_hydration_kcalmol - p.dG_expt_kcalmol)
+            p.ok = True
+            print(f"  pred = {p.dG_pred_kcalmol:+.2f}  "
+                  f"expt = {p.dG_expt_kcalmol:+.2f}  "
+                  f"resid = {p.residual_kcalmol:+.2f}",
+                  flush=True)
+        else:
+            p.reason = r.reason
+            print(f"  FAIL: {r.reason}", flush=True)
+        result.entries.append(p)
+
+    result.n_total = len(result.entries)
+    ok = [p for p in result.entries if p.ok]
+    result.n_ok = len(ok)
+    if len(ok) >= 2:
+        expts = np.array([p.dG_expt_kcalmol for p in ok])
+        preds = np.array([p.dG_pred_kcalmol for p in ok])
+        resids = preds - expts
+        result.mae_kcalmol = float(np.mean(np.abs(resids)))
+        result.rmse_kcalmol = float(np.sqrt(np.mean(resids ** 2)))
+        if len(ok) >= 3 and expts.std() > 0 and preds.std() > 0:
+            result.pearson_r = float(
+                np.corrcoef(preds, expts)[0, 1])
+            rx = np.argsort(np.argsort(preds))
+            ry = np.argsort(np.argsort(expts))
+            if rx.std() > 0 and ry.std() > 0:
+                result.spearman_rho = float(
+                    np.corrcoef(rx, ry)[0, 1])
+
+    result.wall_seconds = time.time() - t0
+    return result
+
+
+def main(argv: Optional[list] = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("yaml", type=Path,
+                    help="FreeSolv YAML (e.g. benchmarks/fep/"
+                         "freesolv_12.yaml)")
+    ap.add_argument("--n-windows", type=int, default=11)
+    ap.add_argument("--production-steps", type=int, default=25000,
+                    help="Langevin steps per λ window (2 fs step; "
+                         "25000 = 50 ps production at default "
+                         "timestep)")
+    ap.add_argument("--equilibration-steps", type=int, default=2500)
+    ap.add_argument("--sample-stride", type=int, default=250)
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--out-csv", type=Path, default=None,
+                    help="write per-compound results as CSV")
+    args = ap.parse_args(argv)
+
+    r = run_freesolv_validation(
+        args.yaml,
+        n_windows=args.n_windows,
+        n_production_steps=args.production_steps,
+        n_equilibration_steps=args.equilibration_steps,
+        sample_stride=args.sample_stride, seed=args.seed)
+    print()
+    print(r.summary())
+    if args.out_csv:
+        args.out_csv.parent.mkdir(parents=True, exist_ok=True)
+        cols = ["name", "smiles", "dG_expt_kcalmol",
+                "dG_pred_kcalmol", "uncertainty_kcalmol",
+                "residual_kcalmol", "wall_seconds", "ok", "reason"]
+        with args.out_csv.open(
+                "w", newline="", encoding="utf-8-sig") as fo:
+            w = csv.DictWriter(
+                fo, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            for p in r.entries:
+                w.writerow({k: getattr(p, k, "") for k in cols})
+        print(f"\nwrote {args.out_csv}")
+
+    if r.mae_kcalmol is not None and r.mae_kcalmol <= 1.5:
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
