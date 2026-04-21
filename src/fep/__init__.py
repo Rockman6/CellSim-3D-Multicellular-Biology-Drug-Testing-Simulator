@@ -480,6 +480,13 @@ def compute_hydration_dg(
     return result
 
 
+from src.fep.binding import (
+    BindingDGResult,
+    RelativeBindingDDGResult,
+    compute_absolute_binding_dg,
+    compute_relative_binding_ddg,
+)
+
 __all__ = [
     "alchemical_state_smoke",
     "FEPSmokeResult",
@@ -487,6 +494,10 @@ __all__ = [
     "HydrationFEPResult",
     "compute_hydration_dg",
     "HydrationDGResult",
+    "compute_absolute_binding_dg",
+    "compute_relative_binding_ddg",
+    "BindingDGResult",
+    "RelativeBindingDDGResult",
 ]
 
 
