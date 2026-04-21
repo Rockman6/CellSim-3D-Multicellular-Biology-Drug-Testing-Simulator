@@ -318,6 +318,7 @@ if __name__ == "__main__":
             else:
                 receptors.append(parts[0])
     else:
+        from src.dock.receptor_resolve import resolve_receptor
         for item in args.receptors.split(","):
             item = item.strip()
             if not item:
@@ -325,9 +326,10 @@ if __name__ == "__main__":
             if "=" in item:
                 # name=path syntax
                 name, path = item.split("=", 1)
-                receptors.append((name.strip(), path.strip()))
+                receptors.append(
+                    (name.strip(), resolve_receptor(path.strip())))
             else:
-                receptors.append(item)
+                receptors.append(resolve_receptor(item))
 
     cache = None
     if args.cache:

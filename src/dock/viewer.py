@@ -287,6 +287,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--save", help="save PNG (no window)")
     args = ap.parse_args(argv)
 
+    from src.dock.receptor_resolve import resolve_receptor
+    args.receptor = resolve_receptor(args.receptor)
+
     center = tuple(float(x) for x in args.center.split(","))
     box = tuple(float(x) for x in args.box.split(","))
 
