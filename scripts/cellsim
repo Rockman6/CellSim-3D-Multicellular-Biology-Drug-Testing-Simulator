@@ -14,6 +14,21 @@ set -euo pipefail
 _cellsim_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${_cellsim_repo}"
 
+# Preflight: friendly error if the conda env isn't active. Python
+# must be in PATH for every subcommand below; without it we'd fail
+# with a cryptic 'python: command not found' line 140-ish.
+if ! command -v python >/dev/null 2>&1; then
+    echo "cellsim: 'python' not in PATH." >&2
+    echo "" >&2
+    echo "  Did you activate the env? Try:" >&2
+    echo "    conda activate cellsim" >&2
+    echo "" >&2
+    echo "  If you don't have the env yet:" >&2
+    echo "    mamba env create -f environment.yml" >&2
+    echo "" >&2
+    exit 2
+fi
+
 _usage() {
     cat <<USAGE
 usage: cellsim <subcommand> [args...]
