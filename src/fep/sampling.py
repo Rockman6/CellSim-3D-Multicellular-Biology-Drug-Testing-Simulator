@@ -1,17 +1,22 @@
 """Alchemical MD sampling + MBAR for Layer 1.3 FEP.
 
-Minimal non-AI FEP engine: run short Langevin MD at each λ state,
-collect reduced potentials on a common grid, and BAR/MBAR-combine
-into a free-energy difference.
+Uses the canonical openmmtools MCMC pattern:
 
-No replica exchange, no REST2, no neural surrogate — this is the
-baseline that every non-AI FEP pipeline shares. Accuracy is set
-by (n_windows, n_steps_per_window); neither parameter affects the
-shape of the code.
+  CompoundThermodynamicState per λ (ThermodynamicState ∘
+  AlchemicalState) → LangevinDynamicsMove.apply(state,
+  sampler_state) runs MD → SamplerState.reduced_potential across
+  compound states populates the u_kn matrix → pymbar.MBAR.
 
-Entry points:
-  sample_alchemical_windows(...)  → u_kn matrix + N_k
-  estimate_free_energy(u_kn, N_k) → (ΔG_kcalmol, dΔG_kcalmol)
+This replaces the hand-rolled (one Context, swap λ in-place,
+save/restore velocities) pattern that was intermittent-NaN
+on polar / aromatic solvated systems at smoke parameters —
+the MCMC-move abstraction reassigns velocities from the
+Maxwell-Boltzmann distribution at the start of each move,
+decoupling per-λ dynamics from the cross-λ energy-evaluation
+loop.
+
+No replica exchange, no REST2 — this is the non-AI baseline
+every openmmtools-based FEP pipeline shares.
 """
 
 from __future__ import annotations
@@ -48,13 +53,6 @@ class AlchemicalSamplingResult:
 
 
 def _default_lambda_schedule(n_windows: int) -> list[float]:
-    """Linear schedule in λ ∈ [0, 1]. Turns both electrostatics
-    and sterics off simultaneously. Real production FEP decouples
-    electrostatics first (λ_elec 1→0) then sterics (λ_ster 1→0)
-    to avoid the Coulomb singularity; we collapse to one λ for
-    simplicity since the ligand is small and softcore handles the
-    sterics endpoint — good enough for hydration of neutral
-    drug-like molecules."""
     if n_windows < 2:
         n_windows = 2
     return [i / (n_windows - 1) for i in range(n_windows)]
@@ -62,7 +60,7 @@ def _default_lambda_schedule(n_windows: int) -> list[float]:
 
 def sample_alchemical_windows(
     alch_system,
-    topology,
+    topology,            # kept for API compat; unused
     positions,
     *,
     n_windows: int = 11,
@@ -74,23 +72,12 @@ def sample_alchemical_windows(
     seed: int = 1,
     sample_stride: int = 100,
 ) -> AlchemicalSamplingResult:
-    """Run Langevin MD at each λ; return the u_kn matrix for MBAR.
-
-    The returned result carries ΔG already computed from MBAR.
-    For a FreeSolv-grade absolute hydration number set
-    n_production_steps ≥ 50_000 (=100 ps at 2 fs) and
-    n_windows = 12. Defaults here are a fast-smoke tuning
-    (~10 s/compound) that verifies the pipeline runs end-to-end.
-    """
+    """Run Langevin MD at each λ via openmmtools MCMC moves;
+    return ΔG between λ=0 and λ=1 estimated via MBAR."""
     import numpy as np
-    from openmm import (
-        LocalEnergyMinimizer,
-        unit as ommunit,
-        Context,
-        Platform,
-    )
+    from openmm import unit as ommunit
+    from openmmtools import mcmc, states
     from openmmtools.alchemy import AlchemicalState
-    from openmmtools.integrators import LangevinIntegrator
 
     t0 = time.time()
     schedule = _default_lambda_schedule(n_windows)
@@ -98,114 +85,78 @@ def sample_alchemical_windows(
         ok=False, n_windows=n_windows,
         lambda_schedule=schedule)
 
-    # Requires the alchemical region to have been built with
-    # name='' (default) so the lambda_sterics / lambda_electrostatics
-    # globals are unsuffixed. src/fep/__init__.py does this already.
+    # Build the base ThermodynamicState once; then wrap it with
+    # an AlchemicalState per λ via CompoundThermodynamicState.
     try:
-        alch_state = AlchemicalState.from_system(alch_system)
+        thermo = states.ThermodynamicState(
+            system=alch_system,
+            temperature=temperature_K * ommunit.kelvin)
+        alch_state_template = AlchemicalState.from_system(
+            alch_system)
     except Exception as e:
         result.reason = (
-            f"AlchemicalState.from_system failed: "
+            f"ThermodynamicState / AlchemicalState init failed: "
             f"{str(e)[:200]}")
         return result
 
-    # Pick the fastest platform we can get without caring which —
-    # Reference is always present, CUDA/OpenCL/Metal speeds are
-    # a bonus. This is a small system (dozens to hundreds of
-    # atoms), so we don't need a GPU for the pipeline smoke.
-    try:
-        platform = Platform.getPlatformByName("CPU")
-    except Exception:
-        platform = None
+    compound_states = []
+    for lam in schedule:
+        alch = AlchemicalState(
+            lambda_electrostatics=lam, lambda_sterics=lam)
+        compound_states.append(
+            states.CompoundThermodynamicState(
+                thermodynamic_state=states.ThermodynamicState(
+                    system=alch_system,
+                    temperature=temperature_K * ommunit.kelvin),
+                composable_states=[alch]))
 
-    T = temperature_K * ommunit.kelvin
-    # openmmtools.integrators.LangevinIntegrator with the default
-    # 'V R O R V' splitting is the canonical choice for
-    # alchemical sampling (this is what perses, yank, and the
-    # openmmtools MCMC drivers use internally). It's more
-    # robust to repeated apply_to_context velocity perturbations
-    # than openmm's native LangevinMiddleIntegrator — the latter
-    # NaNs on solvated systems when the eval-at-each-λ inner
-    # loop happens between production steps.
-    integrator = LangevinIntegrator(
-        temperature=T,
-        collision_rate=friction_ps / ommunit.picosecond,
-        timestep=timestep_fs * ommunit.femtosecond,
-        splitting="V R O R V",
-        constraint_tolerance=1e-08)
-    integrator.setRandomNumberSeed(int(seed))
-
-    ctx = Context(alch_system, integrator, platform) \
-        if platform else Context(alch_system, integrator)
-    ctx.setPositions(positions)
-
-    kT = (0.0019872041 * temperature_K)  # kcal/mol (R*T at T_K)
+    # Initial sampler state.
+    sampler_state = states.SamplerState(
+        positions=positions,
+        box_vectors=(
+            alch_system.getDefaultPeriodicBoxVectors()
+            if alch_system.usesPeriodicBoundaryConditions()
+            else None))
 
     n_samples_per = max(1, n_production_steps // sample_stride)
     n_states = n_windows
     u_kn = np.zeros((n_states, n_states * n_samples_per))
     N_k = np.array([n_samples_per] * n_states)
 
+    # LangevinDynamicsMove.apply creates a fresh context each
+    # call (that's the whole point — no context reuse, no stale
+    # integrator state, no NaN from swap-induced kicks).
+    equil_move = mcmc.LangevinDynamicsMove(
+        timestep=timestep_fs * ommunit.femtosecond,
+        collision_rate=friction_ps / ommunit.picosecond,
+        n_steps=n_equilibration_steps,
+        reassign_velocities=True)
+    prod_move = mcmc.LangevinDynamicsMove(
+        timestep=timestep_fs * ommunit.femtosecond,
+        collision_rate=friction_ps / ommunit.picosecond,
+        n_steps=sample_stride,
+        reassign_velocities=False)
+
     col = 0
     for k, lam in enumerate(schedule):
-        # Update both electrostatics and sterics to same λ.
-        alch_state.lambda_electrostatics = lam
-        alch_state.lambda_sterics = lam
-        alch_state.apply_to_context(ctx)
-
-        # Minimise after each λ change: packmol placement +
-        # alchemical coupling together produce close contacts
-        # that send Langevin to NaN on the first integrator
-        # step. Tight tolerance + many iterations is needed for
-        # solvated systems with polar/aromatic solutes.
-        try:
-            LocalEnergyMinimizer.minimize(
-                ctx, tolerance=1.0, maxIterations=2000)
-        except Exception as e:
-            logger.debug(
-                "minimisation skipped at λ=%.2f: %s", lam, e)
-
-        # Equilibrate.
-        integrator.step(n_equilibration_steps)
-
-        # Production: at each stride, evaluate the reduced
-        # potential at EVERY λ state (to populate u_kn).
+        comp_state = compound_states[k]
+        # Equilibrate at this λ. reassign_velocities=True at
+        # the start of each window decouples windows.
+        equil_move.apply(comp_state, sampler_state)
+        # Production + cross-λ energy evaluation.
         for _ in range(n_samples_per):
-            integrator.step(sample_stride)
-            # Snapshot positions AND velocities into cheap
-            # numpy copies; evaluate the reduced potential at
-            # every target λ by temporarily mutating the
-            # context, then fully restore the production state
-            # (λ, positions, velocities) before the next MD
-            # step. The velocity restore is load-bearing: without
-            # it the LangevinMiddleIntegrator's internal velocity
-            # cache goes stale against the λ swaps and the next
-            # integrator.step() NaNs out on solvated systems.
-            snap = ctx.getState(
-                getPositions=True, getVelocities=True)
-            pos = snap.getPositions(asNumpy=True)
-            vel = snap.getVelocities(asNumpy=True)
-
-            for n, lam_n in enumerate(schedule):
-                alch_state.lambda_electrostatics = lam_n
-                alch_state.lambda_sterics = lam_n
-                alch_state.apply_to_context(ctx)
-                U = ctx.getState(
-                    getEnergy=True
-                ).getPotentialEnergy().value_in_unit(
-                    ommunit.kilocalorie_per_mole)
-                u_kn[n, col] = U / kT
-            # DO NOT setPositions on every iteration — the
-            # positions haven't moved, only λ changed. Restore
-            # the production λ + velocities for the next step.
-            alch_state.lambda_electrostatics = lam
-            alch_state.lambda_sterics = lam
-            alch_state.apply_to_context(ctx)
-            ctx.setVelocities(vel)
+            prod_move.apply(comp_state, sampler_state)
+            # Compute reduced potential at every target λ.
+            # SamplerState.reduced_potential handles context
+            # creation + energy eval; no state scrambling.
+            for n in range(n_states):
+                u = compound_states[n].reduced_potential(
+                    sampler_state)
+                u_kn[n, col] = u
             col += 1
 
-    # Free-energy estimate via MBAR.
     dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
+    kT = 0.0019872041 * temperature_K
     result.ok = True
     result.n_samples_per_window = n_samples_per
     result.dG_kcalmol = dG_kT * kT
@@ -215,22 +166,15 @@ def sample_alchemical_windows(
 
 
 def estimate_free_energy(u_kn, N_k) -> tuple[float, float]:
-    """Run MBAR on a (K × total_samples) reduced-potential matrix
-    and return (ΔG_λ=0→λ=1, uncertainty) in kT units."""
+    """Run MBAR and return (ΔG_λ=0→λ=1, uncertainty) in kT."""
     from pymbar import MBAR
 
     mbar = MBAR(u_kn, N_k)
     try:
-        # pymbar 4 API: compute_free_energy_differences returns
-        # dict with 'Delta_f' (matrix) and 'dDelta_f' keys.
         r = mbar.compute_free_energy_differences()
         Delta_f = r["Delta_f"]
         dDelta_f = r["dDelta_f"]
     except AttributeError:
         Delta_f, dDelta_f = mbar.getFreeEnergyDifferences()
-    # ΔG from state 0 (λ=0 = decoupled) to state K-1 (λ=1 = fully
-    # interacting). Sign convention: we report ΔG(decouple) =
-    # G(λ=0) − G(λ=1) = Delta_f[K-1, 0] which is positive when
-    # the interacting state is more stable.
     K = len(N_k)
     return float(Delta_f[K - 1, 0]), float(dDelta_f[K - 1, 0])
