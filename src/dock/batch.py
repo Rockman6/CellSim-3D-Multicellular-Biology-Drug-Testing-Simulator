@@ -89,6 +89,12 @@ class BatchConfig:
     export_poses_dir: Optional[str] = None  # if set, per-compound
                                             # SDF + PDB files of all
                                             # poses get written here
+    export_shortlist_only: bool = False     # if True, export only
+                                            # compounds with triage
+                                            # ∈ {follow_up, review}.
+                                            # Prevents the export dir
+                                            # from being flooded with
+                                            # drops on a large screen.
     run_strain: bool = True           # post-dock UFF-ensemble strain
                                       # diagnostic on top-pose via
                                       # src.dock.strain. Surfaces
@@ -340,20 +346,9 @@ def _worker(task: tuple) -> dict:
             except Exception as e:
                 logger.debug("PoseBusters failed for %s: %s", name, e)
 
-        # Optional per-compound pose export (SDF + PDB).
-        if r.ok and cfg.export_poses_dir:
-            try:
-                from src.dock import export_poses_sdf, export_poses_pdb
-                export_dir = Path(cfg.export_poses_dir)
-                export_dir.mkdir(parents=True, exist_ok=True)
-                safe_name = "".join(c if c.isalnum() or c in "-_."
-                                     else "_" for c in name)
-                sdf_path = export_dir / f"{safe_name}.sdf"
-                pdb_path = export_dir / f"{safe_name}.pdb"
-                export_poses_sdf(r, sdf_path)
-                export_poses_pdb(r, pdb_path)
-            except Exception as e:
-                logger.debug("pose export failed for %s: %s", name, e)
+        # NOTE: pose export is deferred until after the triage
+        # verdict is computed (see below), so --export-shortlist-only
+        # can gate on the verdict.
     except Exception as e:
         logger.exception("docking crashed on %s", name)
         return dict(name=name, smiles=smiles, ok=False,
@@ -476,6 +471,28 @@ def _worker(task: tuple) -> dict:
     call, why = _triage_call(record)
     record["triage"] = call
     record["triage_reason"] = why
+
+    # Post-triage pose export. Deferred from earlier so the
+    # --export-shortlist-only gate has access to the verdict.
+    if r.ok and cfg.export_poses_dir:
+        gate = (call in ("follow_up", "review")
+                if cfg.export_shortlist_only else True)
+        if gate:
+            try:
+                from src.dock import (
+                    export_poses_sdf, export_poses_pdb)
+                export_dir = Path(cfg.export_poses_dir)
+                export_dir.mkdir(parents=True, exist_ok=True)
+                safe_name = "".join(
+                    c if c.isalnum() or c in "-_." else "_"
+                    for c in name)
+                sdf_path = export_dir / f"{safe_name}.sdf"
+                pdb_path = export_dir / f"{safe_name}.pdb"
+                export_poses_sdf(r, sdf_path)
+                export_poses_pdb(r, pdb_path)
+            except Exception as e:
+                logger.debug(
+                    "pose export failed for %s: %s", name, e)
     return record
 
 
@@ -721,6 +738,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="per-compound SDF + PDB files of all poses "
                          "written here. Open in PyMOL / ChimeraX / "
                          "any SDF viewer.")
+    ap.add_argument("--export-shortlist-only", action="store_true",
+                    help="when exporting poses, skip compounds "
+                         "whose triage verdict isn't follow_up "
+                         "or review. Keeps the export directory "
+                         "focused on the hand-to-wet-lab subset "
+                         "rather than flooding it with N SDFs "
+                         "for dropped compounds.")
     ap.add_argument("--no-strain", action="store_true",
                     help="skip the UFF-ensemble ligand-strain check "
                          "(default: on). Strain flags Vina poses "
@@ -801,6 +825,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         refine_poses=args.refine_poses,
         cache_path=args.cache,
         export_poses_dir=args.export_poses_dir,
+        export_shortlist_only=args.export_shortlist_only,
         run_strain=not args.no_strain,
         strain_ensemble_n=args.strain_ensemble,
         strain_gate=not args.no_strain_gate,
