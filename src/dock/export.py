@@ -63,6 +63,7 @@ def export_poses_sdf(
     *,
     include_properties: bool = True,
     top_k: Optional[int] = None,
+    extra_props: Optional[dict] = None,
 ) -> int:
     """Write a multi-pose SDF.
 
@@ -75,6 +76,12 @@ def export_poses_sdf(
         crystal_rmsd_A (if known), pocket_ok, geometry_ok,
         pb_all_ok, seed, exhaustiveness, receptor_hash,
         ligand_inchi_key, cellsim_provenance.
+
+    `extra_props` is an optional dict of additional SDF properties
+    to attach to every pose (same value on each pose block). Used
+    by src.dock.batch to carry the triage verdict + strain band
+    into the SDF so biologists opening the file in PyMOL /
+    ChimeraX see the pose-level wet-lab decision context.
     """
     try:
         from rdkit import Chem
@@ -133,6 +140,11 @@ def export_poses_sdf(
             mol.SetProp("cellsim_provenance",
                          f"CellSim/{result.exhaustiveness}/"
                          f"seed={result.seed}")
+            if extra_props:
+                for k, v in extra_props.items():
+                    if v is None or v == "":
+                        continue
+                    mol.SetProp(str(k), str(v))
         w.write(mol)
         written += 1
     w.close()

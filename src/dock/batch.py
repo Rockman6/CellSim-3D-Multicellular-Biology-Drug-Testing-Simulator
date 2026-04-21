@@ -488,7 +488,16 @@ def _worker(task: tuple) -> dict:
                     for c in name)
                 sdf_path = export_dir / f"{safe_name}.sdf"
                 pdb_path = export_dir / f"{safe_name}.pdb"
-                export_poses_sdf(r, sdf_path)
+                # Attach triage context to every pose so a
+                # biologist opening the SDF in PyMOL / ChimeraX
+                # sees the wet-lab decision alongside the pose.
+                extra = {
+                    "triage": call,
+                    "triage_reason": why,
+                    "strain_band": record.get("strain_band"),
+                    "strain_ratio": record.get("strain_ratio"),
+                }
+                export_poses_sdf(r, sdf_path, extra_props=extra)
                 export_poses_pdb(r, pdb_path)
             except Exception as e:
                 logger.debug(
