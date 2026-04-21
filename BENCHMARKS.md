@@ -416,36 +416,46 @@ vs FreeSolv's 1.5 kcal/mol because protein FEP carries additional
 error sources (conformational sampling, restraint selection,
 pKa).
 
-### Known Phase-2 issue: Interchange parametrise on streptavidin
+### Known Phase-2 issue: Interchange parametrise wall
 
-The scaffold builder runs cleanly on small proteins
-(ubiquitin + methane: 14 244 atoms, 16.7 s CPU). On streptavidin
-(1 stp, 901 protein atoms) it balloons to 1.5 GB RAM within 80 s
-and doesn't finish in 30 min — even with a methane probe ligand
-and 0.6 nm padding. The issue is **not** ligand-specific (methane
-and biotin hit the same wall) and **not** tetramer-size (1stp is
-chain A, a monomer).
+| Probe (receptor + tiny ligand, 0.6-0.8 nm padding) | Result |
+|---|---|
+| 1ubq (ubiquitin, 1 231 atoms) + methane          | 16.7 s, 14 244-atom complex, PASS |
+| 1stp (streptavidin, 901 atoms, monomer) + methane | 1.5 GB RSS at 80 s, no output at 30 min |
+| 1stp + biotin                                    | 2.0 GB RSS at 30 min, no output |
+| 1m17 (EGFR kinase, 2 511 atoms) + 4-anilinoquinaz | 1.5 GB RSS at 68 s, no output, killed |
 
-Hypothesis: `openff.interchange.Interchange.from_smirnoff` on
-`openff-2.1.0 + ff14sb_off_impropers_0.0.4 + tip3p` is generating
-pathologically many intermediate terms on a mid-size protein.
+The scaffold builder runs cleanly on ubiquitin. Every other
+receptor probed explodes to 1.5+ GB within 1-2 min and never
+emits output. The issue is **not** ligand-specific (methane and
+biotin hit the same wall), **not** tetramer-size (1stp is a
+monomer), and **not** atom count alone (1stp has fewer atoms
+than 1ubq). EGFR confirms it's a generic mid-protein failure in
+`openff.interchange.Interchange.from_smirnoff` with the SMIRNOFF
+`openff-2.1.0 + ff14sb_off_impropers_0.0.4 + tip3p` stack.
+
+Hypothesis: the ff14SB SMIRNOFF port's SMIRKS patterns generate
+O(N²) intermediate bonded-term tuples on non-trivial topologies.
 The pure-SMIRNOFF path was chosen for Milestone B Phase-1 to keep
-parameter provenance identical to the hydration leg, but for real
-Phase-2 production we may need to switch to OpenMM's classical
-`ForceField('amber14-all.xml', 'tip3p.xml')` combined with
-`openmmforcefields.generators.SMIRNOFFTemplateGenerator` for the
-small-molecule piece. That adds one conda dep
-(`openmmforcefields`) and keeps the ligand AM1-BCC/Sage
-parameters but uses the non-SMIRNOFF AMBER path for the protein.
+parameter provenance identical to the hydration leg, but is
+clearly unsuitable for real proteins.
 
-Work item for Milestone B Phase-2 kickoff:
-1. Profile Interchange on 1 stp to confirm the bottleneck.
-2. If pure-SMIRNOFF is structurally slow, add
-   `openmmforcefields` and rewrite
-   `_build_complex_alchemical_system` to the hybrid path.
-3. Re-run `cellsim fep-binding bench binding_streptavidin.yaml`
-   and confirm <2 min per compound scaffold, <30 min per
-   compound sampled on GPU.
+Phase-2 kickoff is now a hard blocker on Milestone B: the fix is
+required before any sampled binding FEP can run.
+
+Fix plan:
+1. Add `openmmforcefields` to environment.yml.
+2. Rewrite `_build_complex_alchemical_system` to use OpenMM's
+   classical `ForceField('amber14-all.xml', 'tip3p.xml')` for the
+   protein + solvent, combined with
+   `openmmforcefields.generators.SMIRNOFFTemplateGenerator` as a
+   residue-template generator for the OpenFF-parametrised ligand.
+   Preserves Sage + AM1-BCC on the ligand; uses the fast native
+   AMBER path on the protein.
+3. Re-run the EGFR probe. Target: < 2 min per compound for scaffold
+   build, < 30 min per compound sampled on GPU.
+4. Re-run `cellsim fep-binding bench benchmarks/fep/binding_egfr.yaml
+   --padding 1.2 --sample` on a GPU. Gate: Kendall τ ≥ 0.6 vs expt.
 
 ---
 
