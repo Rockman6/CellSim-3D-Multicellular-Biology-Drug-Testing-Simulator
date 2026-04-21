@@ -329,9 +329,14 @@ class HydrationDGResult:
             f"wall {self.wall_seconds:.1f} s")
 
 
-def _build_alchemical_legs(smiles: str):
+def _build_alchemical_legs(smiles: str, *,
+                            softcore_alpha: float = 0.5):
     """Build (vac_alch, solv_alch, top_openmm_vac, solv_positions,
-    vac_positions) for a SMILES. Raises on failure."""
+    vac_positions) for a SMILES. `softcore_alpha` controls how
+    "flat" the decoupled softcore potential is; larger (e.g. 1.0)
+    is more forgiving on unphysical endpoint transitions but
+    harder for MBAR to connect states. Default 0.5 follows
+    openmmtools convention."""
     import numpy as np
     from openff.toolkit.topology import Molecule
     from openff.toolkit.typing.engines.smirnoff import ForceField
@@ -354,7 +359,8 @@ def _build_alchemical_legs(smiles: str):
     n_atoms = vac_system.getNumParticles()
     factory = alchemy.AbsoluteAlchemicalFactory()
     vac_region = alchemy.AlchemicalRegion(
-        alchemical_atoms=list(range(n_atoms)))
+        alchemical_atoms=list(range(n_atoms)),
+        softcore_alpha=softcore_alpha)
     vac_alch = factory.create_alchemical_system(
         vac_system, vac_region)
 
@@ -370,7 +376,8 @@ def _build_alchemical_legs(smiles: str):
     solv_system = ichg.to_openmm(
         combine_nonbonded_forces=True)
     solv_region = alchemy.AlchemicalRegion(
-        alchemical_atoms=list(range(n_atoms)))
+        alchemical_atoms=list(range(n_atoms)),
+        softcore_alpha=softcore_alpha)
     solv_alch = factory.create_alchemical_system(
         solv_system, solv_region)
 
@@ -395,6 +402,7 @@ def compute_hydration_dg(
     n_equilibration_steps: int = 500,
     sample_stride: int = 100,
     seed: int = 1,
+    softcore_alpha: float = 0.5,
 ) -> HydrationDGResult:
     """End-to-end absolute hydration free energy.
 
@@ -420,7 +428,8 @@ def compute_hydration_dg(
     try:
         (vac_alch, solv_alch,
          vac_top, solv_top,
-         vac_pos, solv_pos, _n) = _build_alchemical_legs(smiles)
+         vac_pos, solv_pos, _n) = _build_alchemical_legs(
+            smiles, softcore_alpha=softcore_alpha)
     except Exception as e:
         result.reason = f"alchemical build failed: {str(e)[:200]}"
         result.wall_seconds = time.time() - t0
