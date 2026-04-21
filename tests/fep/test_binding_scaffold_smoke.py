@@ -32,6 +32,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from src.fep.binding import (  # noqa: E402
     _harmonic_restraint_free_energy_kcalmol,
     _build_complex_alchemical_system,
+    _build_complex_alchemical_system_amber14,
+    _prepare_protein_topology,
 )
 
 
@@ -92,15 +94,117 @@ def test_complex_alchemical_builder_on_ubiquitin():
         "isn't kicking in")
 
 
-if __name__ == "__main__":
+def test_amber14_builder_on_streptavidin():
+    """Phase-2 regression guard. Before the terminal-missing-residue
+    filter + amber14 builder landed (commit 7f1b388), streptavidin
+    1stp scaffold OOM'd at 2 GB / 30 min. After: builds in < 30 s
+    with a solvated system < 100 k atoms. If either number regresses
+    past those thresholds, something reverted."""
+    import time
+    pdb = REPO_ROOT / "benchmarks/dock/1stp.pdb"
+    t0 = time.time()
+    out = _build_complex_alchemical_system_amber14(
+        "C", pdb, padding_nm=0.8)
+    elapsed = time.time() - t0
+    assert elapsed < 30.0, (
+        f"amber14 builder on 1stp took {elapsed:.1f}s — "
+        "terminal-missing-residue filter may have regressed")
+    assert out["n_total_atoms"] < 100_000, (
+        f"1stp solvated system has {out['n_total_atoms']} atoms; "
+        "expected < 100k. If > 500k, the terminal-residue bloat "
+        "returned.")
+    assert out["n_ligand_atoms"] == 5
+    assert 1500 < out["n_protein_atoms"] < 2500, (
+        f"1stp post-PDBFixer protein should be ~1 744 atoms; "
+        f"got {out['n_protein_atoms']}. If > 2 200 the terminal "
+        "residues are being re-added.")
+    assert "amber14" in out["ff_stack"]
+
+
+def test_terminal_missing_residue_filter():
+    """Unit-level check: _prepare_protein_topology must NOT
+    introduce atoms > 5 nm from the main protein body on 1stp.
+    That was the exact failure mode before the filter landed."""
+    import numpy as np
+    from openmm import unit as u
+    pdb = REPO_ROOT / "benchmarks/dock/1stp.pdb"
+    tmp_path, top_omm, positions = _prepare_protein_topology(pdb)
+    import os
     try:
-        test_harmonic_restraint_correction_matches_closed_form()
-        print("[PASS] restraint correction closed-form")
-        test_correction_scales_monotonically_with_k()
-        print("[PASS] restraint k monotonicity")
-        test_complex_alchemical_builder_on_ubiquitin()
-        print("[PASS] complex builder on 1ubq + methane")
-        print("3/3 PASS")
+        os.unlink(tmp_path)
+    except OSError:
+        pass
+    pos_nm = np.asarray(
+        positions.value_in_unit(u.nanometer), dtype=float)
+    extent = pos_nm.max(axis=0) - pos_nm.min(axis=0)
+    # Streptavidin monomer is ~3.5 × 3.5 × 5 nm — any dimension
+    # > 6 nm means a mis-fitted terminal residue snuck through.
+    assert max(extent) < 6.0, (
+        f"1stp post-PDBFixer extent {extent} nm — terminal "
+        "mis-fit has returned, solvation box will bloat 50×")
+
+
+def test_compute_absolute_binding_dg_force_field_path_flag():
+    """Verify the force_field_path kwarg dispatches to the right
+    builder. Both should scaffold_both_legs ok; timing differs."""
+    from src.fep.binding import compute_absolute_binding_dg
+    pdb = REPO_ROOT / "benchmarks/md/1ubq.pdb"
+
+    r_amber = compute_absolute_binding_dg(
+        "C", pdb, padding_nm=0.8,
+        force_field_path="amber14",
+        sample=False)
+    assert r_amber.ok
+    assert r_amber.phase == "scaffolded_both_legs"
+
+    r_smirn = compute_absolute_binding_dg(
+        "C", pdb, padding_nm=0.8,
+        force_field_path="smirnoff",
+        sample=False)
+    assert r_smirn.ok
+    assert r_smirn.phase == "scaffolded_both_legs"
+
+    # Bogus value errors cleanly, not crashes.
+    r_bad = compute_absolute_binding_dg(
+        "C", pdb, padding_nm=0.8,
+        force_field_path="not_a_thing",
+        sample=False)
+    assert not r_bad.ok
+    assert "unknown force_field_path" in r_bad.reason
+
+
+if __name__ == "__main__":
+    funcs = [
+        ("restraint correction closed-form",
+         test_harmonic_restraint_correction_matches_closed_form),
+        ("restraint k monotonicity",
+         test_correction_scales_monotonically_with_k),
+        ("complex builder on 1ubq + methane",
+         test_complex_alchemical_builder_on_ubiquitin),
+        ("amber14 builder on 1stp (Phase-2 regression guard)",
+         test_amber14_builder_on_streptavidin),
+        ("terminal-missing-residue filter on 1stp",
+         test_terminal_missing_residue_filter),
+        ("compute_absolute_binding_dg force_field_path flag",
+         test_compute_absolute_binding_dg_force_field_path_flag),
+    ]
+    fails = []
+    try:
+        for label, f in funcs:
+            try:
+                f()
+                print(f"[PASS] {label}")
+            except AssertionError as e:
+                print(f"[FAIL] {label}: {e}")
+                fails.append(label)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[ERROR] {label}: {e}")
+                fails.append(label)
+        if fails:
+            sys.exit(1)
+        print(f"{len(funcs)}/{len(funcs)} PASS")
     except AssertionError as e:
         print(f"[FAIL] {e}")
         sys.exit(1)
