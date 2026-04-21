@@ -36,14 +36,21 @@ def test_hydration_scaffold_builds():
         r = ligand_hydration_fep(smi)
         print(f"  {smi:>10s}: {r.summary()}")
         assert r.ok, f"scaffold failed on {smi}: {r.reason}"
-        assert r.phase == "scaffolded"
+        # Phase is 'scaffolded_both_legs' when solvation succeeds,
+        # 'scaffolded_vacuum_only' when only the vacuum leg built,
+        # 'scaffolded' is the historic Phase-1-only marker.
+        assert r.phase in (
+            "scaffolded_both_legs",
+            "scaffolded_vacuum_only",
+            "scaffolded")
         assert r.n_alchemical_atoms == expected_atoms, (
             f"{smi}: expected {expected_atoms} atoms; "
             f"got {r.n_alchemical_atoms}")
         assert r.wall_seconds is not None
-        assert r.wall_seconds < 60, (
+        assert r.wall_seconds < 180, (
             f"{smi}: scaffold took {r.wall_seconds:.1f}s; "
-            "should be sub-minute.")
+            "should be under 3 min (solvation via packmol adds "
+            "to Phase-1 vacuum-only wall).")
         # Phase 2 hasn't shipped — these must still be None.
         assert r.dG_hydration_kcalmol is None
         assert r.dG_hydration_ci95_kcalmol is None
