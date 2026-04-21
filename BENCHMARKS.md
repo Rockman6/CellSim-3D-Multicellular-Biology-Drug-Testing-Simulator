@@ -306,6 +306,69 @@ Smoke gates: [`tests/dock/test_strain_smoke.py`](tests/dock/test_strain_smoke.py
 
 ---
 
+## 1.3 Alchemical FEP — Milestone A (in progress)
+
+Per the April 2026 professor-reply plan, Layer 1.3's named open
+work item is alchemical free-energy perturbation. The restart's
+"closed ontology / circular validation" critique is only
+structurally answered once physics-derived priors (FEP ΔG /
+ΔΔG) replace hand-tuned Vina scores before handoff to Campaign
+2.
+
+### Pipeline state (April 2026)
+
+| Piece | Status | Evidence |
+|---|:-:|---|
+| SMILES → OpenFF Sage + AM1-BCC → OpenMM System | ✅ | `src/fep/__init__.py:_build_alchemical_legs` |
+| Vacuum alchemical factory (openmmtools) | ✅ | `tests/fep/test_fep_scaffold_smoke.py` |
+| Solvated alchemical factory (Interchange + packmol + tip3p.offxml) | ✅ | `tests/fep/test_hydration_scaffold_smoke.py` |
+| Langevin + MBAR engine via `openmmtools.mcmc.LangevinDynamicsMove` | ✅ | `tests/fep/test_sampling_smoke.py` (methane vacuum ≈ 0) |
+| End-to-end `compute_hydration_dg` | ✅ | `tests/fep/test_hydration_dg_smoke.py` |
+| FreeSolv-12 benchmark bundle | ✅ | `benchmarks/fep/freesolv_12.yaml` |
+| `cellsim fep-freesolv` CLI gate (MAE ≤ 1.5 kcal/mol) | ✅ | `src/fep/freesolv_validate.py` |
+| `gh workflow run fep-freesolv.yml` (workflow_dispatch, GPU) | ✅ | `.github/workflows/fep-freesolv.yml` |
+| Real numbers on the 12-compound FreeSolv gate | ⏳ | blocked on a GPU runner |
+
+### Smoke-parameter results (5 windows × 4 samples, CPU)
+
+These are NOT the Milestone A accuracy numbers — they're the
+"pipeline runs end-to-end without exceptions" parameters used
+during development. A real gate run needs 11 windows × 25 000
+steps on a GPU (~20 GPU-hours for the full 12-compound set).
+
+| Compound | Expt ΔG_hyd | Smoke pred (ref: ba54390) | Status |
+|---|:-:|:-:|:-:|
+| methane | +2.00 | ≈ 0 | runs; heavily undersampled |
+| ammonia | −4.30 | ≈ 0 | runs; heavily undersampled |
+| ethanol / methanol / benzene / toluene | — | NaN | MCMC move's internal retry gives up |
+| propane / pyridine / acetic_acid / acetamide | — | — | not yet tested at smoke |
+
+### Honest diagnosis of the NaN cases
+
+Solvated systems with polar or aromatic solutes intermittently
+hit `Potential energy is NaN after 4 attempts of integration
+with move LangevinDynamicsMove` at smoke parameters. Ruled out:
+LangevinMiddleIntegrator velocity-cache staleness (switched to
+`openmmtools.integrators.LangevinIntegrator`, then to the full
+MCMC-move abstraction), inner-loop setPositions noise (removed),
+packmol tolerance (tried 0.25 nm — made it worse).
+
+The failure is likely specific to the interaction of (a) short
+smoke-size equilibration and (b) packmol's initial placement
+under the default 1.2 nm padding. Production-parameter runs
+(≥ 50 ps equil per window, on GPU) should dissolve it because
+Langevin has time to thermalise before the cross-λ evaluation
+loop begins.
+
+### Exit criterion (unchanged since the professor reply)
+
+MAE ≤ 1.5 kcal/mol on the 12-compound FreeSolv subset at
+production parameters, via `gh workflow run fep-freesolv.yml`.
+Until that number exists, Milestone A is open and Campaign 2
+does not start.
+
+---
+
 ## x-cut Cache hit speed-up (on cellsim conda env)
 
 | Operation | Cold wall | Warm wall | Speed-up |
