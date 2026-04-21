@@ -225,9 +225,11 @@ def ligand_hydration_fep(
 
     n_atoms = vac_system.getNumParticles()
     try:
+        # No name on the region → unsuffixed lambda_sterics /
+        # lambda_electrostatics globals, which is what
+        # AlchemicalState.from_system expects downstream.
         vac_region = alchemy.AlchemicalRegion(
-            alchemical_atoms=list(range(n_atoms)),
-            name=f"ligand_{smiles[:16]}")
+            alchemical_atoms=list(range(n_atoms)))
         factory = alchemy.AbsoluteAlchemicalFactory()
         vac_alch = factory.create_alchemical_system(
             reference_system=vac_system,
@@ -271,8 +273,7 @@ def ligand_hydration_fep(
         # n_atoms of the solvated topology; packmol places the
         # solute at the front).
         solv_region = alchemy.AlchemicalRegion(
-            alchemical_atoms=list(range(n_atoms)),
-            name=f"ligand_{smiles[:16]}_solvated")
+            alchemical_atoms=list(range(n_atoms)))
         _solv_alch = factory.create_alchemical_system(
             reference_system=solv_system,
             alchemical_regions=solv_region)
