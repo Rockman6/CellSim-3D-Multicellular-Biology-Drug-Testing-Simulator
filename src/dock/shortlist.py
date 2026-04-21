@@ -26,6 +26,10 @@ from typing import Optional
 
 
 DEFAULT_VERDICTS = ("follow_up", "review")
+# Full set of verdicts cellsim dock emits — must match
+# src/dock/batch.py _triage_call return values.
+VALID_VERDICTS = (
+    "follow_up", "review", "deprioritise", "drop")
 
 
 def filter_csv(
@@ -61,12 +65,24 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--out", type=Path, required=True,
                     help="output shortlist CSV")
     ap.add_argument("--verdicts", default=",".join(DEFAULT_VERDICTS),
-                    help="comma-separated triage verdicts to keep "
-                         "(default: follow_up,review)")
+                    help=(f"comma-separated triage verdicts to "
+                          f"keep. valid: "
+                          f"{','.join(VALID_VERDICTS)}. "
+                          f"default: follow_up,review"))
     args = ap.parse_args(argv)
 
     verdicts = tuple(v.strip() for v in args.verdicts.split(",")
                       if v.strip())
+    # Validate verdicts so a typo ('followup', 'Review') doesn't
+    # silently produce an empty shortlist — a biologist who mis-
+    # spells a verdict deserves an error, not 0 rows.
+    bad = [v for v in verdicts if v not in VALID_VERDICTS]
+    if bad:
+        print(f"unknown triage verdict(s): {bad}. Valid set is "
+              f"{list(VALID_VERDICTS)}. (Did you mean "
+              f"'{VALID_VERDICTS[0]}' / 'review'?)",
+              file=sys.stderr)
+        return 2
     if not args.csv.exists():
         print(f"input CSV not found: {args.csv}", file=sys.stderr)
         return 2
