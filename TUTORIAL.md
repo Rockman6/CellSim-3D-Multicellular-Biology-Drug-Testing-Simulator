@@ -115,8 +115,12 @@ verdicts):
 ```
 
 Whenever `cellsim dock` writes a CSV via `--out-csv`, it also
-writes a `<name>.triage.png` next to it — the 4-panel dashboard
-below appears automatically, no extra command needed. To
+writes two companion files next to it, automatically:
+
+- `<name>.triage.png` — the 4-panel dashboard (shown below)
+- `<name>.md` — a markdown-table summary of the top 10 rows
+  plus a Next-steps block. Paste directly into Benchling /
+  eLabFTW / Obsidian / any markdown-capable lab notebook. To
 regenerate from an existing CSV:
 
 ```bash
