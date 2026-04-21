@@ -880,13 +880,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         n_review = verdict_counts.get("review", 0)
         n_dep = verdict_counts.get("deprioritise", 0)
         n_drop = verdict_counts.get("drop", 0)
+        short_suffix = ""
+        if (args.shortlist_csv and
+                (n_follow or n_review)):
+            short_suffix = f"  (see {args.shortlist_csv})"
         if n_follow:
             print(f"  • Send {n_follow} follow_up compound(s) to "
-                  "wet lab.")
+                  f"wet lab.{short_suffix}")
         if n_review:
+            # Only append the shortlist pointer once — attach
+            # it to whichever of follow_up / review printed first.
+            tail = short_suffix if not n_follow else ""
             print(f"  • Re-examine {n_review} review compound(s) "
                   "— one flag (strain/hERG/Ames/pocket) needs a "
-                  "chemist's eye before committing.")
+                  f"chemist's eye before committing.{tail}")
         if n_dep:
             print(f"  • {n_dep} deprioritise compound(s): ignore "
                   "unless scaffold-important; if they matter, "
