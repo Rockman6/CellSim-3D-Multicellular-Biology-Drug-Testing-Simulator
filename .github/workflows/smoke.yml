@@ -146,6 +146,9 @@ jobs:
       - name: fep hydration scaffold (Layer 1.3, SMILES → alchemical System)
         run: python -u tests/fep/test_hydration_scaffold_smoke.py
 
+      - name: fep sampling smoke (Layer 1.3, methane vacuum Langevin+MBAR)
+        run: python -u tests/fep/test_sampling_smoke.py
+
       - name: halogen-parse smoke (Layer 1.3, regress PDBQT Cl/Br parsing)
         run: python -u tests/dock/test_halogen_parse_smoke.py
 
