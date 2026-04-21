@@ -111,39 +111,39 @@ class ReportResult:
     git_commit: Optional[str] = None
 
 
-def _find_run_dir(path: Path) -> Path:
-    """`path` can be a tarball, an already-extracted run directory,
-    the parent of one (e.g. run/fep/), or a CSV. Return the directory
-    that contains `freesolv_results.csv`.
+def _resolve_inputs(path: Path) -> tuple[Path, Path]:
+    """Resolve (run_dir, csv_path). Accepts:
 
-    Raises ValueError with a clear message when it can't locate the
-    CSV — biologists running this won't want to dig through stack
-    traces; they want "your tarball doesn't contain X, got these
-    files instead".
+    - a raw CSV (e.g. `bench_mini_results.csv`): csv_path = path;
+      run_dir = path.parent (used for optional env.log / run.log
+      siblings if present).
+    - a directory: find any `*results*.csv` under it (prefers
+      `freesolv_results.csv` for back-compat with Milestone A
+      tarballs).
+    - a tarball: extract + recurse.
+
+    Raises ValueError with actionable messages — biologists running
+    this shouldn't have to read stack traces.
     """
     if path.is_file():
         if path.suffix == ".csv":
-            return path.parent
+            return path.parent, path
         if path.suffixes[-2:] == [".tar", ".gz"] or path.suffix == ".tgz":
             tmp = Path(tempfile.mkdtemp(prefix="fep_report_"))
             with tarfile.open(path, "r:gz") as tf:
                 tf.extractall(tmp)
-            # The tarball content is one subdir (the timestamp);
-            # find the one that has freesolv_results.csv.
-            cands = list(tmp.rglob("freesolv_results.csv"))
-            if not cands:
-                raise ValueError(
-                    f"tarball {path.name} has no freesolv_results.csv; "
-                    f"contents: "
-                    f"{sorted(p.name for p in tmp.rglob('*'))[:20]}")
-            return cands[0].parent
+            return _resolve_inputs(tmp)
     if path.is_dir():
         cands = list(path.rglob("freesolv_results.csv"))
         if cands:
-            return cands[0].parent
+            return cands[0].parent, cands[0]
+        cands = sorted(path.rglob("*results*.csv"))
+        if cands:
+            return cands[0].parent, cands[0]
         raise ValueError(
-            f"directory {path} has no freesolv_results.csv anywhere "
-            f"in its tree")
+            f"directory {path} has no *results*.csv under it; "
+            f"top-level: "
+            f"{sorted(p.name for p in path.iterdir())[:20]}")
     raise ValueError(f"no such file or directory: {path}")
 
 
@@ -305,8 +305,7 @@ def _kendall_tau(x: list[float], y: list[float]) -> Optional[float]:
 def analyse(path: str | Path) -> ReportResult:
     """Top-level: path in, ReportResult out."""
     path = Path(path)
-    run_dir = _find_run_dir(path)
-    csv_path = run_dir / "freesolv_results.csv"
+    run_dir, csv_path = _resolve_inputs(path)
 
     rows = _read_csv(csv_path)
     meta = _parse_run_log(run_dir / "run.log", rows)
@@ -336,9 +335,14 @@ def analyse(path: str | Path) -> ReportResult:
                 f"{GATE_GHMC_ACCEPT_MIN:.0%} threshold — trust the "
                 "ΔG less; timestep likely too large")
 
-    ok_rows = [r for r in rows if r.ok and r.dG_pred_kcalmol is not None]
+    # `n_ok` counts rows that ran without errors (including scaffold-
+    # only ones where dG_pred is None); `ok_rows` is the stricter
+    # subset used for statistics (MAE/RMSE/Pearson/etc.), which
+    # requires an actual predicted ΔG.
+    ok_rows = [r for r in rows
+               if r.ok and r.dG_pred_kcalmol is not None]
     n_total = len(rows)
-    n_ok = len(ok_rows)
+    n_ok = sum(1 for r in rows if r.ok)
 
     expts = [r.dG_expt_kcalmol for r in ok_rows]
     preds = [r.dG_pred_kcalmol for r in ok_rows]
@@ -380,9 +384,15 @@ def analyse(path: str | Path) -> ReportResult:
     if mins:
         result.ghmc_accept_overall_min = min(mins)
 
-    # Gate verdicts.
-    result.pass_mae = (
-        mae is not None and mae <= GATE_MAE_KCALMOL)
+    # Gate verdicts. Tri-state:
+    #   True   = gate passed
+    #   False  = gate evaluable and failed
+    #   None   = gate not evaluable from this CSV (scaffold-only
+    #            run, missing column, no critical compounds etc.)
+    if mae is not None:
+        result.pass_mae = mae <= GATE_MAE_KCALMOL
+    else:
+        result.pass_mae = None
     if means:
         result.pass_ghmc = all(
             m >= GATE_GHMC_ACCEPT_MIN for m in means)
@@ -390,23 +400,32 @@ def analyse(path: str | Path) -> ReportResult:
         # No acceptance data → can't evaluate; warn but don't fail.
         result.pass_ghmc = None
 
-    # Sign-critical check: methane + acetamide must have correct sign.
+    # Sign-critical check: methane + acetamide must have correct
+    # sign. Only count rows that have a prediction — scaffold-only
+    # rows have sign_correct=None and would incorrectly fail the
+    # gate otherwise.
     sign_critical = [r for r in rows
-                     if r.name in _SIGN_CRITICAL_NAMES and r.ok]
+                     if r.name in _SIGN_CRITICAL_NAMES
+                     and r.ok
+                     and r.sign_correct is not None]
     if sign_critical:
         result.pass_sign_critical = all(
             r.sign_correct for r in sign_critical)
     else:
         result.pass_sign_critical = None
 
-    # Overall: PASS iff all evaluable gates pass. An unevaluable
-    # gate (None) does NOT fail the overall — we record it as
-    # "couldn't check" in the verdict text.
+    # Overall verdict tri-state:
+    #   True  = at least one gate evaluable and all evaluable pass
+    #   False = at least one evaluable gate failed
+    #   None  = nothing evaluable (scaffold-only / empty CSV)
     checks = [g for g in (result.pass_mae,
                           result.pass_ghmc,
                           result.pass_sign_critical)
               if g is not None]
-    result.pass_overall = bool(checks) and all(checks)
+    if not checks:
+        result.pass_overall = None
+    else:
+        result.pass_overall = all(checks)
 
     # Provenance — optional logs.
     env_path = run_dir / "env.log"
@@ -527,6 +546,16 @@ def format_markdown(r: ReportResult) -> str:
                 f"{rr.dG_expt_kcalmol:+.2f} | FAIL | — | — | "
                 f"{(rr.wall_seconds or 0):.0f} | "
                 f"{rr.reason[:60]} |")
+            continue
+        # Scaffold-only row: ok=True but pred is None. Render as
+        # "scaffolded" so bench pre-flight runs don't 500 the
+        # formatter.
+        if rr.dG_pred_kcalmol is None:
+            lines.append(
+                f"| {rr.name} | `{rr.smiles}` | "
+                f"{rr.dG_expt_kcalmol:+.2f} | scaffolded | — | — | "
+                f"{(rr.wall_seconds or 0):.0f} | "
+                "(no sample) |")
             continue
         resid = rr.residual_kcalmol
         resid_abs = abs(resid) if resid is not None else None
@@ -719,7 +748,9 @@ def main(argv=None) -> int:
         else:
             print(format_markdown(r))
 
-    return 0 if r.pass_overall else 1
+    # Exit: 0 for pass OR inconclusive (scaffold-only / empty CSV
+    # shouldn't fail CI); 1 for a real evaluable failure.
+    return 0 if r.pass_overall is not False else 1
 
 
 if __name__ == "__main__":

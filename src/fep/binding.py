@@ -819,6 +819,26 @@ def main(argv=None) -> int:
     ddgp.add_argument("--sample", action="store_true")
     ddgp.add_argument("--json", action="store_true")
 
+    bp = sub.add_parser(
+        "bench",
+        help="YAML-driven batch (e.g. binding_streptavidin.yaml)")
+    bp.add_argument("yaml_path")
+    bp.add_argument("--n-windows", type=int, default=11)
+    bp.add_argument("--softcore-alpha", type=float, default=0.5)
+    bp.add_argument("--padding", type=float, default=1.2)
+    bp.add_argument("--restraint-k", type=float, default=4184.0)
+    bp.add_argument(
+        "--sample", action="store_true",
+        help="run MD on every entry (HOURS per compound on CPU; "
+             "a full streptavidin set is a GPU-only operation)")
+    bp.add_argument("--production-steps", type=int, default=2000)
+    bp.add_argument("--equilibration-steps", type=int, default=500)
+    bp.add_argument("--sample-stride", type=int, default=100)
+    bp.add_argument(
+        "--out-csv", default=None,
+        help="write per-entry results (same schema as FreeSolv so "
+             "`cellsim fep-report` can consume it)")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "dg":
@@ -829,7 +849,7 @@ def main(argv=None) -> int:
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
             sample=args.sample)
-    else:
+    elif args.cmd == "ddg":
         r = compute_relative_binding_ddg(
             args.smiles_a, args.smiles_b, args.receptor_pdb,
             n_windows=args.n_windows,
@@ -837,6 +857,8 @@ def main(argv=None) -> int:
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
             sample=args.sample)
+    else:  # bench
+        return _run_bench(args)
 
     if args.json:
         from dataclasses import asdict
@@ -844,6 +866,120 @@ def main(argv=None) -> int:
     else:
         print(r.summary())
     return 0 if r.ok else 1
+
+
+def _run_bench(args) -> int:
+    """Drive `compute_absolute_binding_dg` over every entry in a
+    binding YAML. Emits one-line-per-entry progress + optional CSV
+    in the same schema `cellsim fep-report` expects, so the whole
+    run can be summarised through the existing analyser.
+
+    Schema maps:
+        YAML `dG_bind_kcalmol`    → CSV `dG_expt_kcalmol`
+        BindingDGResult.dG_bind_kcalmol → CSV `dG_pred_kcalmol`
+        (residual = pred − expt, just as for hydration)
+
+    Phase-1 default (`--sample` absent) runs scaffold-only on every
+    entry. Wall time ≈ 20-60 s per compound on CPU regardless of
+    receptor size, so a 4-compound YAML is a 2-5 min pre-flight
+    sanity check — exactly what a biologist wants before kicking
+    off a proper Phase-2 run on GPU.
+    """
+    import csv as _csv
+    import sys as _sys
+    import time as _time
+    import yaml as _yaml
+
+    data = _yaml.safe_load(Path(args.yaml_path).read_text())
+    recv = data.get("receptor", {})
+    receptor_pdb = recv.get("pdb_path")
+    if not receptor_pdb:
+        print("bench: YAML missing receptor.pdb_path",
+              file=_sys.stderr)
+        return 2
+    bsc = recv.get("binding_site_center_nm")
+
+    entries = data.get("entries", [])
+    rows = []
+    t_all = _time.time()
+    print(f"[fep-binding bench] {args.yaml_path}")
+    print(f"  receptor:   {receptor_pdb}")
+    print(f"  entries:    {len(entries)}")
+    print(f"  sample:     {bool(args.sample)}")
+    print()
+
+    for entry in entries:
+        name = entry.get("name", "?")
+        smi = entry.get("smiles", "")
+        expt = entry.get("dG_bind_kcalmol")
+        print(f"[bench] {name}  {smi}", flush=True)
+        ts = _time.time()
+        r = compute_absolute_binding_dg(
+            smi, receptor_pdb,
+            binding_site_center_nm=bsc,
+            n_windows=args.n_windows,
+            softcore_alpha=args.softcore_alpha,
+            padding_nm=args.padding,
+            restraint_k_kJ_per_nm2=args.restraint_k,
+            sample=bool(args.sample),
+            n_equilibration_steps=args.equilibration_steps,
+            n_production_steps=args.production_steps,
+            sample_stride=args.sample_stride)
+        wall = _time.time() - ts
+        pred = r.dG_bind_kcalmol
+        unc = r.uncertainty_kcalmol
+        resid = (pred - expt
+                 if pred is not None and expt is not None else None)
+        if r.ok and pred is None:
+            print(f"  scaffolded {r.phase}  "
+                  f"atoms={r.n_total_atoms_complex}  "
+                  f"wall={wall:.1f}s", flush=True)
+        elif r.ok:
+            print(f"  pred = {pred:+.2f}  expt = {expt:+.2f}  "
+                  f"resid = {(resid or 0):+.2f}  "
+                  f"wall={wall:.1f}s", flush=True)
+        else:
+            print(f"  FAIL: {r.reason}", flush=True)
+
+        rows.append({
+            "name": name,
+            "smiles": smi,
+            "dG_expt_kcalmol": expt,
+            "dG_pred_kcalmol": pred,
+            "uncertainty_kcalmol": unc,
+            "residual_kcalmol": resid,
+            "ghmc_accept_mean": None,
+            "ghmc_accept_min": None,
+            "wall_seconds": round(wall, 2),
+            "ok": r.ok,
+            "reason": r.reason,
+        })
+
+    t_total = _time.time() - t_all
+    n_ok = sum(1 for row in rows if row["ok"])
+    print()
+    print(f"[fep-binding bench] {n_ok}/{len(rows)} ok  "
+          f"total wall {t_total:.1f} s  "
+          f"({args.yaml_path})")
+
+    if args.out_csv:
+        out = Path(args.out_csv)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        cols = ["name", "smiles", "dG_expt_kcalmol",
+                "dG_pred_kcalmol", "uncertainty_kcalmol",
+                "residual_kcalmol", "ghmc_accept_mean",
+                "ghmc_accept_min", "wall_seconds", "ok", "reason"]
+        with out.open("w", newline="",
+                      encoding="utf-8-sig") as fo:
+            w = _csv.DictWriter(
+                fo, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            for row in rows:
+                w.writerow(row)
+        print(f"  wrote {out}  "
+              f"(schema compatible with `cellsim fep-report`)")
+
+    return 0 if n_ok == len(rows) else 1
 
 
 if __name__ == "__main__":
