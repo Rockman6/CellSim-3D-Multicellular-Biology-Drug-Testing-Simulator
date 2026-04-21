@@ -466,6 +466,40 @@ Phase-2 sampling on streptavidin + biotin:
     3-8 hours on M-series GPU per compound. Run on M5 Max after
     Milestone A clears.
 
+### End-to-end benchmark scaffold results (CPU, 2026-04-22)
+
+Both bundled binding benchmarks now run through
+`cellsim fep-binding bench` cleanly in scaffold-only mode, with
+the amber14 + SMIRNOFFTemplateGenerator path and the terminal-
+missing-residue filter in place:
+
+`binding_streptavidin.yaml` (receptor 1 stp, 4 ligands):
+
+| Ligand              | Heavy | Wall (s) | Complex atoms |
+|---------------------|------:|---------:|--------------:|
+| biotin              |    16 |    17.7  |        25 865 |
+| desthiobiotin       |    15 |    24.5  |        25 362 |
+| 2_iminobiotin (Z)   |    16 |    25.1  |        25 221 |
+| biotin methyl ester |    17 |    19.2  |        25 814 |
+| **total**           |     — | **86.4** |             — |
+
+`binding_egfr.yaml` (receptor 1 m17, 6 kinase inhibitors):
+
+| Ligand              | Heavy | Wall (s) | Complex atoms |
+|---------------------|------:|---------:|--------------:|
+| 4-anilinoquinazol   |    17 |    23.6  |       112 241 |
+| AG-1478             |    22 |    30.9  |       112 690 |
+| gefitinib           |    31 |    78.2  |       111 278 |
+| tyrphostin AG-494   |    21 |    85.7  |       111 979 |
+| erlotinib           |    29 |   106.0  |       111 737 |
+| lapatinib (40 hvy)  |    40 |   289.1  |       113 611 |
+| **total**           |     — | **613.4** (10.2 min) |  — |
+
+Takeaway: scaffold phase is now routine. Wall time scales roughly
+linearly with ligand heavy-atom count (AM1-BCC dominates at ~2-5
+s/heavy atom); the protein part is fast. Phase-2 sampling cost
+will be dominated by MD on the 110k-atom complex on GPU.
+
 ---
 
 ## x-cut Cache hit speed-up (on cellsim conda env)
