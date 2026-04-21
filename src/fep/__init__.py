@@ -225,21 +225,34 @@ def ligand_hydration_fep(
 
     n_atoms = vac_system.getNumParticles()
     try:
-        region = alchemy.AlchemicalRegion(
+        vac_region = alchemy.AlchemicalRegion(
             alchemical_atoms=list(range(n_atoms)),
             name=f"ligand_{smiles[:16]}")
         factory = alchemy.AbsoluteAlchemicalFactory()
-        alch_system = factory.create_alchemical_system(
+        vac_alch = factory.create_alchemical_system(
             reference_system=vac_system,
-            alchemical_regions=region)
+            alchemical_regions=vac_region)
     except Exception as e:
         result.reason = (
-            f"alchemical factory failed: {str(e)[:200]}")
+            f"alchemical factory (vacuum) failed: "
+            f"{str(e)[:200]}")
         result.wall_seconds = time.time() - t0
         return result
 
-    # Phase-1 success: the scaffold is valid. Phase-2 (MD sampling
-    # + MBAR) goes here in a follow-up.
+    # TODO Phase-2a: solvate the ligand in TIP3P and build the
+    # solvated alchemical leg. Hydration free energy is:
+    #   ΔG_hyd = ΔG(decouple in solvent) − ΔG(decouple in vacuum)
+    # so the solvated leg is required for a real number. First
+    # pass tried OpenMM Modeller.addSolvent → OpenFF
+    # Topology.from_openmm → Interchange-like system build, but
+    # hit a 'NoneType' object has no attribute 'items' deep
+    # inside the openff-toolkit 0.16 water parametrisation path.
+    # Needs a dedicated PR to debug properly (e.g. use Interchange
+    # directly or a separate LigandFF+WaterFF combine step) —
+    # don't want to silently ship a broken ΔG. Phase-2b (MD +
+    # MBAR + FreeSolv gate) follows Phase-2a.
+
+    # Phase-1 success: the vacuum scaffold is valid.
     result.ok = True
     result.n_alchemical_atoms = n_atoms
     result.wall_seconds = time.time() - t0
