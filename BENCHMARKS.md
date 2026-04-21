@@ -369,6 +369,55 @@ does not start.
 
 ---
 
+## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
+
+Double-decoupling method (DDM) absolute and relative binding
+free energies. Written ahead of Milestone A passing so the
+scaffold is ready to sample the instant the sampler clears on
+FreeSolv. All new code here is scaffold-only (no sampled
+numbers) until Milestone A clears.
+
+### Pipeline state (April 2026)
+
+| Piece | Status | Evidence |
+|---|:-:|---|
+| PDBFixer → Topology.from_pdb → native CCD loader | ✅ | `src/fep/binding.py:_prepare_protein_topology` |
+| Complex-system builder (Interchange + ff14SB + Sage + TIP3P) | ✅ | `src/fep/binding.py:_build_complex_alchemical_system` |
+| Alchemical region over ligand atoms only | ✅ | smoke: methane + ubiquitin, 14 244-atom complex, 16.7 s CPU |
+| CustomCentroidBondForce CoM-CoM harmonic restraint | ✅ | `_add_harmonic_com_restraint`, k=4184 kJ/mol/nm² default |
+| Hamelberg–Gilson analytical restraint correction | ✅ | `_harmonic_restraint_free_energy_kcalmol` |
+| fpocket auto pocket-detect fallback | ✅ | 1 stp → drug=0.80, 1 m17 → drug=0.53 |
+| Full DDM cycle (Phase-2 sampling) | 🧱 | scaffolded; `sample=True` wired but not gated |
+| `compute_relative_binding_ddg` | ✅ | scaffold path ok (methane → ethane on 1ubq) |
+| `cellsim fep-binding` CLI (dg / ddg / bench) | ✅ | `src/fep/binding.py:main` |
+| Streptavidin–biotin reference set | ✅ | `benchmarks/fep/binding_streptavidin.yaml`, 4 entries |
+| `cellsim fep-report` analyser (pass/fail verdict, parity PNG) | ✅ | `src/fep/report.py`, tri-state inconclusive/PASS/FAIL |
+| Real Phase-2 numbers on streptavidin series | ⏳ | blocked on GPU + Milestone A |
+
+### Non-goals for the scaffold
+
+- **No hybrid single-topology morph.** Relative ΔΔG computes as
+  two independent absolute-ΔG runs + subtraction. Avoids a
+  perses-style atom-mapper sub-project; reuses the validated
+  hydration sampler unchanged.
+- **No Boresch 6-DOF restraint.** CoM-only harmonic; the
+  standard-state correction is analytical. Boresch orientation
+  restraints can slot in at Phase-3 if the CoM-only correction
+  proves too loose on the streptavidin set.
+- **No protonation-state enumeration.** PDBFixer picks pH 7.0
+  once; iminobiotin gets whatever tautomer PDBFixer assigns.
+
+### Exit criterion (proposed — to be agreed with professor)
+
+MAE ≤ 2.0 kcal/mol on the 4-compound streptavidin set (biotin,
+desthiobiotin, 2-iminobiotin, biotin methyl ester) at production
+parameters, and correct rank ordering (Kendall τ ≥ 0.6). Relaxed
+vs FreeSolv's 1.5 kcal/mol because protein FEP carries additional
+error sources (conformational sampling, restraint selection,
+pKa).
+
+---
+
 ## x-cut Cache hit speed-up (on cellsim conda env)
 
 | Operation | Cold wall | Warm wall | Speed-up |
