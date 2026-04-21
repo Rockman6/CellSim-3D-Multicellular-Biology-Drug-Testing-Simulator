@@ -416,46 +416,55 @@ vs FreeSolv's 1.5 kcal/mol because protein FEP carries additional
 error sources (conformational sampling, restraint selection,
 pKa).
 
-### Known Phase-2 issue: Interchange parametrise wall
+### Phase-2 scaffold-build wall — SOLVED
 
-| Probe (receptor + tiny ligand, 0.6-0.8 nm padding) | Result |
-|---|---|
-| 1ubq (ubiquitin, 1 231 atoms) + methane          | 16.7 s, 14 244-atom complex, PASS |
-| 1stp (streptavidin, 901 atoms, monomer) + methane | 1.5 GB RSS at 80 s, no output at 30 min |
-| 1stp + biotin                                    | 2.0 GB RSS at 30 min, no output |
-| 1m17 (EGFR kinase, 2 511 atoms) + 4-anilinoquinaz | 1.5 GB RSS at 68 s, no output, killed |
+Milestone B scaffold-build time, methane + receptor, padding
+0.8 nm, CPU:
 
-The scaffold builder runs cleanly on ubiquitin. Every other
-receptor probed explodes to 1.5+ GB within 1-2 min and never
-emits output. The issue is **not** ligand-specific (methane and
-biotin hit the same wall), **not** tetramer-size (1stp is a
-monomer), and **not** atom count alone (1stp has fewer atoms
-than 1ubq). EGFR confirms it's a generic mid-protein failure in
-`openff.interchange.Interchange.from_smirnoff` with the SMIRNOFF
-`openff-2.1.0 + ff14sb_off_impropers_0.0.4 + tip3p` stack.
+| Receptor | Before fixes | After fixes (amber14) | After fixes (smirnoff) |
+|---|---|---|---|
+| 1ubq (ubiquitin, 1 231 prot atoms)   | 16.7 s    |  6.2 s |  — |
+| 1stp (streptavidin, 1 744 prot atoms)| 2 GB / TIMEOUT | **3.8 s** | 18.7 s |
+| 1m17 (EGFR kinase, 5 213 prot atoms) | 1.5 GB / TIMEOUT | 12.7 s | — |
 
-Hypothesis: the ff14SB SMIRNOFF port's SMIRKS patterns generate
-O(N²) intermediate bonded-term tuples on non-trivial topologies.
-The pure-SMIRNOFF path was chosen for Milestone B Phase-1 to keep
-parameter provenance identical to the hydration leg, but is
-clearly unsuitable for real proteins.
+**Root cause** (turned out to be simpler than the initial
+Interchange-O(N²) hypothesis):
 
-Phase-2 kickoff is now a hard blocker on Milestone B: the fix is
-required before any sampled binding FEP can run.
+PDBFixer's `addMissingAtoms` was placing filled-in N/C-terminal
+residues 10+ nm from the main protein body on 1stp (GLN 159
+ended up at y = −99 Å). This bloated the protein's bounding box
+50× and caused `packmol.solvate_topology` / Modeller.addSolvent
+to build a 1.2 M Å³ water shell (vs a sane 0.1 M Å³). The
+downstream parametrise then OOM'd because it was handling
+~270 k waters instead of ~5 k.
 
-Fix plan:
-1. Add `openmmforcefields` to environment.yml.
-2. Rewrite `_build_complex_alchemical_system` to use OpenMM's
-   classical `ForceField('amber14-all.xml', 'tip3p.xml')` for the
-   protein + solvent, combined with
-   `openmmforcefields.generators.SMIRNOFFTemplateGenerator` as a
-   residue-template generator for the OpenFF-parametrised ligand.
-   Preserves Sage + AM1-BCC on the ligand; uses the fast native
-   AMBER path on the protein.
-3. Re-run the EGFR probe. Target: < 2 min per compound for scaffold
-   build, < 30 min per compound sampled on GPU.
-4. Re-run `cellsim fep-binding bench benchmarks/fep/binding_egfr.yaml
-   --padding 1.2 --sample` on a GPU. Gate: Kendall τ ≥ 0.6 vs expt.
+**Fixes** (commit `7f1b388`):
+
+1. **Terminal missing-residue filter in
+   `_prepare_protein_topology`.** Before calling
+   `fixer.addMissingAtoms`, drop entries from `fixer.missingResidues`
+   whose position is 0 or equal to chain length (i.e. N/C-terminal
+   extensions, whose placement heuristic is unreliable). Internal
+   gaps kept — both endpoints constrain the loop.
+
+2. **New hybrid AMBER14 + SMIRNOFF builder** (`amber14` default):
+   OpenMM classical `ForceField('amber14-all.xml',
+   'amber14/tip3pfb.xml')` for protein + solvent (fast, industry
+   standard), `openmmforcefields.SMIRNOFFTemplateGenerator` with
+   OpenFF Sage 2.1.0 + AM1-BCC for the ligand. Faster than the
+   pure-SMIRNOFF path AND doesn't depend on Interchange's
+   SMIRKS-matching performance.
+
+Pure-SMIRNOFF path is kept as a fallback (`force_field_path=
+"smirnoff"` on `compute_absolute_binding_dg`) for users who want
+provenance-identical Sage-bonded protein parameters between the
+hydration and binding legs.
+
+Phase-2 sampling on streptavidin + biotin:
+  - Scaffold: 3.8 s
+  - Sampled (11 windows × 25 000 prod steps × 2 legs): estimate
+    3-8 hours on M-series GPU per compound. Run on M5 Max after
+    Milestone A clears.
 
 ---
 
