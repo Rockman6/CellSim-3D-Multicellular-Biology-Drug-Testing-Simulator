@@ -89,6 +89,9 @@ class ReportResult:
     pearson_r: Optional[float] = None
     spearman_rho: Optional[float] = None
     kendall_tau: Optional[float] = None
+    # MAE gate this report was scored against; stored so the
+    # markdown + parity PNG render the right threshold.
+    mae_gate_kcalmol: float = GATE_MAE_KCALMOL
     # Aggregate GHMC stats (across all windows × compounds that
     # report data); None if no GHMC info in log.
     ghmc_accept_overall_mean: Optional[float] = None
@@ -302,8 +305,16 @@ def _kendall_tau(x: list[float], y: list[float]) -> Optional[float]:
     return (concordant - discordant) / denom_x
 
 
-def analyse(path: str | Path) -> ReportResult:
-    """Top-level: path in, ReportResult out."""
+def analyse(path: str | Path,
+            *,
+            mae_gate_kcalmol: float = GATE_MAE_KCALMOL,
+            ) -> ReportResult:
+    """Top-level: path in, ReportResult out.
+
+    `mae_gate_kcalmol` lets a caller override the default
+    hydration-era 1.5 kcal/mol gate — binding runs (streptavidin
+    etc.) use 2.0 per BENCHMARKS.md Milestone B scope.
+    """
     path = Path(path)
     run_dir, csv_path = _resolve_inputs(path)
 
@@ -360,6 +371,7 @@ def analyse(path: str | Path) -> ReportResult:
         source=str(path),
         n_total=n_total, n_ok=n_ok,
         mae_kcalmol=mae, rmse_kcalmol=rmse,
+        mae_gate_kcalmol=mae_gate_kcalmol,
         pearson_r=_pearson(preds, expts),
         spearman_rho=_spearman(preds, expts),
         kendall_tau=_kendall_tau(preds, expts),
@@ -390,7 +402,7 @@ def analyse(path: str | Path) -> ReportResult:
     #   None   = gate not evaluable from this CSV (scaffold-only
     #            run, missing column, no critical compounds etc.)
     if mae is not None:
-        result.pass_mae = mae <= GATE_MAE_KCALMOL
+        result.pass_mae = mae <= mae_gate_kcalmol
     else:
         result.pass_mae = None
     if means:
@@ -474,7 +486,7 @@ def format_markdown(r: ReportResult) -> str:
     mae_str = (f"{r.mae_kcalmol:.2f}" if r.mae_kcalmol is not None
                else "n/a")
     lines.append(
-        f"- **MAE gate** (≤ {GATE_MAE_KCALMOL} kcal/mol): "
+        f"- **MAE gate** (≤ {r.mae_gate_kcalmol} kcal/mol): "
         f"{verdict_icon[r.pass_mae]}  (MAE = {mae_str} kcal/mol)")
     if r.pass_ghmc is None:
         lines.append(
@@ -642,10 +654,10 @@ def _write_parity_png(r: ReportResult, out_path: Path) -> bool:
     ax.plot([lo, hi], [lo, hi], "k--", lw=0.8, alpha=0.5)
     ax.fill_between(
         [lo, hi],
-        [lo - GATE_MAE_KCALMOL, hi - GATE_MAE_KCALMOL],
-        [lo + GATE_MAE_KCALMOL, hi + GATE_MAE_KCALMOL],
+        [lo - r.mae_gate_kcalmol, hi - r.mae_gate_kcalmol],
+        [lo + r.mae_gate_kcalmol, hi + r.mae_gate_kcalmol],
         color="gray", alpha=0.15,
-        label=f"±{GATE_MAE_KCALMOL} kcal/mol gate")
+        label=f"±{r.mae_gate_kcalmol} kcal/mol gate")
     ax.errorbar(x, y, yerr=err, fmt="o", capsize=3, lw=1)
     for rr, xi, yi in zip(ok, x, y):
         ax.annotate(rr.name, (xi, yi),
@@ -718,10 +730,15 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--quiet", action="store_true",
         help="suppress all stdout; only set exit code")
+    ap.add_argument(
+        "--mae-gate", type=float, default=GATE_MAE_KCALMOL,
+        help=f"MAE pass threshold in kcal/mol "
+             f"(default {GATE_MAE_KCALMOL}; use 2.0 for binding-FEP "
+             f"benchmarks per BENCHMARKS.md Milestone B)")
     args = ap.parse_args(argv)
 
     try:
-        r = analyse(args.path)
+        r = analyse(args.path, mae_gate_kcalmol=args.mae_gate)
     except Exception as e:
         print(f"fep-report: failed to parse {args.path}: {e}",
               file=sys.stderr)
