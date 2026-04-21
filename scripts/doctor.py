@@ -137,6 +137,7 @@ def main() -> int:
         "benchmarks/dock/3ptb.pdb",
         "benchmarks/dock/1tqn.pdb",             # CYP3A4 + heme
         "benchmarks/dock/1stp_batch_5.smi",     # first-run starter
+        "benchmarks/chembl/demo.sdf",           # SDF input demo
         "benchmarks/dock/mini_bench.yaml",
         "benchmarks/dock/streptavidin_calibration.yaml",
         "benchmarks/dock/trypsin_calibration.yaml",
