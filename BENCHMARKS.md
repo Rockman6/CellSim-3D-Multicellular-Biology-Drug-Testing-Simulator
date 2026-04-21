@@ -416,6 +416,37 @@ vs FreeSolv's 1.5 kcal/mol because protein FEP carries additional
 error sources (conformational sampling, restraint selection,
 pKa).
 
+### Known Phase-2 issue: Interchange parametrise on streptavidin
+
+The scaffold builder runs cleanly on small proteins
+(ubiquitin + methane: 14 244 atoms, 16.7 s CPU). On streptavidin
+(1 stp, 901 protein atoms) it balloons to 1.5 GB RAM within 80 s
+and doesn't finish in 30 min — even with a methane probe ligand
+and 0.6 nm padding. The issue is **not** ligand-specific (methane
+and biotin hit the same wall) and **not** tetramer-size (1stp is
+chain A, a monomer).
+
+Hypothesis: `openff.interchange.Interchange.from_smirnoff` on
+`openff-2.1.0 + ff14sb_off_impropers_0.0.4 + tip3p` is generating
+pathologically many intermediate terms on a mid-size protein.
+The pure-SMIRNOFF path was chosen for Milestone B Phase-1 to keep
+parameter provenance identical to the hydration leg, but for real
+Phase-2 production we may need to switch to OpenMM's classical
+`ForceField('amber14-all.xml', 'tip3p.xml')` combined with
+`openmmforcefields.generators.SMIRNOFFTemplateGenerator` for the
+small-molecule piece. That adds one conda dep
+(`openmmforcefields`) and keeps the ligand AM1-BCC/Sage
+parameters but uses the non-SMIRNOFF AMBER path for the protein.
+
+Work item for Milestone B Phase-2 kickoff:
+1. Profile Interchange on 1 stp to confirm the bottleneck.
+2. If pure-SMIRNOFF is structurally slow, add
+   `openmmforcefields` and rewrite
+   `_build_complex_alchemical_system` to the hybrid path.
+3. Re-run `cellsim fep-binding bench binding_streptavidin.yaml`
+   and confirm <2 min per compound scaffold, <30 min per
+   compound sampled on GPU.
+
 ---
 
 ## x-cut Cache hit speed-up (on cellsim conda env)
