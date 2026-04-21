@@ -459,7 +459,44 @@ def _worker(task: tuple) -> dict:
     return record
 
 
+def _load_sdf(path: Path) -> list[tuple[str, str]]:
+    """Load (smiles, name) pairs from an SDF file via RDKit."""
+    from rdkit import Chem
+    rows: list[tuple[str, str]] = []
+    supplier = Chem.SDMolSupplier(str(path), sanitize=True, removeHs=True)
+    for i, mol in enumerate(supplier, 1):
+        if mol is None:
+            logger.debug("SDF record %d failed to parse; skipping", i)
+            continue
+        smi = Chem.MolToSmiles(mol)
+        # Use the SDF title (_Name prop) when available; fall back
+        # to a deterministic index-based name so multi-record SDFs
+        # don't produce duplicate "mol_UNNAMED" rows.
+        name = (mol.GetProp("_Name").strip()
+                if mol.HasProp("_Name") else "")
+        if not name:
+            name = f"sdf_{i:03d}"
+        rows.append((smi, name))
+    return rows
+
+
 def load_smi(path: Path) -> list[tuple[str, str]]:
+    """Load compound list from a .smi or .sdf file.
+
+    .smi format: `SMILES<TAB>name` or `SMILES<space>name` per line,
+    one molecule per line, '#' comments allowed.
+
+    .sdf format: standard SDF with molecule titles (field _Name).
+    Biologists frequently have compound lists as SDF straight out
+    of ChemDraw / synthesis workflow tools; loading them directly
+    avoids a manual conversion step.
+
+    Dispatch is by file extension (case-insensitive).
+    """
+    suffix = path.suffix.lower()
+    if suffix in (".sdf", ".mol", ".sd"):
+        return _load_sdf(path)
+
     rows: list[tuple[str, str]] = []
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -594,8 +631,11 @@ def _write_csv(records: list[dict], out: Path) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--smi", type=Path, required=True,
-                    help="input SMILES file (tab or whitespace; "
-                         "'smiles [name]' per line)")
+                    help="input compound list. .smi (one "
+                         "'smiles [name]' per line) OR .sdf / "
+                         ".mol / .sd (standard SDF; each record's "
+                         "_Name property is used as the compound "
+                         "name). Dispatch is by file extension.")
     ap.add_argument("--receptor", required=True,
                     help="receptor PDB")
     ap.add_argument("--center", default=None,
