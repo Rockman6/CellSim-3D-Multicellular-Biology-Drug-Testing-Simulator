@@ -115,4 +115,140 @@ def alchemical_state_smoke() -> FEPSmokeResult:
         n_alchemical_particles=n_atoms)
 
 
-__all__ = ["alchemical_state_smoke", "FEPSmokeResult"]
+@dataclass
+class HydrationFEPResult:
+    """Envelope for an absolute-hydration ΔG FEP run.
+
+    The full calculation runs a multi-window alchemical MD
+    protocol vacuum → TIP3P and estimates ΔG_hyd via MBAR. This
+    envelope is the stable return type for the CLI; it can carry
+    a partial / scaffolding-only result too.
+    """
+
+    smiles: str
+    ok: bool
+    reason: str = ""
+    dG_hydration_kcalmol: Optional[float] = None
+    dG_hydration_ci95_kcalmol: Optional[float] = None
+    n_windows: Optional[int] = None
+    n_alchemical_atoms: Optional[int] = None
+    wall_seconds: Optional[float] = None
+    phase: Optional[str] = None     # 'scaffolded' | 'sampled'
+
+    def summary(self) -> str:
+        if not self.ok:
+            return f"[FAIL] ΔG_hyd {self.smiles}  {self.reason}"
+        if self.dG_hydration_kcalmol is None:
+            return (
+                f"[OK]   ΔG_hyd {self.smiles}  "
+                f"phase={self.phase}  "
+                f"n_alchemical_atoms={self.n_alchemical_atoms}  "
+                "(MD sampling not yet implemented)")
+        return (
+            f"[OK]   ΔG_hyd {self.smiles}  "
+            f"{self.dG_hydration_kcalmol:+.2f} ± "
+            f"{self.dG_hydration_ci95_kcalmol:.2f} kcal/mol  "
+            f"wall={self.wall_seconds:.1f} s")
+
+
+def ligand_hydration_fep(
+    smiles: str,
+    *,
+    n_windows: int = 12,
+    parametrize_timeout_s: int = 120,
+) -> HydrationFEPResult:
+    """Set up an absolute-hydration FEP for `smiles`.
+
+    Phase 1 (this commit — 'scaffolded'): build the OpenFF-
+    parametrised OpenMM system for the isolated ligand, wrap it
+    with openmmtools.alchemy.AbsoluteAlchemicalFactory, and
+    return the alchemical system metadata. Verifies the chem →
+    openmm → alchemy pipeline end-to-end without running any MD.
+
+    Phase 2 (next commit — 'sampled'): pair the scaffold with a
+    solvated (TIP3P) alchemical system, run n_windows of short
+    Langevin MD per leg, MBAR the free-energy difference. Gated
+    against FreeSolv ΔG_hyd values on a small held-out subset.
+
+    Returning phase='scaffolded' ok=True on phase-1 success is
+    intentional: it lets the CLI + smoke tests treat the scaffold
+    as a valid intermediate deliverable without silently claiming
+    a ΔG number we haven't computed yet.
+    """
+    import time
+    t0 = time.time()
+
+    result = HydrationFEPResult(
+        smiles=smiles, ok=False, phase="scaffolded",
+        n_windows=n_windows)
+
+    # Step 1: build an OpenMM System for the bare ligand using
+    # OpenFF Sage. Done inline (not via src.chem.parametrize)
+    # because parametrize returns structured data — charges,
+    # positions, elements — not the live OpenMM System object an
+    # alchemical factory needs. Going direct keeps this pipeline
+    # short and keeps the non-FEP ADMET path unchanged.
+    try:
+        from openff.toolkit.topology import Molecule
+        from openff.toolkit.typing.engines.smirnoff import \
+            ForceField
+    except ImportError as e:
+        result.reason = f"openff import failed: {e}"
+        result.wall_seconds = time.time() - t0
+        return result
+
+    try:
+        mol = Molecule.from_smiles(smiles)
+        mol.generate_conformers(n_conformers=1)
+        # AM1-BCC charges — same method src.chem.parametrize
+        # uses for docking. Cached internally by the toolkit.
+        mol.assign_partial_charges("am1bcc")
+        top = mol.to_topology()
+        ff = ForceField("openff-2.1.0.offxml")
+        vac_system = ff.create_openmm_system(
+            top, charge_from_molecules=[mol])
+    except Exception as e:
+        result.reason = (
+            f"OpenFF parametrise failed: {str(e)[:200]}")
+        result.wall_seconds = time.time() - t0
+        return result
+
+    # Step 2: build an alchemical region covering every ligand
+    # atom (absolute hydration FEP — whole molecule decouples
+    # over λ).
+    try:
+        from openmmtools import alchemy
+    except ImportError as e:
+        result.reason = f"openmmtools import failed: {e}"
+        result.wall_seconds = time.time() - t0
+        return result
+
+    n_atoms = vac_system.getNumParticles()
+    try:
+        region = alchemy.AlchemicalRegion(
+            alchemical_atoms=list(range(n_atoms)),
+            name=f"ligand_{smiles[:16]}")
+        factory = alchemy.AbsoluteAlchemicalFactory()
+        alch_system = factory.create_alchemical_system(
+            reference_system=vac_system,
+            alchemical_regions=region)
+    except Exception as e:
+        result.reason = (
+            f"alchemical factory failed: {str(e)[:200]}")
+        result.wall_seconds = time.time() - t0
+        return result
+
+    # Phase-1 success: the scaffold is valid. Phase-2 (MD sampling
+    # + MBAR) goes here in a follow-up.
+    result.ok = True
+    result.n_alchemical_atoms = n_atoms
+    result.wall_seconds = time.time() - t0
+    return result
+
+
+__all__ = [
+    "alchemical_state_smoke",
+    "FEPSmokeResult",
+    "ligand_hydration_fep",
+    "HydrationFEPResult",
+]
