@@ -252,3 +252,34 @@ __all__ = [
     "ligand_hydration_fep",
     "HydrationFEPResult",
 ]
+
+
+def main(argv: Optional[list] = None) -> int:
+    """CLI: `cellsim fep-hyd <SMILES>` — run the hydration FEP
+    scaffold and print the result summary.
+
+    Currently runs Phase 1 only (SMILES → alchemical system); the
+    MD sampling phase is the named next commit.
+    """
+    import argparse
+    import sys
+
+    ap = argparse.ArgumentParser(
+        description="Build an absolute-hydration FEP alchemical "
+                    "system for a SMILES. MD sampling is not yet "
+                    "implemented; this is the scaffold-phase "
+                    "Layer 1.3 FEP tool.")
+    ap.add_argument("smiles")
+    ap.add_argument("--n-windows", type=int, default=12,
+                    help="alchemical λ-windows for the future "
+                         "MD sampling phase (default 12)")
+    args = ap.parse_args(argv)
+
+    r = ligand_hydration_fep(args.smiles, n_windows=args.n_windows)
+    print(r.summary())
+    return 0 if r.ok else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    _sys.exit(main())
