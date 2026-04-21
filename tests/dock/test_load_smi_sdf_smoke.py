@@ -139,11 +139,28 @@ def test_load_smi_sdf_uses_indexed_name_on_missing_title():
         print(f"  untitled SDF fallback names: {names}")
 
 
+def test_load_smi_reads_stdin_with_dash():
+    import io
+    import os
+    saved_stdin = sys.stdin
+    sys.stdin = io.StringIO(
+        "CC(=O)OC1=CC=CC=C1C(=O)O\taspirin\n"
+        "NC(=N)c1ccccc1 benzamidine\n")
+    try:
+        rows = load_smi(Path("-"))
+    finally:
+        sys.stdin = saved_stdin
+    assert len(rows) == 2, rows
+    assert [n for _, n in rows] == ["aspirin", "benzamidine"]
+    print(f"  stdin dispatch: {[n for _, n in rows]}")
+
+
 if __name__ == "__main__":
     tests = [
         test_load_smi_handles_sdf,
         test_load_smi_handles_plain_smi,
         test_load_smi_sdf_uses_indexed_name_on_missing_title,
+        test_load_smi_reads_stdin_with_dash,
     ]
     for t in tests:
         try:

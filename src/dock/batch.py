@@ -500,6 +500,19 @@ def _load_sdf(path: Path) -> list[tuple[str, str]]:
     return rows
 
 
+def _parse_smi_text(text: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t") if "\t" in line else line.split(None, 1)
+        smi = parts[0]
+        name = parts[1] if len(parts) > 1 else smi
+        rows.append((smi, name))
+    return rows
+
+
 def load_smi(path: Path) -> list[tuple[str, str]]:
     """Load compound list from a .smi or .sdf file.
 
@@ -511,22 +524,20 @@ def load_smi(path: Path) -> list[tuple[str, str]]:
     of ChemDraw / synthesis workflow tools; loading them directly
     avoids a manual conversion step.
 
+    Stdin:  `--smi -` reads the SMILES list from stdin in .smi
+    format. Useful for piping: `grep foo chembl.smi | cellsim
+    dock --smi - --receptor 1STP`.
+
     Dispatch is by file extension (case-insensitive).
     """
+    if str(path) == "-":
+        return _parse_smi_text(sys.stdin.read())
+
     suffix = path.suffix.lower()
     if suffix in (".sdf", ".mol", ".sd"):
         return _load_sdf(path)
 
-    rows: list[tuple[str, str]] = []
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t") if "\t" in line else line.split(None, 1)
-        smi = parts[0]
-        name = parts[1] if len(parts) > 1 else smi
-        rows.append((smi, name))
-    return rows
+    return _parse_smi_text(path.read_text())
 
 
 def run_batch(
