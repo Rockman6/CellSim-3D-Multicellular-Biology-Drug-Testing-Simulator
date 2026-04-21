@@ -182,6 +182,44 @@ _KNOWN_KINASE_PDB_IDS = {
 }
 
 
+def _resolve_receptor(receptor: str) -> str:
+    """If `receptor` isn't an existing file path and looks like a
+    4-char PDB ID (e.g. '1STP'), download it from RCSB under
+    data/receptors/<id>.pdb and return that path. Otherwise
+    return the original string unchanged.
+
+    Biologist-UX: typing 'cellsim dock --receptor 1STP ...' now
+    works without a separate fetch-pdb step.
+    """
+    p = Path(receptor)
+    if p.exists():
+        return str(p)
+    token = receptor.strip()
+    if len(token) == 4 and token.isalnum():
+        from urllib.request import Request, urlopen
+        out = Path("data/receptors") / f"{token.lower()}.pdb"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if not out.exists():
+            url = f"https://files.rcsb.org/download/{token.upper()}.pdb"
+            print(f"[batch] receptor '{token}' looks like a PDB "
+                  f"ID; fetching {url}", flush=True)
+            try:
+                req = Request(url, headers={"User-Agent":
+                                              "CellSim/1.0"})
+                with urlopen(req, timeout=60) as resp:
+                    data = resp.read()
+                out.write_bytes(data)
+                print(f"[batch] wrote {out} "
+                      f"({len(data)/1024:.1f} KB)", flush=True)
+            except Exception as e:
+                print(f"[batch] PDB fetch failed: {e}. "
+                      "Provide a local --receptor path.",
+                      file=sys.stderr, flush=True)
+                return receptor
+        return str(out)
+    return receptor
+
+
 def _warn_kinase_receptor(receptor_pdb: Path) -> None:
     """Print a heads-up when the receptor is a kinase ATP-site
     crystal. Best-effort: checks the PDB ID (stem) against a
@@ -715,6 +753,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                          "verdict is 'follow_up' or 'review' — "
                          "the hand-to-wet-lab file.")
     args = ap.parse_args(argv)
+
+    # Accept PDB IDs in place of file paths for --receptor.
+    args.receptor = _resolve_receptor(args.receptor)
 
     # Upfront target-family heads-up. Vina's empirical score is not
     # reliable for rank-ordering kinase ATP-site inhibitors

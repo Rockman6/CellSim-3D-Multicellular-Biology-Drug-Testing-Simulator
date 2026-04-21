@@ -205,6 +205,19 @@ No ChemDraw-to-SMILES conversion step needed; biologists who
 export directly from synthesis-workflow tools pipe the SDF
 straight in.
 
+**PDB-ID receptors.** If `--receptor` looks like a 4-character
+PDB code rather than an existing file, CellSim auto-downloads
+it from RCSB and caches it under `data/receptors/`:
+
+```bash
+./scripts/cellsim dock --smi compounds.sdf --receptor 1STP
+# [batch] receptor '1STP' looks like a PDB ID; fetching https://...
+# [batch] wrote data/receptors/1stp.pdb  (115.1 KB)
+```
+
+Handy for "I want to see if my library hits PDB 3PTB" without
+a separate fetch step.
+
 No `--center`? fpocket auto-detects the binding site from receptor
 geometry.
 
