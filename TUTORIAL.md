@@ -59,18 +59,30 @@ Expected stdout:
 
 ```
 RANK  NAME                     TRIAGE         ΔG(kcal)   K_d        POCKET  STRAIN       Ro5  QED   logS
-   1  biotin_TRUE_BINDER       follow_up         -7.45    3.5 µM    ✓       acceptable  ✓    0.49  -1.53
-   2  ibuprofen_negative       deprioritise      -7.36    4.1 µM    ?       good        ✓    0.82  -3.09
-   3  aspirin_negative         drop              -6.66   13.0 µM    ✓       acceptable  ✓    0.55  -1.99
+   1  biotin_TRUE_BINDER       follow_up        -7.44    3.5 µM     ✓       acceptable  ✓    0.49  -1.53
+   2  ibuprofen_negative       follow_up        -7.36    4.1 µM     ✓       acceptable  ✓    0.82  -3.09
+   3  aspirin_negative         deprioritise     -6.66   13.0 µM     ✓       acceptable  ✓    0.55  -1.99
+   4  acetaminophen_negative   deprioritise     -6.31   23.8 µM     ✓       good        ✓    0.59  -1.97
+   5  caffeine_negative        drop             -5.48   95.7 µM     ✓       good        ✓    0.54  -0.87
 
 Next steps
 --------------------------------------------------
-  • Send 1 follow_up compound(s) to wet lab.
-  • 1 deprioritise compound(s): ignore unless scaffold-important;
+  • Send 2 follow_up compound(s) to wet lab.
+  • 2 deprioritise compound(s): ignore unless scaffold-important;
     if they matter, rescore with FEP before triage.
   • 1 drop compound(s): too weak / non-physical pose / known-bad
     ADMET. Do not synthesise.
 ```
+
+The two `follow_up` compounds are biotin (the real binder, Vina
+ΔG = −7.44 kcal/mol) and ibuprofen. Vina saturates on the
+extreme-tight streptavidin pocket, compressing every plausible
+binder into the same ~−7 kcal/mol range — so ibuprofen is a
+documented Vina false positive on this particular target, not
+a CellSim bug. TUTORIAL §8 explains the Vina-target-family
+reliability story; the honest biologist workflow on a
+saturation-prone target is to treat rank-1 as the real hit and
+rescore the rest with FEP.
 
 The **Next steps** block is the paste-ready wet-lab handoff
 summary. If a batch has zero `follow_up` or `review` compounds,
