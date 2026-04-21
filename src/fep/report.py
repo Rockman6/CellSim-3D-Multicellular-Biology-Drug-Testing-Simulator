@@ -92,6 +92,11 @@ class ReportResult:
     # MAE gate this report was scored against; stored so the
     # markdown + parity PNG render the right threshold.
     mae_gate_kcalmol: float = GATE_MAE_KCALMOL
+    # Expected row count (from --expected flag). When set and
+    # the CSV has fewer rows, the run is flagged as 'partial'
+    # and cannot pass even if those rows all look fine.
+    expected_rows: Optional[int] = None
+    is_partial: bool = False
     # Aggregate GHMC stats (across all windows × compounds that
     # report data); None if no GHMC info in log.
     ghmc_accept_overall_mean: Optional[float] = None
@@ -308,12 +313,20 @@ def _kendall_tau(x: list[float], y: list[float]) -> Optional[float]:
 def analyse(path: str | Path,
             *,
             mae_gate_kcalmol: float = GATE_MAE_KCALMOL,
+            expected_rows: Optional[int] = None,
             ) -> ReportResult:
     """Top-level: path in, ReportResult out.
 
     `mae_gate_kcalmol` lets a caller override the default
     hydration-era 1.5 kcal/mol gate — binding runs (streptavidin
     etc.) use 2.0 per BENCHMARKS.md Milestone B scope.
+
+    `expected_rows` is the number of compounds the YAML asked for.
+    If the CSV has fewer rows, the run is flagged as 'partial'
+    and cannot PASS regardless of MAE — a 6/12 run that happens to
+    have good MAE on its 6 rows is NOT a Milestone A pass; the
+    other 6 compounds might have been the hard ones. Matches the
+    professor's 'do not pass on incomplete data' rule.
     """
     path = Path(path)
     run_dir, csv_path = _resolve_inputs(path)
@@ -372,6 +385,9 @@ def analyse(path: str | Path,
         n_total=n_total, n_ok=n_ok,
         mae_kcalmol=mae, rmse_kcalmol=rmse,
         mae_gate_kcalmol=mae_gate_kcalmol,
+        expected_rows=expected_rows,
+        is_partial=(
+            expected_rows is not None and n_total < expected_rows),
         pearson_r=_pearson(preds, expts),
         spearman_rho=_spearman(preds, expts),
         kendall_tau=_kendall_tau(preds, expts),
@@ -428,13 +444,21 @@ def analyse(path: str | Path,
 
     # Overall verdict tri-state:
     #   True  = at least one gate evaluable and all evaluable pass
-    #   False = at least one evaluable gate failed
+    #   False = at least one evaluable gate failed, OR partial run
+    #           (< expected rows present) regardless of per-row MAE
     #   None  = nothing evaluable (scaffold-only / empty CSV)
     checks = [g for g in (result.pass_mae,
                           result.pass_ghmc,
                           result.pass_sign_critical)
               if g is not None]
-    if not checks:
+    if result.is_partial:
+        # A 6/12 run can't pass Milestone A even if the 6 look good —
+        # the other 6 might be the hard ones. Force FAIL-or-None.
+        if not checks:
+            result.pass_overall = None
+        else:
+            result.pass_overall = False
+    elif not checks:
         result.pass_overall = None
     else:
         result.pass_overall = all(checks)
@@ -465,6 +489,8 @@ def format_markdown(r: ReportResult) -> str:
         "PASS" if r.pass_overall
         else "FAIL" if r.pass_overall is False
         else "inconclusive")
+    if r.is_partial:
+        overall_icon = "FAIL (partial run)" if r.pass_overall is False else "partial"
     lines.append(f"# FreeSolv FEP report — {overall_icon}")
     lines.append("")
     lines.append(f"- source: `{r.source}`")
@@ -472,7 +498,17 @@ def format_markdown(r: ReportResult) -> str:
         lines.append(f"- platform: **{r.platform_line}**")
     if r.git_commit:
         lines.append(f"- git commit: `{r.git_commit}`")
-    lines.append(f"- compounds: {r.n_ok} ok / {r.n_total} total")
+    if r.expected_rows is not None:
+        completeness = (
+            f" ({r.n_total}/{r.expected_rows} expected"
+            + (", **PARTIAL — Milestone A cannot pass**"
+               if r.is_partial else "")
+            + ")")
+    else:
+        completeness = ""
+    lines.append(
+        f"- compounds: {r.n_ok} ok / {r.n_total} total"
+        f"{completeness}")
     if r.wall_total_seconds is not None:
         lines.append(
             f"- wall time: total {r.wall_total_seconds/60:.1f} min  "
@@ -735,10 +771,18 @@ def main(argv=None) -> int:
         help=f"MAE pass threshold in kcal/mol "
              f"(default {GATE_MAE_KCALMOL}; use 2.0 for binding-FEP "
              f"benchmarks per BENCHMARKS.md Milestone B)")
+    ap.add_argument(
+        "--expected", type=int, default=None,
+        help="expected row count from the source YAML. When the "
+             "CSV has fewer rows (run was killed early) the report "
+             "is flagged 'partial' and cannot pass — a 6/12 run "
+             "that happens to look good on its 6 is not a pass.")
     args = ap.parse_args(argv)
 
     try:
-        r = analyse(args.path, mae_gate_kcalmol=args.mae_gate)
+        r = analyse(args.path,
+                    mae_gate_kcalmol=args.mae_gate,
+                    expected_rows=args.expected)
     except Exception as e:
         print(f"fep-report: failed to parse {args.path}: {e}",
               file=sys.stderr)
