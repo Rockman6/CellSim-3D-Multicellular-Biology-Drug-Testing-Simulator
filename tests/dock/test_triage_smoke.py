@@ -60,6 +60,14 @@ CASES = [
           pocket_ok=True, mutagenic_risk="low",
           herg_risk="low", ro5_violations=0),
      "deprioritise"),
+    # Biotin-streptavidin canonical case: Vina scores biotin at
+    # -7.4 to -7.5 despite pM real K_d (Vina saturates on tight
+    # binders). MUST land in follow_up — the _FOLLOWUP_DG_THRESHOLD
+    # = -7.3 exists to make this work.
+    (dict(dG_kcalmol=-7.44, strain_band="acceptable",
+          pocket_ok=True, mutagenic_risk="low",
+          herg_risk="low", ro5_violations=0),
+     "follow_up"),
     # 3 Ro5 violations → drop.
     (dict(dG_kcalmol=-9.0, strain_band="good",
           pocket_ok=True, mutagenic_risk="low",

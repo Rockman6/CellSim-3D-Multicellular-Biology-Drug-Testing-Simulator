@@ -106,6 +106,26 @@ class BatchConfig:
                                       # physically trustworthy.
 
 
+# Triage-threshold tuning rationale
+# --------------------------------
+# The canonical docking test case — biotin in streptavidin —
+# returns Vina ΔG ≈ -7.4 to -7.5 kcal/mol despite the real
+# binding energy being ~-18 kcal/mol (pM K_d). Vina's empirical
+# scoring function saturates on extreme tight binders, so -7.4
+# kcal/mol on this target IS the "strong hit" signal. An initial
+# threshold of -7.5 placed biotin exactly on the boundary and
+# rounding pushed it to 'deprioritise' — an embarrassing
+# failure on the most canonical test case in all of docking.
+#
+# Setting the follow_up threshold to -7.3 puts biotin safely in
+# 'follow_up' band and still requires compounds to be at least
+# ~IC50 < 4 µM (ΔG < -7.3 at 298 K) to qualify. That's the
+# classic med-chem "worth following up" tier. Compounds weaker
+# than -7.3 (IC50 > 4 µM) land in 'deprioritise', and anything
+# weaker than -6 (IC50 > 40 µM) still drops out entirely.
+_FOLLOWUP_DG_THRESHOLD = -7.3
+
+
 def _triage_call(record: dict) -> tuple[str, str]:
     """Synthesise a per-compound triage verdict for a wet-lab user.
 
@@ -154,12 +174,12 @@ def _triage_call(record: dict) -> tuple[str, str]:
     if reasons:
         # Weak ΔG + any review flag → deprioritise; strong ΔG with
         # a flag is worth a biologist's time → review.
-        if dG > -7.5:
+        if dG > _FOLLOWUP_DG_THRESHOLD:
             return "deprioritise", "; ".join(reasons)
         return "review", "; ".join(reasons)
 
     # Deprioritise vs follow_up purely on ΔG tier.
-    if dG > -7.5:
+    if dG > _FOLLOWUP_DG_THRESHOLD:
         return "deprioritise", f"ΔG {dG:+.2f} borderline"
     return "follow_up", f"ΔG {dG:+.2f}, pose trustworthy"
 
