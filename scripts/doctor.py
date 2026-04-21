@@ -18,6 +18,7 @@ Steps (each one < 1 s):
     9. src.cache round-trip works?
    10. triage rule table returns follow_up on a clean hit?
    11. src.dock.strain importable?
+   12. FEP scaffold: openmmtools alchemy builds a valid system?
 """
 
 from __future__ import annotations
@@ -204,6 +205,17 @@ def main() -> int:
         check("strain diagnostic module importable", True)
     except Exception as e:
         check(f"strain diagnostic  [{e}]", False)
+
+    # 5e FEP scaffold (openmmtools alchemy primitives).
+    try:
+        from src.fep import alchemical_state_smoke
+        r = alchemical_state_smoke()
+        check(
+            f"FEP scaffold (openmmtools "
+            f"{r.openmmtools_version or '?'}) alchemy primitives",
+            r.ok, r.reason)
+    except Exception as e:
+        check(f"FEP scaffold  [{e}]", False)
 
     # --- report --------------------------------------------------
     print()
