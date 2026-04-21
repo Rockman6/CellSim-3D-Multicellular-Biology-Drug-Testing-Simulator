@@ -632,6 +632,24 @@ def run_batch(
         except Exception as e:
             logger.debug("triage PNG render skipped: %s", e)
 
+        # Side-effect: also write a markdown summary next to the
+        # CSV for lab-notebook paste. Biologists don't have to
+        # know about 'cellsim to-md' — they just get <name>.md.
+        try:
+            from src.dock.to_md import render_markdown
+            md_path = Path(out_csv).with_suffix(".md")
+            md_records = [{k: (str(v) if v is not None else "")
+                           for k, v in r.items()}
+                          for r in sorted_records]
+            md = render_markdown(
+                md_records, top=10,
+                title=f"CellSim screen — "
+                      f"{Path(cfg.receptor_pdb).stem}")
+            md_path.write_text(md, encoding="utf-8")
+            print(f"[batch] wrote {md_path}", flush=True)
+        except Exception as e:
+            logger.debug("markdown render skipped: %s", e)
+
     return sorted_records
 
 
