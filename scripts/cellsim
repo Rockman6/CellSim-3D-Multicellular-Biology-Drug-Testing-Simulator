@@ -89,6 +89,9 @@ usage: cellsim <subcommand> [args...]
   fep-hyd     alchemical hydration-ΔG FEP scaffold (Layer 1.3)
                 -> src/fep/__init__.py
 
+  fep-freesolv FreeSolv 12-compound accuracy gate (Milestone A)
+                -> src/fep/freesolv_validate.py
+
   md-ligand   vacuum Langevin MD on a SMILES
                 -> src/md/simulate.py
 
@@ -178,6 +181,7 @@ case "${1:-}" in
     som-validate) shift; exec python -m src.quantum.som_validation "$@" ;;
     cyp-inhibit)  shift; exec python -m src.dock.cyp_inhibition "$@" ;;
     fep-hyd)     shift; exec python -m src.fep "$@" ;;
+    fep-freesolv) shift; exec python -m src.fep.freesolv_validate "$@" ;;
     md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
     md-protein)  shift; exec python -m src.md.protein "$@" ;;
     md-view)     shift; exec python -m src.md.protein_viewer "$@" ;;

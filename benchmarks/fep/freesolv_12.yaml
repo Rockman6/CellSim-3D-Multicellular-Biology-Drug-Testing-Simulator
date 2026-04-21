@@ -1,0 +1,85 @@
+# FreeSolv subset — 12 compounds spanning drug-like chemotypes,
+# used as the Milestone A accuracy gate for Layer 1.3 FEP.
+#
+# Source: Mobley & Guthrie 2014 J Comput Aided Mol Des 28:711
+# (the FreeSolv database). Experimental ΔG_hyd values are the
+# published gas→water transfer free energies in kcal/mol at
+# 298 K; uncertainties are the per-compound reported spread.
+#
+# Span: +2.00 (methane, hydrophobic) to -9.71 (acetamide,
+# strongly polar). This covers the range CellSim needs to
+# track before we trust relative-binding FEP on drug targets.
+#
+# Milestone A exit criterion:
+#   mean-absolute-error (MAE) ≤ 1.5 kcal/mol across all 12
+#   compounds, run at production parameters (≥ 50 ps per
+#   window × 11 windows × 2 legs per compound on a GPU).
+
+entries:
+  # Hydrophobic / non-polar
+  - name: methane
+    smiles: "C"
+    dG_hydration_kcalmol: +2.00
+    expt_unc_kcalmol: 0.01
+    source_notes: |
+      Ben-Naim & Marcus 1984 J Chem Phys; cited in Mobley &
+      Guthrie 2014 as the canonical methane ΔG_hyd.
+
+  - name: ethane
+    smiles: "CC"
+    dG_hydration_kcalmol: +1.83
+    expt_unc_kcalmol: 0.02
+
+  - name: propane
+    smiles: "CCC"
+    dG_hydration_kcalmol: +1.95
+    expt_unc_kcalmol: 0.02
+
+  # Aromatic
+  - name: benzene
+    smiles: "c1ccccc1"
+    dG_hydration_kcalmol: -0.87
+    expt_unc_kcalmol: 0.05
+
+  - name: toluene
+    smiles: "Cc1ccccc1"
+    dG_hydration_kcalmol: -0.90
+    expt_unc_kcalmol: 0.05
+
+  # Alcohols
+  - name: methanol
+    smiles: "CO"
+    dG_hydration_kcalmol: -5.11
+    expt_unc_kcalmol: 0.03
+
+  - name: ethanol
+    smiles: "CCO"
+    dG_hydration_kcalmol: -5.01
+    expt_unc_kcalmol: 0.03
+
+  # Nitrogen-containing
+  - name: ammonia
+    smiles: "N"
+    dG_hydration_kcalmol: -4.30
+    expt_unc_kcalmol: 0.05
+
+  - name: methylamine
+    smiles: "CN"
+    dG_hydration_kcalmol: -4.56
+    expt_unc_kcalmol: 0.05
+
+  - name: pyridine
+    smiles: "c1ccncc1"
+    dG_hydration_kcalmol: -4.70
+    expt_unc_kcalmol: 0.08
+
+  # Strongly polar
+  - name: acetic_acid
+    smiles: "CC(=O)O"
+    dG_hydration_kcalmol: -6.70
+    expt_unc_kcalmol: 0.10
+
+  - name: acetamide
+    smiles: "CC(=O)N"
+    dG_hydration_kcalmol: -9.71
+    expt_unc_kcalmol: 0.10

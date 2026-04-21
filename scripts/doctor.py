@@ -143,6 +143,7 @@ def main() -> int:
         "benchmarks/dock/trypsin_calibration.yaml",
         "benchmarks/dock/egfr_calibration.yaml",
         "benchmarks/quantum/cyp3a4_som_validation.yaml",
+        "benchmarks/fep/freesolv_12.yaml",       # Milestone A gate
     ]:
         p = REPO / rel
         check(f"{rel:<40s} ({p.stat().st_size if p.exists() else 0} B)",
