@@ -976,6 +976,27 @@ def main(argv: Optional[list[str]] = None) -> int:
                   "has no hits against this target, the ΔG "
                   "threshold is too strict, or the target isn't "
                   "a Vina-friendly class (see TUTORIAL §8).")
+
+        # Paths summary: tell the biologist where the artifacts
+        # are so they don't have to scroll up through the [batch]
+        # wrote lines. Only shown when --out-csv was given.
+        if args.out_csv:
+            out_csv = Path(args.out_csv)
+            artifacts = [
+                f"  • CSV:         {out_csv}",
+                f"  • Markdown:    {out_csv.with_suffix('.md')}",
+                f"  • Triage PNG:  {out_csv.with_suffix('.triage.png')}",
+            ]
+            if args.shortlist_csv:
+                artifacts.append(
+                    f"  • Shortlist:   {args.shortlist_csv}")
+            if args.export_poses_dir:
+                artifacts.append(
+                    f"  • Poses:       {args.export_poses_dir}/")
+            print()
+            print("Artifacts")
+            print("-" * 50)
+            print("\n".join(artifacts))
     return 0
 
 
