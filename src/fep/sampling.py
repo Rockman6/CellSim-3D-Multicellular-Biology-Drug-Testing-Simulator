@@ -84,13 +84,13 @@ def sample_alchemical_windows(
     """
     import numpy as np
     from openmm import (
-        LangevinMiddleIntegrator,
         LocalEnergyMinimizer,
         unit as ommunit,
         Context,
         Platform,
     )
     from openmmtools.alchemy import AlchemicalState
+    from openmmtools.integrators import LangevinIntegrator
 
     t0 = time.time()
     schedule = _default_lambda_schedule(n_windows)
@@ -119,9 +119,20 @@ def sample_alchemical_windows(
         platform = None
 
     T = temperature_K * ommunit.kelvin
-    integrator = LangevinMiddleIntegrator(
-        T, friction_ps / ommunit.picosecond,
-        timestep_fs * ommunit.femtosecond)
+    # openmmtools.integrators.LangevinIntegrator with the default
+    # 'V R O R V' splitting is the canonical choice for
+    # alchemical sampling (this is what perses, yank, and the
+    # openmmtools MCMC drivers use internally). It's more
+    # robust to repeated apply_to_context velocity perturbations
+    # than openmm's native LangevinMiddleIntegrator — the latter
+    # NaNs on solvated systems when the eval-at-each-λ inner
+    # loop happens between production steps.
+    integrator = LangevinIntegrator(
+        temperature=T,
+        collision_rate=friction_ps / ommunit.picosecond,
+        timestep=timestep_fs * ommunit.femtosecond,
+        splitting="V R O R V",
+        constraint_tolerance=1e-08)
     integrator.setRandomNumberSeed(int(seed))
 
     ctx = Context(alch_system, integrator, platform) \
