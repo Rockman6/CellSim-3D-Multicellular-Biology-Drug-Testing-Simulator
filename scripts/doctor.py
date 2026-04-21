@@ -19,6 +19,8 @@ Steps (each one < 1 s):
    10. triage rule table returns follow_up on a clean hit?
    11. src.dock.strain importable?
    12. FEP scaffold: openmmtools alchemy builds a valid system?
+   13. Every benchmark YAML under benchmarks/fep/ RDKit-parses
+       and (if binding) points at an existing receptor.
 """
 
 from __future__ import annotations
@@ -218,6 +220,43 @@ def main() -> int:
             r.ok, r.reason)
     except Exception as e:
         check(f"FEP scaffold  [{e}]", False)
+
+    # --- 6. Benchmark YAML dry-run (fep-binding validate) --------
+    # Every benchmark YAML under benchmarks/fep/ must RDKit-parse
+    # cleanly + point at an existing receptor (if it's a binding
+    # YAML). This catches a typo'd SMILES on PR BEFORE the
+    # biologist burns 4 h on a doomed run.
+    print(f"\n  6. Benchmark YAML dry-run")
+    try:
+        from src.fep.binding import main as _fep_binding_main
+        import io as _io
+        yaml_dir = REPO / "benchmarks" / "fep"
+        for yml in sorted(yaml_dir.glob("*.yaml")):
+            old_out = sys.stdout
+            sys.stdout = _io.StringIO()
+            try:
+                rc = _fep_binding_main(["validate", str(yml)])
+            except SystemExit as ex:
+                rc = ex.code if isinstance(ex.code, int) else 1
+            finally:
+                captured = sys.stdout.getvalue()
+                sys.stdout = old_out
+            label = f"{yml.relative_to(REPO)}"
+            if rc == 0:
+                n_entries = captured.count("  ok")
+                check(f"{label}  ({n_entries} entries pass)", True)
+            else:
+                # Find and show the first issue line — biologists
+                # need the 'what' to fix.
+                first_issue = next(
+                    (line.strip().lstrip("! ").strip()
+                     for line in captured.splitlines()
+                     if line.lstrip().startswith("!")),
+                    "validation failed (see cellsim fep-binding "
+                    "validate output)")
+                check(label, False, first_issue)
+    except Exception as e:
+        check(f"benchmark YAML dry-run  [{e}]", False)
 
     # --- report --------------------------------------------------
     print()
