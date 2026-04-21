@@ -275,6 +275,7 @@ def main(argv: Optional[list] = None) -> int:
     MD sampling phase is the named next commit.
     """
     import argparse
+    import json as _json
     import sys
 
     ap = argparse.ArgumentParser(
@@ -286,10 +287,19 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--n-windows", type=int, default=12,
                     help="alchemical λ-windows for the future "
                          "MD sampling phase (default 12)")
+    ap.add_argument("--json", action="store_true",
+                    help="emit the full result as a JSON object "
+                         "(no summary line) for programmatic "
+                         "consumption — useful when scripting "
+                         "fep-hyd across many compounds.")
     args = ap.parse_args(argv)
 
     r = ligand_hydration_fep(args.smiles, n_windows=args.n_windows)
-    print(r.summary())
+    if args.json:
+        from dataclasses import asdict
+        print(_json.dumps(asdict(r), indent=2, default=str))
+    else:
+        print(r.summary())
     return 0 if r.ok else 1
 
 
