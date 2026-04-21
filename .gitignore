@@ -72,3 +72,6 @@ data/bioagents/targets_predicted/
 data/bioagents/metabolites/
 data/bioagents/admet/
 data/bioagents/uncertainty/
+
+# Claude Code per-user settings (notifications, hooks, etc.)
+.claude/
