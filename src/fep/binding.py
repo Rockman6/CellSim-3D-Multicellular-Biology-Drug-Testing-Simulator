@@ -177,6 +177,19 @@ def _prepare_protein_topology(receptor_pdb: str | Path):
 
     fixer = PDBFixer(filename=str(receptor_pdb))
     fixer.findMissingResidues()
+    # Drop TERMINAL missing-residue extensions — PDBFixer's placement
+    # heuristic for missing N/C-terminal residues is unreliable and
+    # can put them 99 Å from the main body (observed on 1stp where
+    # GLN 159 ended up at y=-99 Å, which then bloats the solvation
+    # box by 50×). Internal-gap missing residues (real loops) are
+    # kept — their placement IS reasonable because both endpoints
+    # are constrained.
+    chains = list(fixer.topology.chains())
+    for key in list(fixer.missingResidues.keys()):
+        chain_idx, res_pos = key
+        n_chain_res = len(list(chains[chain_idx].residues()))
+        if res_pos == 0 or res_pos == n_chain_res:
+            del fixer.missingResidues[key]
     fixer.findNonstandardResidues()
     fixer.replaceNonstandardResidues()
     fixer.removeHeterogens(keepWater=False)
@@ -525,6 +538,169 @@ def _build_complex_alchemical_system(
     }
 
 
+def _build_complex_alchemical_system_amber14(
+    smiles: str,
+    receptor_pdb: str | Path,
+    *,
+    binding_site_center_nm=None,
+    anchor_radius_nm: float = 1.2,
+    padding_nm: float = 1.2,
+    softcore_alpha: float = 0.5,
+    restraint_k_kJ_per_nm2: float = 4184.0,
+    restraint_r0_nm: float = 0.0,
+):
+    """Hybrid builder: AMBER14 for protein + TIP3P for solvent via
+    OpenMM's classical ForceField; SMIRNOFF (OpenFF Sage 2.1.0 +
+    AM1-BCC charges) for the ligand via openmmforcefields'
+    SMIRNOFFTemplateGenerator.
+
+    Fixes the O(N²) memory blowup that `Interchange.from_smirnoff`
+    hits on mid-size proteins (1stp, 1m17, anything > ~1 500 atoms).
+    Keeps ligand parameters bit-for-bit identical to the hydration
+    leg, so the ΔΔG = complex - solvent subtraction in Phase-2
+    still has the Sage/AM1-BCC errors cancel.
+
+    Return shape is the exact same dict as
+    `_build_complex_alchemical_system` (its pure-SMIRNOFF sibling),
+    so either builder drops in interchangeably.
+    """
+    import numpy as np
+    from openff.toolkit.topology import Molecule
+    from openmm import app as _app
+    from openmm import unit as ommunit
+    from openmmforcefields.generators import (
+        SMIRNOFFTemplateGenerator,
+    )
+    from openmmtools import alchemy
+
+    # 1) Prep protein via PDBFixer (same protonation + nonstandard-
+    # residue handling as the pure-SMIRNOFF sibling; fair apples-
+    # to-apples starting structure between the two paths).
+    fixer_tmp_pdb, prot_top_omm, prot_positions = (
+        _prepare_protein_topology(receptor_pdb))
+    import os
+    try:
+        os.unlink(fixer_tmp_pdb)
+    except OSError:
+        pass
+
+    n_protein_atoms = prot_top_omm.getNumAtoms()
+    ca_candidate_indices = [
+        atom.index for atom in prot_top_omm.atoms()
+        if atom.name == "CA"]
+    prot_positions_nm = np.array(
+        [[p.x, p.y, p.z] for p in prot_positions])
+
+    # 2) Decide binding-site centre (fpocket → Cα centroid).
+    if binding_site_center_nm is None:
+        binding_site_center_nm = _auto_binding_site_center(
+            prot_top_omm, prot_positions,
+            receptor_pdb=receptor_pdb)
+    binding_site_center_nm = np.asarray(
+        binding_site_center_nm, dtype=float)
+
+    # 3) Build + place the ligand (same as pure-SMIRNOFF path).
+    lig = Molecule.from_smiles(smiles)
+    lig.generate_conformers(n_conformers=1)
+    lig.assign_partial_charges("am1bcc")
+    _place_ligand_at_site(lig, binding_site_center_nm)
+    n_ligand_atoms = lig.n_atoms
+
+    # 4) Register SMIRNOFF template generator BEFORE we attempt to
+    # build a System. Passing `molecules=[lig]` pre-parametrises
+    # the ligand so addSolvent + createSystem don't hit the
+    # SMIRNOFF pattern matcher lazily (which is where the pure-
+    # Interchange path blows up).
+    gen = SMIRNOFFTemplateGenerator(
+        molecules=[lig], forcefield=_LIGAND_FF)
+    ff = _app.ForceField("amber14-all.xml", "amber14/tip3pfb.xml")
+    ff.registerTemplateGenerator(gen.generator)
+
+    # 5) Combine protein + ligand into a Modeller. Ligand is
+    # appended AFTER protein so ligand_indices = [n_protein,
+    # n_protein + n_ligand).
+    modeller = _app.Modeller(prot_top_omm, prot_positions)
+    # Clear any CRYST1-inherited box — a PDB's crystal packing box
+    # is usually far larger than we want, and if left in place
+    # Modeller.addSolvent uses it verbatim instead of the padding
+    # we asked for. Streptavidin 1stp has a 99×99×125 Å crystal
+    # that would give 812k-atom solvated systems vs ~15k with a
+    # tight padding-derived box.
+    modeller.topology.setPeriodicBoxVectors(None)
+    lig_top_omm = lig.to_topology().to_openmm()
+    lig_pos_nm = np.asarray(
+        lig.conformers[0].m_as(__import__("openff.units",
+                                          fromlist=["unit"])
+                               .unit.nanometer),
+        dtype=float)
+    lig_pos_omm = lig_pos_nm * ommunit.nanometer
+    modeller.add(lig_top_omm, lig_pos_omm)
+
+    # 6) Solvate (classical Modeller + tip3p model — fast).
+    modeller.addSolvent(
+        ff, padding=padding_nm * ommunit.nanometer,
+        model="tip3p",
+        ionicStrength=0.0 * ommunit.molar)
+    complex_top_omm = modeller.topology
+
+    # 7) Create the bare System, THEN alchemical-wrap the ligand.
+    complex_system = ff.createSystem(
+        modeller.topology,
+        nonbondedMethod=_app.PME,
+        nonbondedCutoff=1.0 * ommunit.nanometer,
+        constraints=_app.HBonds,
+        rigidWater=True)
+
+    # Positions as numpy for return. Modeller.positions is an
+    # openmm.unit.Quantity wrapping either a list of Vec3 or a
+    # numpy ndarray (depending on OpenMM version). Use
+    # value_in_unit(nm) + asarray to handle both.
+    complex_positions_nm = np.asarray(
+        modeller.positions.value_in_unit(ommunit.nanometer),
+        dtype=float)
+
+    # 8) Ligand atom indices in the combined solvated topology.
+    # Modeller appends in order (protein → ligand → waters/ions),
+    # so [n_protein, n_protein + n_ligand) still holds.
+    lig_start = n_protein_atoms
+    lig_end = n_protein_atoms + n_ligand_atoms
+    ligand_indices = list(range(lig_start, lig_end))
+
+    # 9) Restraint anchor — Cα near the binding site.
+    anchor_indices = _find_ca_indices_near(
+        prot_positions_nm, binding_site_center_nm,
+        anchor_radius_nm, ca_candidate_indices)
+
+    # 10) Alchemical factory + restraint (same as sibling).
+    region = alchemy.AlchemicalRegion(
+        alchemical_atoms=ligand_indices,
+        softcore_alpha=softcore_alpha)
+    factory = alchemy.AbsoluteAlchemicalFactory()
+    alch_system = factory.create_alchemical_system(
+        reference_system=complex_system,
+        alchemical_regions=region)
+    _add_harmonic_com_restraint(
+        alch_system, ligand_indices, anchor_indices,
+        k_kJ_per_nm2=restraint_k_kJ_per_nm2,
+        r0_nm=restraint_r0_nm)
+
+    positions = complex_positions_nm * ommunit.nanometer
+
+    return {
+        "alch_system": alch_system,
+        "topology_omm": complex_top_omm,
+        "positions": positions,
+        "ligand_indices": ligand_indices,
+        "anchor_indices": anchor_indices,
+        "restraint_k_kJ_per_nm2": restraint_k_kJ_per_nm2,
+        "restraint_r0_nm": restraint_r0_nm,
+        "n_ligand_atoms": n_ligand_atoms,
+        "n_protein_atoms": n_protein_atoms,
+        "n_total_atoms": complex_system.getNumParticles(),
+        "ff_stack": "amber14-all + tip3pfb + SMIRNOFF-lig",
+    }
+
+
 def compute_absolute_binding_dg(
     smiles: str,
     receptor_pdb: str | Path,
@@ -541,7 +717,19 @@ def compute_absolute_binding_dg(
     n_production_steps: int = 2000,
     sample_stride: int = 100,
     seed: int = 1,
+    force_field_path: str = "amber14",
 ) -> BindingDGResult:
+    """
+    `force_field_path` selects the protein-ligand parametrisation
+    stack:
+      - "amber14" (default): openmm.app.ForceField amber14-all +
+        tip3pfb for protein + solvent, SMIRNOFFTemplateGenerator
+        for the ligand. Fast, works on all receptors tested.
+      - "smirnoff": Interchange.from_smirnoff on the whole system
+        with the OpenFF ff14sb_off_impropers port. Hits an O(N²)
+        memory wall on mid-size proteins; kept as a fallback /
+        provenance-matching path for the hydration leg.
+    """
     """Absolute binding ΔG via the double-decoupling method.
 
     Phase-1 (this commit, default ``sample=False``):
@@ -567,8 +755,18 @@ def compute_absolute_binding_dg(
     )
 
     # Complex leg.
+    if force_field_path == "amber14":
+        _builder = _build_complex_alchemical_system_amber14
+    elif force_field_path == "smirnoff":
+        _builder = _build_complex_alchemical_system
+    else:
+        result.reason = (
+            f"unknown force_field_path '{force_field_path}' "
+            "(expected 'amber14' or 'smirnoff')")
+        result.wall_seconds = time.time() - t0
+        return result
     try:
-        cx = _build_complex_alchemical_system(
+        cx = _builder(
             smiles, receptor_pdb,
             binding_site_center_nm=binding_site_center_nm,
             anchor_radius_nm=anchor_radius_nm,
