@@ -55,12 +55,14 @@ entries:
       perturbation from biotin — the classic FF-sensitivity test.
 
   - name: 2_iminobiotin
-    smiles: "N=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+    smiles: "[H]/N=C1/N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
     dG_bind_kcalmol: -10.8
     expt_unc_kcalmol: 0.4
     source_notes: |
       Urea C=O replaced with C=N. Fukunaga 1988; Kd ~ 10⁻⁸ M at
       neutral pH. Pushes the protonation / force-field edge case.
+      SMILES pins the Z (syn) imino tautomer — native form per
+      the cocrystal NMR; RDKit rejects undefined stereo here.
 
   - name: biotin_methyl_ester
     smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)OC)N1"

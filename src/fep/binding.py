@@ -49,13 +49,31 @@ We gate Milestone B on ΔΔG ranking (Kendall τ on the EGFR series),
 not on absolute-ΔG accuracy — ΔΔG is the quantity med-chem cares
 about anyway.
 
-This module is **scaffold-phase** in this commit. It builds both
-alchemical systems (complex + solvent) end-to-end, verifies they
-minimise cleanly, and returns `phase='scaffolded'` so callers can
-distinguish the builder from a sampled ΔG. Phase-2 (next commit,
-after the M5 Max FreeSolv tarball confirms the sampler) wires
-`sample_alchemical_windows` onto both legs and applies the
-corrections.
+Two interchangeable force-field stacks are available via
+`compute_absolute_binding_dg(..., force_field_path=...)`:
+
+- **"amber14"** (default): OpenMM classical ForceField
+  `amber14-all.xml` + `amber14/tip3pfb.xml` for the protein and
+  solvent, with `openmmforcefields.SMIRNOFFTemplateGenerator`
+  providing the OpenFF Sage 2.1.0 + AM1-BCC ligand template.
+  Fast and robust across all probed receptors (1ubq / 1stp /
+  1m17 scaffold in under 15 s on CPU).
+- **"smirnoff"**: pure `openff.interchange.Interchange.from_smirnoff`
+  on `openff-2.1.0 + ff14sb_off_impropers + tip3p`. Kept for
+  users who want provenance-identical Sage-bonded parameters
+  between the hydration and binding legs; slower but viable
+  after the terminal-residue bounding-box fix landed in
+  `_prepare_protein_topology`.
+
+Ligand parameters are identical between the two paths (Sage +
+AM1-BCC), so the protein-leg stack is the only difference; ΔΔG
+subtractions within the same receptor cancel either way.
+
+Phase state returned on `BindingDGResult`:
+- `'scaffolded_both_legs'` — systems built end-to-end, no MD.
+- `'sampled'` — MD + MBAR complete, ΔG_bind populated. Pass
+  `sample=True` to reach this state; expect hours per compound
+  on GPU.
 
 Non-AI: every energy term comes from explicit SMIRNOFF parameters
 (OpenFF Sage 2.1.0 bonded + AM1-BCC charges on the ligand; AMBER
@@ -451,7 +469,12 @@ def _build_complex_alchemical_system(
         binding_site_center_nm, dtype=float)
 
     # 3) Build + place the ligand.
-    lig = Molecule.from_smiles(smiles)
+    # allow_undefined_stereo=True so SMILES like 2-iminobiotin
+    # (C=N exocyclic geometry ambiguous) don't block a bench run.
+    # RDKit will pick a deterministic but arbitrary stereo; the
+    # validator warns so the biologist knows to pin explicit E/Z
+    # if ΔG_bind depends on it.
+    lig = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
     lig.generate_conformers(n_conformers=1)
     lig.assign_partial_charges("am1bcc")
     _place_ligand_at_site(lig, binding_site_center_nm)
@@ -600,7 +623,12 @@ def _build_complex_alchemical_system_amber14(
         binding_site_center_nm, dtype=float)
 
     # 3) Build + place the ligand (same as pure-SMIRNOFF path).
-    lig = Molecule.from_smiles(smiles)
+    # allow_undefined_stereo=True so SMILES like 2-iminobiotin
+    # (C=N exocyclic geometry ambiguous) don't block a bench run.
+    # RDKit will pick a deterministic but arbitrary stereo; the
+    # validator warns so the biologist knows to pin explicit E/Z
+    # if ΔG_bind depends on it.
+    lig = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
     lig.generate_conformers(n_conformers=1)
     lig.assign_partial_charges("am1bcc")
     _place_ligand_at_site(lig, binding_site_center_nm)
@@ -1326,11 +1354,33 @@ def _run_validate(args) -> int:
                         1 for _ in Chem.FindMolChiralCenters(
                             mol, includeUnassigned=True))
                     formal_charge = Chem.GetFormalCharge(mol)
+                    # Detect ambiguous E/Z bonds using RDKit's
+                    # own CIP-aware stereo finder. This is the
+                    # same primitive openff-toolkit uses, so if
+                    # it returns a bond here the Molecule.from_smiles
+                    # path WILL reject it without
+                    # allow_undefined_stereo=True. Catches imino
+                    # (iminobiotin N=C) without false-positiving on
+                    # amide C=O or urea C=N where one end has no
+                    # heavy neighbour.
+                    n_undef_bonds = 0
+                    try:
+                        potentials = Chem.FindPotentialStereo(mol)
+                        n_undef_bonds = sum(
+                            1 for p in potentials
+                            if p.type == Chem.StereoType.Bond_Double
+                            and p.specified ==
+                                Chem.StereoSpecified.Unspecified)
+                    except Exception:
+                        # Old RDKit without FindPotentialStereo —
+                        # skip the check (better than false alarms).
+                        pass
                     er.update({
                         "ok": True,
                         "canon_smiles": canon,
                         "n_heavy_atoms": n_heavy,
                         "n_stereocenters": n_stereo,
+                        "n_undef_double_bonds": n_undef_bonds,
                         "formal_charge": formal_charge,
                     })
                     # Biologist gotchas: formal charge ≠ 0 means the
@@ -1346,6 +1396,14 @@ def _run_validate(args) -> int:
                         issues.append(
                             f"{name}: {n_heavy} heavy atoms > 60 — "
                             "AM1-BCC will be slow (minutes/compound)")
+                    if n_undef_bonds:
+                        issues.append(
+                            f"{name}: {n_undef_bonds} acyclic "
+                            "double bond(s) with undefined E/Z — "
+                            "builder will pick arbitrarily; pin "
+                            "explicit geometry in SMILES if ΔG "
+                            "depends on it (e.g. iminobiotin's "
+                            "exocyclic C=N)")
                 except Exception as e:
                     issues.append(f"{name}: RDKit descriptor "
                                   f"failure: {e}")
