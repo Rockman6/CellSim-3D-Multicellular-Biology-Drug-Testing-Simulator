@@ -85,6 +85,7 @@ def sample_alchemical_windows(
     import numpy as np
     from openmm import (
         LangevinMiddleIntegrator,
+        LocalEnergyMinimizer,
         unit as ommunit,
         Context,
         Platform,
@@ -140,6 +141,24 @@ def sample_alchemical_windows(
         alch_state.lambda_electrostatics = lam
         alch_state.lambda_sterics = lam
         alch_state.apply_to_context(ctx)
+
+        # Minimise after each λ change: packmol placement +
+        # alchemical coupling together produce close contacts
+        # that send Langevin to NaN on the first integrator
+        # step. Tight tolerance + many iterations is needed for
+        # solvated systems with polar/aromatic solutes; methane
+        # survives looser settings but ethanol / benzene do not.
+        # TODO: Milestone-A blocker — some solvated compounds
+        # still NaN even after this minimisation; likely needs
+        # short low-timestep equilibration before the real
+        # integrator takes over. Tracked via the freesolv-smoke
+        # failure profile.
+        try:
+            LocalEnergyMinimizer.minimize(
+                ctx, tolerance=1.0, maxIterations=2000)
+        except Exception as e:
+            logger.debug(
+                "minimisation skipped at λ=%.2f: %s", lam, e)
 
         # Equilibrate.
         integrator.step(n_equilibration_steps)
