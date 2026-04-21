@@ -182,9 +182,23 @@ M5 Max too or if longer sampling dissolves it.
 
 ### Run times out after 6 hours and hasn't finished
 
-That's fine. Send the partial CSV — 6 of 12 compounds is better
-than nothing. Just append a line to the tarball note saying
-"killed at <time>, <N> of 12 compounds completed".
+That's fine. The tarball won't exist (script never reached the
+`tar czf` step), so you'll need to build one yourself from
+whatever's in `run/fep/<stamp>/`:
+
+```bash
+# Auto-compute the PASS/FAIL verdict on the partial data + bundle
+STAMP=$(ls -1 run/fep/ | tail -1)
+./scripts/cellsim fep-report "run/fep/${STAMP}" \
+    --yaml benchmarks/fep/freesolv_12.yaml \
+    --out-dir "run/fep/${STAMP}"
+tar czf "freesolv_m5max_${STAMP}_partial.tar.gz" \
+    -C run/fep "${STAMP}/"
+```
+
+The analyser will automatically flag it as "FAIL (partial run)"
+in the `report.md` header — no manual annotation needed. Send
+`freesolv_m5max_<stamp>_partial.tar.gz`.
 
 ### Machine overheats / fan roars / battery drains
 
