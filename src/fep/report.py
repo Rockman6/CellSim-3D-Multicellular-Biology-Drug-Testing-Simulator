@@ -119,6 +119,36 @@ class ReportResult:
     git_commit: Optional[str] = None
 
 
+def _autodiscover_latest() -> Optional[Path]:
+    """Find the most recent run artefact in the repo: either a
+    tarball at the repo root or a run/fep/<stamp>/ directory. The
+    biologist workflow is "I just ran the gate, now what?" — they
+    shouldn't have to remember a timestamp.
+
+    Returns the path (tarball or directory) with the newest mtime,
+    or None if nothing's there.
+    """
+    cwd = Path.cwd()
+    candidates: list[tuple[float, Path]] = []
+
+    for tb in cwd.glob("freesolv_m5max_*.tar.gz"):
+        candidates.append((tb.stat().st_mtime, tb))
+    for tb in cwd.glob("freesolv_*.tar.gz"):
+        candidates.append((tb.stat().st_mtime, tb))
+
+    run_root = cwd / "run" / "fep"
+    if run_root.is_dir():
+        for sub in run_root.iterdir():
+            csv = sub / "freesolv_results.csv"
+            if csv.is_file():
+                candidates.append((sub.stat().st_mtime, sub))
+
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
+
 def _resolve_inputs(path: Path) -> tuple[Path, Path]:
     """Resolve (run_dir, csv_path). Accepts:
 
@@ -754,9 +784,16 @@ def main(argv=None) -> int:
                     "directory, or raw CSV — and emit a pass/fail "
                     "markdown report. Exit 0 on gate pass, 1 on fail.")
     ap.add_argument(
-        "path",
+        "path", nargs="?", default=None,
         help="freesolv_m5max_<stamp>.tar.gz, the extracted "
-             "directory, or freesolv_results.csv directly")
+             "directory, or freesolv_results.csv directly. "
+             "Omit to auto-discover the most recent run under "
+             "run/fep/ or any freesolv_*.tar.gz at the repo root.")
+    ap.add_argument(
+        "--yaml", dest="yaml_path", default=None,
+        help="source benchmark YAML — auto-sets --expected to the "
+             "entry count so partial runs are flagged correctly. "
+             "Cannot use with --expected.")
     ap.add_argument(
         "--out-dir", type=Path, default=None,
         help="write report.md + table.csv + parity.png here")
@@ -778,6 +815,36 @@ def main(argv=None) -> int:
              "is flagged 'partial' and cannot pass — a 6/12 run "
              "that happens to look good on its 6 is not a pass.")
     args = ap.parse_args(argv)
+
+    # Auto-discover: if no path supplied, find the most recent run.
+    if args.path is None:
+        discovered = _autodiscover_latest()
+        if discovered is None:
+            print("fep-report: no tarball or run/fep/<stamp>/ found. "
+                  "Run `cellsim fep-freesolv ...` first, or pass an "
+                  "explicit path.", file=sys.stderr)
+            return 2
+        if not args.quiet:
+            print(f"auto-discovered: {discovered}", file=sys.stderr)
+        args.path = str(discovered)
+
+    # Auto-derive --expected from --yaml.
+    if args.yaml_path is not None:
+        if args.expected is not None:
+            print("fep-report: pass either --yaml or --expected, "
+                  "not both", file=sys.stderr)
+            return 2
+        try:
+            import yaml as _yaml
+            data = _yaml.safe_load(Path(args.yaml_path).read_text())
+            args.expected = len((data or {}).get("entries") or [])
+            if not args.quiet:
+                print(f"expected rows from {args.yaml_path}: "
+                      f"{args.expected}", file=sys.stderr)
+        except Exception as e:
+            print(f"fep-report: cannot read --yaml {args.yaml_path}: "
+                  f"{e}", file=sys.stderr)
+            return 2
 
     try:
         r = analyse(args.path,
