@@ -158,20 +158,35 @@ def sample_alchemical_windows(
         n_steps=sample_stride)
 
     # Minimise the initial state at λ=1 (fully coupled) before
-    # starting any MD — packmol placement has close contacts
-    # that send the first integrator step to NaN. Done under a
-    # throwaway context so the MCMC move machinery gets a
-    # relaxed sampler_state.
+    # starting any MD. Direct setPositions + LocalEnergyMinimizer,
+    # bypassing CompoundThermodynamicState.apply_to_context (which
+    # expects a thermostat present in the System and raises a
+    # silent AttributeError if the OpenMM system from openff
+    # Interchange doesn't carry one). LocalEnergyMinimizer doesn't
+    # need a thermostat; it only needs the bare System + positions.
+    # After minimise, call applyConstraints(1e-6) to enforce H-bond
+    # and water-SETTLE constraints that minimisation alone can
+    # leave slightly off by ~0.1 Å — GHMC rejects 100% of proposals
+    # when given positions with those violations.
+    def _apply_alchemical_params(ctx, comp_state):
+        """Set lambda_* globals on the context without touching a
+        thermostat. Extracted from CompoundThermodynamicState."""
+        for cs in comp_state._composable_states:
+            cs.apply_to_context(ctx)
     try:
         _min_int = Verlet(1.0 * ommunit.femtosecond)
         _min_ctx = _Context(alch_system, _min_int)
-        compound_states[-1].apply_to_context(_min_ctx)
-        sampler_state.apply_to_context(_min_ctx)
+        _apply_alchemical_params(_min_ctx, compound_states[-1])
+        _min_ctx.setPositions(sampler_state.positions)
+        if sampler_state.box_vectors is not None:
+            _min_ctx.setPeriodicBoxVectors(
+                *sampler_state.box_vectors)
         _Min.minimize(_min_ctx, tolerance=1.0, maxIterations=2000)
+        _min_ctx.applyConstraints(1e-6)
         sampler_state.update_from_context(_min_ctx)
         del _min_ctx, _min_int
     except Exception as e:
-        logger.debug("initial minimisation skipped: %s", e)
+        logger.warning("initial minimisation failed: %s", e)
 
     # Iterate the schedule in REVERSE: start fully coupled
     # (λ=1), which is the physical initial state from packmol
@@ -182,25 +197,41 @@ def sample_alchemical_windows(
     # integrator NaNs on the first step because waters are sitting
     # on top of each other where the ligand used to be. This is
     # the canonical FEP order used by perses/yank.
+    # Persistent eval-context: used ONLY for cross-λ energy
+    # evaluation via direct AlchemicalState control. openmmtools'
+    # CompoundThermodynamicState.reduced_potential fails on
+    # thermostat-less systems (openff Interchange doesn't add
+    # one); direct control is the canonical fallback used by
+    # perses when the system lacks a thermostat. We build this
+    # once and reuse across all sample collections.
+    _eval_int = Verlet(1.0 * ommunit.femtosecond)
+    _eval_ctx = _Context(alch_system, _eval_int)
+    _eval_state = AlchemicalState.from_system(alch_system)
+    beta = 1.0 / (0.0019872041 * temperature_K)  # 1/(kT) kcal/mol
+
     schedule_order = list(reversed(list(enumerate(schedule))))
     for k, lam in schedule_order:
         comp_state = compound_states[k]
 
         # Professor's checklist item 3: minimise before each λ
-        # window. A "warm" config from the previous λ carries
-        # overlaps the new Hamiltonian won't tolerate.
+        # window + applyConstraints. Bypass CompoundTS.apply_to_
+        # context (no thermostat in the system).
         try:
             _mi = Verlet(1.0 * ommunit.femtosecond)
             _mctx = _Context(alch_system, _mi)
-            comp_state.apply_to_context(_mctx)
-            sampler_state.apply_to_context(_mctx)
+            _apply_alchemical_params(_mctx, comp_state)
+            _mctx.setPositions(sampler_state.positions)
+            if sampler_state.box_vectors is not None:
+                _mctx.setPeriodicBoxVectors(
+                    *sampler_state.box_vectors)
             _Min.minimize(_mctx, tolerance=1.0,
                           maxIterations=2000)
+            _mctx.applyConstraints(1e-6)
             sampler_state.update_from_context(_mctx)
             del _mctx, _mi
         except Exception as e:
-            logger.debug(
-                "per-λ minimise skipped at λ=%.2f: %s", lam, e)
+            logger.warning(
+                "per-λ minimise FAILED at λ=%.2f: %s", lam, e)
 
         # Reset the equilibration move's acceptance counter
         # before each window so the per-window statistic is clean.
@@ -212,17 +243,28 @@ def sample_alchemical_windows(
         for s in range(n_samples_per):
             col = k * n_samples_per + s
             prod_move.apply(comp_state, sampler_state)
-            # Reduced potential at every target λ.
-            for n in range(n_states):
-                u = compound_states[n].reduced_potential(
-                    sampler_state)
-                u_kn[n, col] = u
+            # Eval reduced potential at every target λ via direct
+            # control: setPositions → set λ via AlchemicalState →
+            # read potential energy → u = β·U.
+            _eval_ctx.setPositions(sampler_state.positions)
+            if sampler_state.box_vectors is not None:
+                _eval_ctx.setPeriodicBoxVectors(
+                    *sampler_state.box_vectors)
+            for n, lam_n in enumerate(schedule):
+                _eval_state.lambda_electrostatics = lam_n
+                _eval_state.lambda_sterics = lam_n
+                _eval_state.apply_to_context(_eval_ctx)
+                U = _eval_ctx.getState(
+                    getEnergy=True).getPotentialEnergy(
+                    ).value_in_unit(ommunit.kilocalorie_per_mole)
+                u_kn[n, col] = beta * U
         # Record acceptance for this window.
         try:
             result.ghmc_acceptance.append(
                 float(prod_move.fraction_accepted))
         except Exception:
             result.ghmc_acceptance.append(0.0)
+    del _eval_ctx, _eval_int
 
     dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
     kT = 0.0019872041 * temperature_K
