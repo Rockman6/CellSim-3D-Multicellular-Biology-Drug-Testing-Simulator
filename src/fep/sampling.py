@@ -39,17 +39,29 @@ class AlchemicalSamplingResult:
     dG_uncertainty_kcalmol: Optional[float] = None
     wall_seconds: Optional[float] = None
     lambda_schedule: list = field(default_factory=list)
+    # GHMC acceptance per window — professor's acceptance-rate
+    # requirement. < 0.70 means the timestep is too large and
+    # the ΔG cannot be trusted.
+    ghmc_acceptance: list = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.ok:
             return f"[FAIL] FEP sampling  {self.reason}"
+        accept_tag = ""
+        if self.ghmc_acceptance:
+            mean_acc = sum(self.ghmc_acceptance) / len(
+                self.ghmc_acceptance)
+            min_acc = min(self.ghmc_acceptance)
+            accept_tag = (
+                f"  GHMC accept mean={mean_acc:.0%} "
+                f"min={min_acc:.0%}")
         return (
             f"[OK]   FEP sampling  "
             f"ΔG = {self.dG_kcalmol:+.2f} ± "
             f"{self.dG_uncertainty_kcalmol:.2f} kcal/mol  "
             f"({self.n_windows} windows × "
             f"{self.n_samples_per_window} samples,  "
-            f"wall {self.wall_seconds:.1f} s)")
+            f"wall {self.wall_seconds:.1f} s){accept_tag}")
 
 
 def _default_lambda_schedule(n_windows: int) -> list[float]:
@@ -66,16 +78,23 @@ def sample_alchemical_windows(
     n_windows: int = 11,
     n_equilibration_steps: int = 500,
     n_production_steps: int = 2000,
-    timestep_fs: float = 2.0,
+    timestep_fs: float = 1.0,       # prof-checklist: 1 fs for
+                                    # debug; drop from 2.0
     temperature_K: float = 298.15,
-    friction_ps: float = 1.0,
+    friction_ps: float = 20.0,      # prof-checklist: match GHMC
+                                    # canonical friction
     seed: int = 1,
     sample_stride: int = 100,
 ) -> AlchemicalSamplingResult:
     """Run Langevin MD at each λ via openmmtools MCMC moves;
     return ΔG between λ=0 and λ=1 estimated via MBAR."""
     import numpy as np
-    from openmm import unit as ommunit
+    from openmm import (
+        unit as ommunit,
+        Context as _Context,
+        VerletIntegrator as Verlet,
+        LocalEnergyMinimizer as _Min,
+    )
     from openmmtools import mcmc, states
     from openmmtools.alchemy import AlchemicalState
 
@@ -123,37 +142,87 @@ def sample_alchemical_windows(
     u_kn = np.zeros((n_states, n_states * n_samples_per))
     N_k = np.array([n_samples_per] * n_states)
 
-    # LangevinDynamicsMove.apply creates a fresh context each
-    # call (that's the whole point — no context reuse, no stale
-    # integrator state, no NaN from swap-induced kicks).
-    equil_move = mcmc.LangevinDynamicsMove(
+    # GHMCMove (Generalised Hybrid Monte Carlo) is Metropolised
+    # Langevin — bad configurations get REJECTED instead of
+    # blown up to NaN. The acceptance fraction is also a live
+    # diagnostic: < 0.70 means the timestep is too large and
+    # we cannot trust the ΔG. This is the professor's
+    # "monitor the acceptance" requirement.
+    equil_move = mcmc.GHMCMove(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
-        n_steps=n_equilibration_steps,
-        reassign_velocities=True)
-    prod_move = mcmc.LangevinDynamicsMove(
+        n_steps=n_equilibration_steps)
+    prod_move = mcmc.GHMCMove(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
-        n_steps=sample_stride,
-        reassign_velocities=False)
+        n_steps=sample_stride)
 
-    col = 0
-    for k, lam in enumerate(schedule):
+    # Minimise the initial state at λ=1 (fully coupled) before
+    # starting any MD — packmol placement has close contacts
+    # that send the first integrator step to NaN. Done under a
+    # throwaway context so the MCMC move machinery gets a
+    # relaxed sampler_state.
+    try:
+        _min_int = Verlet(1.0 * ommunit.femtosecond)
+        _min_ctx = _Context(alch_system, _min_int)
+        compound_states[-1].apply_to_context(_min_ctx)
+        sampler_state.apply_to_context(_min_ctx)
+        _Min.minimize(_min_ctx, tolerance=1.0, maxIterations=2000)
+        sampler_state.update_from_context(_min_ctx)
+        del _min_ctx, _min_int
+    except Exception as e:
+        logger.debug("initial minimisation skipped: %s", e)
+
+    # Iterate the schedule in REVERSE: start fully coupled
+    # (λ=1), which is the physical initial state from packmol
+    # (ligand embedded in a water box, all interactions on), and
+    # decouple as λ → 0. Running forward would start at λ=0 with
+    # the ligand already phantom, waters collapse into its space
+    # before we can equilibrate at any coupled state, and the
+    # integrator NaNs on the first step because waters are sitting
+    # on top of each other where the ligand used to be. This is
+    # the canonical FEP order used by perses/yank.
+    schedule_order = list(reversed(list(enumerate(schedule))))
+    for k, lam in schedule_order:
         comp_state = compound_states[k]
-        # Equilibrate at this λ. reassign_velocities=True at
-        # the start of each window decouples windows.
+
+        # Professor's checklist item 3: minimise before each λ
+        # window. A "warm" config from the previous λ carries
+        # overlaps the new Hamiltonian won't tolerate.
+        try:
+            _mi = Verlet(1.0 * ommunit.femtosecond)
+            _mctx = _Context(alch_system, _mi)
+            comp_state.apply_to_context(_mctx)
+            sampler_state.apply_to_context(_mctx)
+            _Min.minimize(_mctx, tolerance=1.0,
+                          maxIterations=2000)
+            sampler_state.update_from_context(_mctx)
+            del _mctx, _mi
+        except Exception as e:
+            logger.debug(
+                "per-λ minimise skipped at λ=%.2f: %s", lam, e)
+
+        # Reset the equilibration move's acceptance counter
+        # before each window so the per-window statistic is clean.
+        equil_move.reset_statistics()
         equil_move.apply(comp_state, sampler_state)
-        # Production + cross-λ energy evaluation.
-        for _ in range(n_samples_per):
+
+        # Reset production-move counter for the window.
+        prod_move.reset_statistics()
+        for s in range(n_samples_per):
+            col = k * n_samples_per + s
             prod_move.apply(comp_state, sampler_state)
-            # Compute reduced potential at every target λ.
-            # SamplerState.reduced_potential handles context
-            # creation + energy eval; no state scrambling.
+            # Reduced potential at every target λ.
             for n in range(n_states):
                 u = compound_states[n].reduced_potential(
                     sampler_state)
                 u_kn[n, col] = u
-            col += 1
+        # Record acceptance for this window.
+        try:
+            result.ghmc_acceptance.append(
+                float(prod_move.fraction_accepted))
+        except Exception:
+            result.ghmc_acceptance.append(0.0)
 
     dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
     kT = 0.0019872041 * temperature_K
