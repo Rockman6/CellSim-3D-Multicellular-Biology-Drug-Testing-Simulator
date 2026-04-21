@@ -193,6 +193,18 @@ EOF
     --refine-poses
 ```
 
+SDF input works out of the box — just pass a `.sdf` / `.mol` /
+`.sd` file to `--smi` and CellSim uses each record's `_Name`
+title property as the compound name:
+
+```bash
+./scripts/cellsim dock --smi compounds.sdf --receptor target.pdb
+```
+
+No ChemDraw-to-SMILES conversion step needed; biologists who
+export directly from synthesis-workflow tools pipe the SDF
+straight in.
+
 No `--center`? fpocket auto-detects the binding site from receptor
 geometry.
 

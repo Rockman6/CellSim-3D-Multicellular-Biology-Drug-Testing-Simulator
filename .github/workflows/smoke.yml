@@ -143,6 +143,9 @@ jobs:
       - name: halogen-parse smoke (Layer 1.3, regress PDBQT Cl/Br parsing)
         run: python -u tests/dock/test_halogen_parse_smoke.py
 
+      - name: load_smi SDF+smi dispatch smoke (Layer 1.3, wet-lab input)
+        run: python -u tests/dock/test_load_smi_sdf_smoke.py
+
       - name: dock vina cache smoke (cache hit speed-up)
         run: python -u tests/dock/test_vina_cache.py
 
