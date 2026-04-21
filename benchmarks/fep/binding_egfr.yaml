@@ -1,0 +1,110 @@
+# EGFR kinase inhibitor absolute-binding FEP set — Milestone B
+# Phase-2 flagship target.
+#
+# Why EGFR:
+#   - ~25% of marketed oncology small-molecule drugs target kinases;
+#     EGFR (NSCLC, glioblastoma) is the flagship. Wet-lab replacement
+#     requires ΔG_bind that tracks published IC50 across a
+#     congeneric series — this set IS that test.
+#   - The Vina docking calibration on this same set (see
+#     benchmarks/dock/egfr_calibration.yaml) delivered Spearman -0.49,
+#     i.e. anti-correlated with experiment. Physics-derived FEP
+#     should fix the ranking; if Milestone B can't, Campaign 2's
+#     "physics priors over Vina" claim is unsupported.
+#   - The Campaign-1 → Campaign-2 bridge retires the professor's
+#     "closed ontology / circular validation" critique on this set.
+#
+# Receptor: 1M17 — erlotinib-bound EGFR kinase, 2.6 Å (Stamos et al
+# 2002 J Biol Chem 277:46265). Binding-site centre translated from
+# the docking YAML (Å → nm), matching the ATP-site pocket erlotinib
+# sits in.
+#
+# IC50 → ΔG_bind conversion:
+#   ΔG = R·T·ln(IC50) at T=298.15 K, R=1.987e-3 kcal/mol/K.
+# Papers rarely report [ATP]_Km pairs for Cheng-Prusoff correction,
+# so the absolute ΔG scale is offset by up to ~1.5 kcal/mol across
+# the set. Phase-2 ΔΔG between compounds (all at same receptor,
+# same offset) is robust; absolute-ΔG MAE will carry that offset
+# and should be interpreted via Kendall τ rank correlation, not
+# the 2.0 kcal/mol absolute gate.
+#
+# Literature sources (primary):
+#   Moyer et al 1997 Cancer Res 57:4838 (erlotinib, OSI-774)
+#   Wakeling et al 2002 Cancer Res 62:5749 (gefitinib, ZD1839)
+#   Levitzki & Gazit 1995 Science 267:1782 (AG-1478)
+#   Rusnak et al 2001 Mol Cancer Ther 1:85 (lapatinib, dual EGFR/HER2)
+#   Fry et al 1994 Science 265:1093 (4-anilinoquinazoline parent)
+#   Osherov & Levitzki 1994 Eur J Biochem 225:1047 (tyrphostin AG-494)
+#
+# Milestone B Phase-2 gate on THIS set:
+#   - Kendall τ ≥ 0.6 on ΔG ranking vs experiment (rank correlation
+#     is the load-bearing metric; see IC50 caveat above).
+#   - NO sign errors: every predicted ΔG_bind must be negative.
+#   - GHMC acceptance ≥ 70% per window per compound.
+#   - Partial runs (< 6 entries) DO NOT pass — the big test is
+#     whether physics-FEP holds across BOTH tight binders (erlotinib
+#     nM) AND weak hits (4-anilinoquinazoline μM). A 3-compound
+#     partial hiding the weak binders would be deceptive.
+
+receptor:
+  pdb_path: benchmarks/dock/1m17.pdb
+  # Binding-site centre in nm (Å ÷ 10). Matches the erlotinib-
+  # pocket crystal centre from the docking calibration YAML. Set
+  # to null to fall back to fpocket auto-detect (should give the
+  # same pocket #1 at drug=0.53).
+  binding_site_center_nm: [2.201, 0.025, 5.279]
+
+entries:
+  - name: erlotinib
+    smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+    IC50_M: 2.0e-9
+    dG_bind_kcalmol: -11.86
+    source_notes: |
+      Moyer 1997 Cancer Res 57:4838. FDA-approved 2004 (Tarceva).
+      1M17 native ligand — re-docking baseline.
+
+  - name: gefitinib
+    smiles: "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
+    IC50_M: 3.3e-8
+    dG_bind_kcalmol: -10.20
+    source_notes: |
+      Wakeling 2002 Cancer Res 62:5749. FDA-approved 2003 (Iressa).
+      Anilinoquinazoline; morpholinopropoxy tail differentiates
+      from erlotinib's methoxyethoxy.
+
+  - name: AG-1478
+    smiles: "COc1cc2ncnc(Nc3ccc(Cl)cc3)c2cc1OC"
+    IC50_M: 3.0e-9
+    dG_bind_kcalmol: -11.62
+    source_notes: |
+      Levitzki & Gazit 1995 Science 267:1782. Research-tool
+      compound; 4-chloroanilino with dimethoxyquinazoline core.
+
+  - name: lapatinib
+    smiles: "CS(=O)(=O)CCNCc1ccc(-c2ccc3ncnc(Nc4ccc(OCc5cccc(F)c5)c(Cl)c4)c3c2)o1"
+    IC50_M: 1.08e-8
+    dG_bind_kcalmol: -10.88
+    source_notes: |
+      Rusnak 2001 Mol Cancer Ther 1:85. FDA-approved 2007
+      (Tykerb). Dual EGFR/HER2; 4-(fluorobenzyloxy)-3-chloroaniline
+      extends into back pocket. 40 heavy atoms — AM1-BCC on this
+      will be slow (~1-2 min on CPU).
+
+  - name: 4-anilinoquinazoline
+    smiles: "c1ccc(Nc2ncnc3ccccc23)cc1"
+    IC50_M: 1.0e-6
+    dG_bind_kcalmol: -8.17
+    source_notes: |
+      Fry 1994 Science 265:1093 parent compound. Unsubstituted
+      anilinoquinazoline — the SAR starting point. Weak but
+      selective EGFR hit.
+
+  - name: tyrphostin_AG-494
+    smiles: "N#C/C(=C\\c1ccc(O)c(O)c1)/C(=O)Nc1ccccc1"
+    IC50_M: 1.1e-6
+    dG_bind_kcalmol: -8.11
+    source_notes: |
+      Osherov & Levitzki 1994 Eur J Biochem 225:1047. Non-
+      quinazoline tyrphostin; catechol + benzylidene-cyanoamide
+      scaffold. Tests whether CellSim generalises across chemotypes
+      at the same receptor.
