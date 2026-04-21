@@ -465,9 +465,20 @@ A regression on any of the ~11 smoke gates blocks merge.
 - **No ML predictions.** If you want a neural scorer, use a
   different tool; CellSim is deliberately physics-only (see
   [`MISSION.md`](MISSION.md) §"No black-box / no AI surrogates").
-- **No rigorous binding affinity for the top hit**. Vina ΔG is
-  triage-grade. For publication-grade ΔΔG, bolt a perses FEP run
-  onto the refined poses (Layer 1.3 perses hook pending).
+- **No rigorous binding affinity for the top hit yet.** Vina ΔG
+  is triage-grade; Layer 1.3's FEP hook is under construction.
+  The scaffold is in and callable:
+
+  ```bash
+  cellsim fep-hyd CCO
+  # [OK] ΔG_hyd CCO  phase=scaffolded  n_alchemical_atoms=9
+  #      (MD sampling not yet implemented)
+  ```
+
+  This confirms the SMILES → OpenFF + AM1-BCC → OpenMM →
+  openmmtools.alchemy → alchemical System pipeline works. MD
+  sampling + MBAR against FreeSolv is the next commit; relative-
+  binding FEP (the EGFR kinase rank-order rescorer) follows.
 - **No membrane proteins yet.** GPCRs / ion channels in a bilayer
   need Layer 1.5 Martini 3, scaffold-only at the moment.
 
