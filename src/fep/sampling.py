@@ -161,35 +161,35 @@ def sample_alchemical_windows(
         # potential at EVERY λ state (to populate u_kn).
         for _ in range(n_samples_per):
             integrator.step(sample_stride)
-            # Snapshot full state — positions AND velocities —
-            # so the inner cross-λ energy-evaluation loop can
-            # restore them cleanly. Without saving velocities
-            # the Langevin integrator's internal velocity
-            # cache goes stale after setPositions calls inside
-            # the inner loop and the next integrator.step()
-            # blows up with a NaN. This is the load-bearing
-            # fix for solvated-system sampling.
-            state = ctx.getState(
+            # Snapshot positions AND velocities into cheap
+            # numpy copies; evaluate the reduced potential at
+            # every target λ by temporarily mutating the
+            # context, then fully restore the production state
+            # (λ, positions, velocities) before the next MD
+            # step. The velocity restore is load-bearing: without
+            # it the LangevinMiddleIntegrator's internal velocity
+            # cache goes stale against the λ swaps and the next
+            # integrator.step() NaNs out on solvated systems.
+            snap = ctx.getState(
                 getPositions=True, getVelocities=True)
-            pos = state.getPositions(asNumpy=True)
-            vel = state.getVelocities(asNumpy=True)
-            # Evaluate this sample at each target state n.
+            pos = snap.getPositions(asNumpy=True)
+            vel = snap.getVelocities(asNumpy=True)
+
             for n, lam_n in enumerate(schedule):
                 alch_state.lambda_electrostatics = lam_n
                 alch_state.lambda_sterics = lam_n
                 alch_state.apply_to_context(ctx)
-                ctx.setPositions(pos)
                 U = ctx.getState(
                     getEnergy=True
                 ).getPotentialEnergy().value_in_unit(
                     ommunit.kilocalorie_per_mole)
                 u_kn[n, col] = U / kT
-            # Restore λ_k, positions AND velocities for the
-            # next production step.
+            # DO NOT setPositions on every iteration — the
+            # positions haven't moved, only λ changed. Restore
+            # the production λ + velocities for the next step.
             alch_state.lambda_electrostatics = lam
             alch_state.lambda_sterics = lam
             alch_state.apply_to_context(ctx)
-            ctx.setPositions(pos)
             ctx.setVelocities(vel)
             col += 1
 
