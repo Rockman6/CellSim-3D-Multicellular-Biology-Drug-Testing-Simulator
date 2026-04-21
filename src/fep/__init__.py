@@ -239,22 +239,59 @@ def ligand_hydration_fep(
         result.wall_seconds = time.time() - t0
         return result
 
-    # TODO Phase-2a: solvate the ligand in TIP3P and build the
-    # solvated alchemical leg. Hydration free energy is:
+    # Phase-2a: solvate via openff.interchange + packmol and
+    # rebuild the alchemical system on the solvated topology.
+    # Hydration free energy is:
     #   ΔG_hyd = ΔG(decouple in solvent) − ΔG(decouple in vacuum)
-    # so the solvated leg is required for a real number. First
-    # pass tried OpenMM Modeller.addSolvent → OpenFF
-    # Topology.from_openmm → Interchange-like system build, but
-    # hit a 'NoneType' object has no attribute 'items' deep
-    # inside the openff-toolkit 0.16 water parametrisation path.
-    # Needs a dedicated PR to debug properly (e.g. use Interchange
-    # directly or a separate LigandFF+WaterFF combine step) —
-    # don't want to silently ship a broken ΔG. Phase-2b (MD +
-    # MBAR + FreeSolv gate) follows Phase-2a.
+    # so both legs are required. Using Interchange sidesteps the
+    # openff-toolkit 0.16 Modeller route that was failing with
+    # a pint NoneType error — solvate_topology builds the water
+    # box in OpenFF-native units, then Interchange.from_smirnoff
+    # parametrises ligand (Sage) + water (tip3p.offxml) together.
+    try:
+        from openff.interchange import Interchange
+        from openff.interchange.components._packmol import (
+            solvate_topology,
+        )
+        from openff.units import unit as offunit
 
-    # Phase-1 success: the vacuum scaffold is valid.
+        solv_top = solvate_topology(
+            topology=top,
+            nacl_conc=0.0 * offunit.molar,
+            padding=0.9 * offunit.nanometer,
+        )
+        solv_ff = ForceField("openff-2.1.0.offxml", "tip3p.offxml")
+        ichg = Interchange.from_smirnoff(
+            force_field=solv_ff, topology=solv_top,
+            charge_from_molecules=[mol])
+        solv_system = ichg.to_openmm(
+            combine_nonbonded_forces=True)
+
+        # Alchemical region covers only the ligand atoms (first
+        # n_atoms of the solvated topology; packmol places the
+        # solute at the front).
+        solv_region = alchemy.AlchemicalRegion(
+            alchemical_atoms=list(range(n_atoms)),
+            name=f"ligand_{smiles[:16]}_solvated")
+        _solv_alch = factory.create_alchemical_system(
+            reference_system=solv_system,
+            alchemical_regions=solv_region)
+    except Exception as e:
+        result.reason = (
+            f"solvated-system build failed: {str(e)[:200]}")
+        # Vacuum leg is still valid — be honest about partial
+        # progress instead of failing the whole call.
+        result.ok = True
+        result.n_alchemical_atoms = n_atoms
+        result.phase = "scaffolded_vacuum_only"
+        result.wall_seconds = time.time() - t0
+        return result
+
+    # Phase-2a success: both legs built. Phase-2b (MD + MBAR +
+    # FreeSolv gate) follows in a dedicated commit.
     result.ok = True
     result.n_alchemical_atoms = n_atoms
+    result.phase = "scaffolded_both_legs"
     result.wall_seconds = time.time() - t0
     return result
 
