@@ -7,6 +7,7 @@ on:
       - "src/chem/**"
       - "src/md/**"
       - "src/dock/**"
+      - "src/fep/**"
       - "src/quantum/**"
       - "src/uq/**"
       - "src/cache/**"
@@ -14,11 +15,13 @@ on:
       - "tests/cache/**"
       - "tests/md/**"
       - "tests/dock/**"
+      - "tests/fep/**"
       - "tests/quantum/**"
       - "tests/uq/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
       - "benchmarks/dock/**"
+      - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
@@ -27,6 +30,7 @@ on:
       - "src/chem/**"
       - "src/md/**"
       - "src/dock/**"
+      - "src/fep/**"
       - "src/quantum/**"
       - "src/uq/**"
       - "src/cache/**"
@@ -34,11 +38,13 @@ on:
       - "tests/cache/**"
       - "tests/md/**"
       - "tests/dock/**"
+      - "tests/fep/**"
       - "tests/quantum/**"
       - "tests/uq/**"
       - "benchmarks/chembl/**"
       - "benchmarks/md/**"
       - "benchmarks/dock/**"
+      - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
@@ -151,6 +157,18 @@ jobs:
 
       - name: fep end-to-end smoke (Layer 1.3, methane hydration ΔG pipeline)
         run: python -u tests/fep/test_hydration_dg_smoke.py
+
+      - name: fep binding scaffold smoke (Layer 1.3 Milestone B, 1ubq + restraint)
+        run: python -u tests/fep/test_binding_scaffold_smoke.py
+
+      - name: fep-report analyser smoke (tarball → PASS/FAIL verdict)
+        run: python -u tests/fep/test_report_smoke.py
+
+      - name: fep-binding validate dry-run (YAML hygiene, <1s)
+        run: python -u tests/fep/test_validate_smoke.py
+
+      - name: cellsim doctor (step 13 = all benchmarks/fep/*.yaml dry-run)
+        run: ./scripts/cellsim doctor
 
       - name: halogen-parse smoke (Layer 1.3, regress PDBQT Cl/Br parsing)
         run: python -u tests/dock/test_halogen_parse_smoke.py
