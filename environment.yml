@@ -32,6 +32,13 @@ dependencies:
   # MD engines (no ML potentials)
   - openmm>=8.1
   - openmmtools>=0.23
+  - openmmforcefields>=0.15  # SMIRNOFFTemplateGenerator for the
+                             # hybrid AMBER14-protein + SMIRNOFF-
+                             # ligand path in Milestone B Phase-2
+                             # (pure-SMIRNOFF via Interchange hit
+                             # O(N²) memory on mid-size proteins;
+                             # see BENCHMARKS.md Known Phase-2
+                             # issue)
   - pdbfixer>=1.9
   - mdanalysis>=2.6
 
