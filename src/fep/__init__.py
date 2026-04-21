@@ -297,11 +297,187 @@ def ligand_hydration_fep(
     return result
 
 
+@dataclass
+class HydrationDGResult:
+    """Envelope for a full hydration ΔG run.
+
+    ΔG_hyd = −( ΔG(decouple in solvent) − ΔG(decouple in vacuum) )
+
+    Positive ΔG_hyd = transfer from gas to water is unfavourable
+    (hydrophobic solute). Negative = favourable.
+    """
+
+    smiles: str
+    ok: bool
+    reason: str = ""
+    dG_hydration_kcalmol: Optional[float] = None
+    dG_vacuum_decouple_kcalmol: Optional[float] = None
+    dG_solvent_decouple_kcalmol: Optional[float] = None
+    uncertainty_kcalmol: Optional[float] = None
+    n_windows: Optional[int] = None
+    wall_seconds: Optional[float] = None
+
+    def summary(self) -> str:
+        if not self.ok:
+            return f"[FAIL] ΔG_hyd {self.smiles}  {self.reason}"
+        return (
+            f"[OK]   ΔG_hyd {self.smiles}  "
+            f"{self.dG_hydration_kcalmol:+.2f} ± "
+            f"{self.uncertainty_kcalmol:.2f} kcal/mol  "
+            f"(ΔG_vac={self.dG_vacuum_decouple_kcalmol:+.2f}, "
+            f"ΔG_solv={self.dG_solvent_decouple_kcalmol:+.2f})  "
+            f"wall {self.wall_seconds:.1f} s")
+
+
+def _build_alchemical_legs(smiles: str):
+    """Build (vac_alch, solv_alch, top_openmm_vac, solv_positions,
+    vac_positions) for a SMILES. Raises on failure."""
+    import numpy as np
+    from openff.toolkit.topology import Molecule
+    from openff.toolkit.typing.engines.smirnoff import ForceField
+    from openff.interchange import Interchange
+    from openff.interchange.components._packmol import (
+        solvate_topology,
+    )
+    from openff.units import unit as offunit
+    from openmm import unit as ommunit
+    from openmmtools import alchemy
+
+    mol = Molecule.from_smiles(smiles)
+    mol.generate_conformers(n_conformers=1)
+    mol.assign_partial_charges("am1bcc")
+    top = mol.to_topology()
+
+    ff_vac = ForceField("openff-2.1.0.offxml")
+    vac_system = ff_vac.create_openmm_system(
+        top, charge_from_molecules=[mol])
+    n_atoms = vac_system.getNumParticles()
+    factory = alchemy.AbsoluteAlchemicalFactory()
+    vac_region = alchemy.AlchemicalRegion(
+        alchemical_atoms=list(range(n_atoms)))
+    vac_alch = factory.create_alchemical_system(
+        vac_system, vac_region)
+
+    # 1.2 nm padding → box ≥ 2.4 nm so the default 1.0 nm non-
+    # bonded cutoff is ≤ half the box (OpenMM PBC requirement).
+    solv_top = solvate_topology(
+        topology=top, nacl_conc=0.0 * offunit.molar,
+        padding=1.2 * offunit.nanometer)
+    ff_solv = ForceField("openff-2.1.0.offxml", "tip3p.offxml")
+    ichg = Interchange.from_smirnoff(
+        force_field=ff_solv, topology=solv_top,
+        charge_from_molecules=[mol])
+    solv_system = ichg.to_openmm(
+        combine_nonbonded_forces=True)
+    solv_region = alchemy.AlchemicalRegion(
+        alchemical_atoms=list(range(n_atoms)))
+    solv_alch = factory.create_alchemical_system(
+        solv_system, solv_region)
+
+    vac_pos_nm = np.asarray(
+        mol.conformers[0].m_as(offunit.nanometer), dtype=float)
+    vac_positions = vac_pos_nm * ommunit.nanometer
+    solv_pos_nm = np.asarray(
+        ichg.positions.m_as(offunit.nanometer), dtype=float)
+    solv_positions = solv_pos_nm * ommunit.nanometer
+
+    return (vac_alch, solv_alch,
+            top.to_openmm(), solv_top.to_openmm(),
+            vac_positions, solv_positions,
+            n_atoms)
+
+
+def compute_hydration_dg(
+    smiles: str,
+    *,
+    n_windows: int = 11,
+    n_production_steps: int = 2000,
+    n_equilibration_steps: int = 500,
+    sample_stride: int = 100,
+    seed: int = 1,
+) -> HydrationDGResult:
+    """End-to-end absolute hydration free energy.
+
+    Runs Langevin+MBAR alchemical decoupling on both the bare
+    ligand (vacuum) and the TIP3P-solvated system, then combines:
+
+        ΔG_hyd = −( ΔG_solv_decouple − ΔG_vacuum_decouple )
+
+    At the default parameters (11 × 2000 steps = 4 ps per window,
+    44 ps total MD per leg, CPU) this runs in roughly 5-10 min
+    per compound. Accuracy is not publication-grade — that needs
+    ≥ 100 ps per window with REST2 or replica exchange — but the
+    sign and rough magnitude are right. The Milestone A gate
+    against a FreeSolv subset will run with longer windows on a
+    rented GPU via workflow_dispatch.
+    """
+    import time
+
+    t0 = time.time()
+    result = HydrationDGResult(
+        smiles=smiles, ok=False, n_windows=n_windows)
+
+    try:
+        (vac_alch, solv_alch,
+         vac_top, solv_top,
+         vac_pos, solv_pos, _n) = _build_alchemical_legs(smiles)
+    except Exception as e:
+        result.reason = f"alchemical build failed: {str(e)[:200]}"
+        result.wall_seconds = time.time() - t0
+        return result
+
+    from src.fep.sampling import sample_alchemical_windows
+
+    try:
+        vac_r = sample_alchemical_windows(
+            vac_alch, vac_top, vac_pos,
+            n_windows=n_windows,
+            n_equilibration_steps=n_equilibration_steps,
+            n_production_steps=n_production_steps,
+            sample_stride=sample_stride, seed=seed)
+        if not vac_r.ok:
+            result.reason = f"vacuum leg failed: {vac_r.reason}"
+            result.wall_seconds = time.time() - t0
+            return result
+        solv_r = sample_alchemical_windows(
+            solv_alch, solv_top, solv_pos,
+            n_windows=n_windows,
+            n_equilibration_steps=n_equilibration_steps,
+            n_production_steps=n_production_steps,
+            sample_stride=sample_stride, seed=seed)
+        if not solv_r.ok:
+            result.reason = f"solvent leg failed: {solv_r.reason}"
+            result.wall_seconds = time.time() - t0
+            return result
+    except Exception as e:
+        result.reason = f"sampling failed: {str(e)[:200]}"
+        result.wall_seconds = time.time() - t0
+        return result
+
+    # ΔG_hyd = −(ΔG_solv_decouple − ΔG_vac_decouple). A positive
+    # value means gas → water transfer is unfavourable (hydro-
+    # phobic). For methane the experimental value is +2.0
+    # kcal/mol.
+    import math
+    ddg = solv_r.dG_kcalmol - vac_r.dG_kcalmol
+    result.dG_hydration_kcalmol = -ddg
+    result.dG_vacuum_decouple_kcalmol = vac_r.dG_kcalmol
+    result.dG_solvent_decouple_kcalmol = solv_r.dG_kcalmol
+    result.uncertainty_kcalmol = math.sqrt(
+        (vac_r.dG_uncertainty_kcalmol or 0.0) ** 2
+        + (solv_r.dG_uncertainty_kcalmol or 0.0) ** 2)
+    result.ok = True
+    result.wall_seconds = time.time() - t0
+    return result
+
+
 __all__ = [
     "alchemical_state_smoke",
     "FEPSmokeResult",
     "ligand_hydration_fep",
     "HydrationFEPResult",
+    "compute_hydration_dg",
+    "HydrationDGResult",
 ]
 
 
