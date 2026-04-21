@@ -134,7 +134,13 @@ def main() -> int:
         "benchmarks/dock/1stp.pdb",
         "benchmarks/dock/1m17.pdb",
         "benchmarks/dock/3ptb.pdb",
+        "benchmarks/dock/1tqn.pdb",             # CYP3A4 + heme
+        "benchmarks/dock/1stp_batch_5.smi",     # first-run starter
         "benchmarks/dock/mini_bench.yaml",
+        "benchmarks/dock/streptavidin_calibration.yaml",
+        "benchmarks/dock/trypsin_calibration.yaml",
+        "benchmarks/dock/egfr_calibration.yaml",
+        "benchmarks/quantum/cyp3a4_som_validation.yaml",
     ]:
         p = REPO / rel
         check(f"{rel:<40s} ({p.stat().st_size if p.exists() else 0} B)",
