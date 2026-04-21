@@ -1,0 +1,71 @@
+# Streptavidin–biotin / analogue series — Milestone B Phase-2
+# absolute ΔG_bind validation set.
+#
+# Why streptavidin:
+#   - One of the tightest-binding non-covalent pairs known
+#     (Kd ~ 10⁻¹⁴ M for streptavidin–biotin; ΔG_bind ≈ −18 kcal/mol).
+#   - Large published literature of biotin analogues with
+#     calorimetric ΔG_bind, including classical truncations
+#     (desthiobiotin, iminobiotin) spanning > 5 kcal/mol dynamic
+#     range — perfect for a first FEP absolute-ΔG scan.
+#   - Rigid, well-behaved β-barrel pocket; sub-ns convergence on
+#     decoupling; no induced-fit conformational surprises.
+#   - 1STP crystal structure (biotin bound) is 1.47 Å resolution,
+#     already in `benchmarks/dock/1stp.pdb`.
+#
+# Milestone B Phase-2 gate:
+#   - MAE ≤ 2.0 kcal/mol on absolute ΔG_bind across these 4 entries
+#     (relaxed from FreeSolv 1.5 kcal/mol — protein FEP is harder).
+#   - Rank correlation Kendall τ ≥ 0.6 (with only 4 points this
+#     is weak, but the ordering biotin > desthiobiotin >> imin >
+#     2-iminobiotin must hold).
+#   - GHMC acceptance ≥ 70% per window.
+#   - NO sign errors: every predicted ΔG_bind must be negative
+#     (all four are genuine binders).
+#
+# Source values: compiled from Stayton et al. 1999 Biomolec Eng
+# 16:39, Fukunaga et al. 1988 J Biochem 103:76, and the classical
+# streptavidin chapter in Green 1975 Adv Protein Chem 29:85.
+
+receptor:
+  pdb_path: benchmarks/dock/1stp.pdb
+  name: streptavidin
+  # fpocket auto-detect should find the biotin pocket as #1; to
+  # override (e.g. when running apo or a docking-artefact receptor)
+  # supply binding_site_center_nm here in nm.
+  binding_site_center_nm: null
+
+entries:
+  - name: biotin
+    smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+    dG_bind_kcalmol: -18.3
+    expt_unc_kcalmol: 0.2
+    source_notes: |
+      Green 1975; strep-biotin is ΔG = −18.3 ± 0.2 kcal/mol at
+      298 K via calorimetric titration.
+
+  - name: desthiobiotin
+    smiles: "C[C@H]1NC(=O)N[C@@H]1CCCCCC(=O)O"
+    dG_bind_kcalmol: -13.2
+    expt_unc_kcalmol: 0.3
+    source_notes: |
+      Sulfur removed: tetrahydrothiophene ring opens to a methyl.
+      Structure = 4-methyl-5-(5-carboxypentyl)-2-imidazolidinone.
+      Stayton 1999 reports ΔG ≈ −13 kcal/mol. Single-heteroatom
+      perturbation from biotin — the classic FF-sensitivity test.
+
+  - name: 2_iminobiotin
+    smiles: "N=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+    dG_bind_kcalmol: -10.8
+    expt_unc_kcalmol: 0.4
+    source_notes: |
+      Urea C=O replaced with C=N. Fukunaga 1988; Kd ~ 10⁻⁸ M at
+      neutral pH. Pushes the protonation / force-field edge case.
+
+  - name: biotin_methyl_ester
+    smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)OC)N1"
+    dG_bind_kcalmol: -14.1
+    expt_unc_kcalmol: 0.3
+    source_notes: |
+      Carboxylate masked as methyl ester. Loses salt-bridge to
+      streptavidin Arg84; a ~4 kcal/mol penalty per classical lit.

@@ -44,6 +44,11 @@ class FreeSolvPoint:
     wall_seconds: Optional[float] = None
     ok: bool = False
     reason: str = ""
+    # GHMC acceptance summary per compound — minimum of (vacuum
+    # leg, solvent leg) for mean and per-window min. Consumed by
+    # `cellsim fep-report` as a per-compound gate.
+    ghmc_accept_mean: Optional[float] = None
+    ghmc_accept_min: Optional[float] = None
 
 
 @dataclass
@@ -131,10 +136,25 @@ def run_freesolv_validation(
             p.uncertainty_kcalmol = r.uncertainty_kcalmol
             p.residual_kcalmol = (
                 r.dG_hydration_kcalmol - p.dG_expt_kcalmol)
+            # Minimum-of-both-legs is the honest per-compound number:
+            # if either leg had poor acceptance the overall ΔG is
+            # compromised. Empty lists → None (legacy / non-GHMC).
+            all_accepts = (
+                list(r.ghmc_acceptance_vac)
+                + list(r.ghmc_acceptance_solv))
+            if all_accepts:
+                p.ghmc_accept_mean = sum(all_accepts) / len(all_accepts)
+                p.ghmc_accept_min = min(all_accepts)
             p.ok = True
+            accept_tag = ""
+            if p.ghmc_accept_mean is not None:
+                accept_tag = (
+                    f"  GHMC mean={p.ghmc_accept_mean:.0%} "
+                    f"min={p.ghmc_accept_min:.0%}")
             print(f"  pred = {p.dG_pred_kcalmol:+.2f}  "
                   f"expt = {p.dG_expt_kcalmol:+.2f}  "
-                  f"resid = {p.residual_kcalmol:+.2f}",
+                  f"resid = {p.residual_kcalmol:+.2f}"
+                  f"{accept_tag}",
                   flush=True)
         else:
             p.reason = r.reason
@@ -192,7 +212,8 @@ def main(argv: Optional[list] = None) -> int:
         args.out_csv.parent.mkdir(parents=True, exist_ok=True)
         cols = ["name", "smiles", "dG_expt_kcalmol",
                 "dG_pred_kcalmol", "uncertainty_kcalmol",
-                "residual_kcalmol", "wall_seconds", "ok", "reason"]
+                "residual_kcalmol", "ghmc_accept_mean",
+                "ghmc_accept_min", "wall_seconds", "ok", "reason"]
         with args.out_csv.open(
                 "w", newline="", encoding="utf-8-sig") as fo:
             w = csv.DictWriter(
