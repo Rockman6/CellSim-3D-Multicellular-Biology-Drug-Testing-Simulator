@@ -221,6 +221,18 @@ title property as the compound name:
 ./scripts/cellsim dock --smi compounds.sdf --receptor target.pdb
 ```
 
+A bundled 5-compound demo SDF is available for a zero-friction
+first run:
+
+```bash
+./scripts/cellsim dock \
+    --smi benchmarks/chembl/demo.sdf --receptor 1STP \
+    --out-csv /tmp/demo/run.csv \
+    --shortlist-csv /tmp/demo/short.csv
+# auto-fetches 1STP from RCSB on first run, caches it, and
+# prints the triage table + next-steps for all five compounds.
+```
+
 No ChemDraw-to-SMILES conversion step needed; biologists who
 export directly from synthesis-workflow tools pipe the SDF
 straight in.
