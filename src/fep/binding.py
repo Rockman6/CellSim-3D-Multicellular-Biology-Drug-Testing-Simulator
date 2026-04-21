@@ -209,20 +209,60 @@ def _place_ligand_at_site(mol, target_center_nm):
     return mol
 
 
-def _auto_binding_site_center(prot_top_omm, prot_positions):
-    """Fallback when the caller hasn't supplied a pocket centre: use
-    the geometric centroid of all Cα atoms. Fine for the scaffold;
-    a real pocket-detection-driven centre is wired in Phase-2 via
-    `src.dock.pocket_detect`.
+def _auto_binding_site_center(prot_top_omm, prot_positions,
+                              receptor_pdb=None):
+    """Pick a binding-site centroid when the caller hasn't supplied
+    one. Two-tier:
+
+    1. **fpocket** (non-AI geometric pocket detector) on the
+       original receptor PDB → top-ranked drug-scored pocket
+       centre. This is what the docking pipeline already uses for
+       receptors without a cocrystal (see `src.dock.pocket_detect`).
+    2. **Cα centroid** fallback — geometric centre of every Cα in
+       the protein. Always defined, but on a big multi-domain
+       receptor the centroid may land in a hinge region instead of
+       a real druggable pocket, which would restrain the ligand to
+       nowhere useful. Warn but keep going.
+
+    Returning the fpocket pick by default is the biologist-friendly
+    choice: you point CellSim at a PDB you grabbed from RCSB, it
+    picks the druggable pocket automatically, you never hand-pick
+    coordinates. For receptors where you *know* the right site
+    (e.g. EGFR kinase: use the ATP-binding hinge, not allosteric
+    sites), supply `binding_site_center_nm` explicitly — the caller
+    path stays clean.
     """
     import numpy as np
-    from openmm import unit as ommunit
 
+    # Tier 1: fpocket. Silent fail-through on any issue (fpocket
+    # missing, timeout, zero pockets) — we don't want the binding
+    # FEP scaffold to hard-error just because fpocket happens to
+    # not be on PATH.
+    if receptor_pdb is not None:
+        try:
+            from src.dock.pocket_detect import detect_pockets
+            pockets = detect_pockets(receptor_pdb, top_k=1)
+            if pockets and pockets[0].center_A is not None:
+                c_A = np.asarray(pockets[0].center_A, dtype=float)
+                # Å → nm
+                center_nm = c_A / 10.0
+                logger = _module_logger()
+                logger.info(
+                    "fpocket picked pocket #%d (drug=%.2f, "
+                    "vol=%.0f Å³) at %s nm",
+                    pockets[0].rank, pockets[0].drug_score or 0.0,
+                    pockets[0].volume_A3 or 0.0, center_nm)
+                return center_nm
+        except Exception as e:
+            _module_logger().info(
+                "fpocket pocket-detect failed (%s); "
+                "falling back to Cα centroid", e)
+
+    # Tier 2: Cα centroid fallback.
     ca_indices = [
         atom.index for atom in prot_top_omm.atoms()
         if atom.name == "CA"]
     if not ca_indices:
-        # No protein at all — pathological receptor — use global mean.
         pos_nm = np.array(
             [[p.x, p.y, p.z] for p in prot_positions])
     else:
@@ -230,7 +270,16 @@ def _auto_binding_site_center(prot_top_omm, prot_positions):
             [[prot_positions[i].x,
               prot_positions[i].y,
               prot_positions[i].z] for i in ca_indices])
+    _module_logger().info(
+        "using Cα centroid as binding-site centre "
+        "(no fpocket hit — may be off-site on multi-domain "
+        "receptors; supply binding_site_center_nm to override)")
     return pos_nm.mean(axis=0)
+
+
+def _module_logger():
+    import logging
+    return logging.getLogger(__name__)
 
 
 def _find_ca_indices_near(positions_nm, center_nm, radius_nm,
@@ -376,10 +425,15 @@ def _build_complex_alchemical_system(
     prot_positions_nm = np.array(
         [[p.x, p.y, p.z] for p in prot_positions])
 
-    # 2) Decide binding-site centre.
+    # 2) Decide binding-site centre. Pass the ORIGINAL receptor_pdb
+    # (not the PDBFixer-fixed temp file) because fpocket wants a
+    # real PDB and gives slightly different answers on the fixed
+    # one; the centre resolves to the same Cα-shell the restraint
+    # anchors to, so the tiny coordinate difference is fine.
     if binding_site_center_nm is None:
         binding_site_center_nm = _auto_binding_site_center(
-            prot_top_omm, prot_positions)
+            prot_top_omm, prot_positions,
+            receptor_pdb=receptor_pdb)
     binding_site_center_nm = np.asarray(
         binding_site_center_nm, dtype=float)
 

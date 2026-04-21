@@ -316,6 +316,11 @@ class HydrationDGResult:
     uncertainty_kcalmol: Optional[float] = None
     n_windows: Optional[int] = None
     wall_seconds: Optional[float] = None
+    # GHMC acceptance per window per leg — prof's checklist
+    # requirement. < 0.70 means the timestep is too large and the
+    # ΔG cannot be trusted. Passed through for the report layer.
+    ghmc_acceptance_vac: list = field(default_factory=list)
+    ghmc_acceptance_solv: list = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.ok:
@@ -475,6 +480,8 @@ def compute_hydration_dg(
     result.uncertainty_kcalmol = math.sqrt(
         (vac_r.dG_uncertainty_kcalmol or 0.0) ** 2
         + (solv_r.dG_uncertainty_kcalmol or 0.0) ** 2)
+    result.ghmc_acceptance_vac = list(vac_r.ghmc_acceptance)
+    result.ghmc_acceptance_solv = list(solv_r.ghmc_acceptance)
     result.ok = True
     result.wall_seconds = time.time() - t0
     return result
