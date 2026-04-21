@@ -839,6 +839,16 @@ def main(argv=None) -> int:
         help="write per-entry results (same schema as FreeSolv so "
              "`cellsim fep-report` can consume it)")
 
+    vp = sub.add_parser(
+        "validate",
+        help="sub-second YAML dry-run: parse SMILES via RDKit, "
+             "confirm receptor PDB exists, report issues — run "
+             "this BEFORE launching a multi-hour sampled run")
+    vp.add_argument("yaml_path")
+    vp.add_argument(
+        "--json", action="store_true",
+        help="emit the diagnostic table as JSON instead of text")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "dg":
@@ -857,8 +867,10 @@ def main(argv=None) -> int:
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
             sample=args.sample)
-    else:  # bench
+    elif args.cmd == "bench":
         return _run_bench(args)
+    else:  # validate
+        return _run_validate(args)
 
     if args.json:
         from dataclasses import asdict
@@ -980,6 +992,229 @@ def _run_bench(args) -> int:
               f"(schema compatible with `cellsim fep-report`)")
 
     return 0 if n_ok == len(rows) else 1
+
+
+def _run_validate(args) -> int:
+    """Dry-run YAML check — NO OpenFF / OpenMM imports, so it lands
+    in < 1 s even on machines without the MD stack installed.
+
+    Verifies:
+      - YAML parses and has the expected shape
+      - `receptor.pdb_path` exists as a readable file
+      - every entry has a name + a SMILES that RDKit parses
+      - stereocenters / charges / heavy-atom count for each ligand
+      - receptor atom count (quick sanity on the PDB)
+
+    Emits a diagnostic table + overall PASS/FAIL, exits 1 on any
+    error. Intended as a pre-flight CI gate on any PR that edits
+    a benchmark YAML, and as a biologist pre-run sanity check.
+    """
+    import json as _json
+    import sys as _sys
+    import yaml as _yaml
+
+    from rdkit import Chem
+    from rdkit.Chem import AllChem  # noqa: F401
+
+    issues: list[str] = []
+    entries_report: list[dict] = []
+
+    try:
+        data = _yaml.safe_load(Path(args.yaml_path).read_text())
+    except Exception as e:
+        print(f"[FAIL] cannot read YAML {args.yaml_path}: {e}",
+              file=_sys.stderr)
+        return 1
+
+    if not isinstance(data, dict):
+        print(f"[FAIL] YAML must be a mapping at top-level; "
+              f"got {type(data).__name__}", file=_sys.stderr)
+        return 1
+
+    # Detect YAML kind by the per-entry expt key. Hydration YAMLs
+    # (FreeSolv) use dG_hydration_kcalmol and have no receptor;
+    # binding YAMLs (streptavidin etc.) use dG_bind_kcalmol and
+    # require a receptor.
+    entries_preview = data.get("entries") or []
+    is_binding = any(
+        "dG_bind_kcalmol" in (e or {}) for e in entries_preview)
+    is_hydration = any(
+        "dG_hydration_kcalmol" in (e or {}) for e in entries_preview)
+    yaml_kind = (
+        "binding" if is_binding and not is_hydration
+        else "hydration" if is_hydration and not is_binding
+        else "mixed" if is_binding and is_hydration
+        else "unknown")
+
+    recv = data.get("receptor", {}) or {}
+    receptor_pdb = recv.get("pdb_path")
+    receptor_report: dict = {"pdb_path": receptor_pdb,
+                              "yaml_kind": yaml_kind}
+
+    if yaml_kind == "hydration":
+        # Hydration YAMLs don't need a receptor — no FEP leg in the
+        # protein. Skip the receptor-file check.
+        pass
+    elif not receptor_pdb:
+        issues.append(
+            f"missing receptor.pdb_path (yaml kind: {yaml_kind})")
+    else:
+        p = Path(receptor_pdb)
+        if not p.exists():
+            issues.append(f"receptor PDB not found: {receptor_pdb}")
+            receptor_report["exists"] = False
+        elif not p.is_file():
+            issues.append(f"receptor path is not a file: {receptor_pdb}")
+            receptor_report["exists"] = False
+        else:
+            try:
+                txt = p.read_text(encoding="utf-8",
+                                  errors="replace")
+                n_atoms = sum(
+                    1 for line in txt.splitlines()
+                    if line.startswith("ATOM"))
+                n_het = sum(
+                    1 for line in txt.splitlines()
+                    if line.startswith("HETATM"))
+                n_chains = len({
+                    line[21:22]
+                    for line in txt.splitlines()
+                    if line.startswith("ATOM")})
+                receptor_report.update({
+                    "exists": True,
+                    "size_bytes": p.stat().st_size,
+                    "n_atoms": n_atoms,
+                    "n_hetatm": n_het,
+                    "n_chains": n_chains,
+                })
+                if n_atoms == 0:
+                    issues.append(
+                        f"receptor {p.name} has no ATOM records")
+            except OSError as e:
+                issues.append(
+                    f"cannot read receptor {p.name}: {e}")
+
+    entries = data.get("entries") or []
+    if not entries:
+        issues.append("no entries in YAML")
+
+    seen_names: set[str] = set()
+    for i, entry in enumerate(entries):
+        name = entry.get("name", f"<entry_{i}>")
+        smi = (entry.get("smiles") or "").strip()
+        expt = entry.get("dG_bind_kcalmol",
+                         entry.get("dG_hydration_kcalmol"))
+        er: dict = {"name": name, "smiles": smi, "expt_kcalmol": expt}
+
+        if name in seen_names:
+            issues.append(f"duplicate name: {name}")
+        seen_names.add(name)
+
+        if not smi:
+            issues.append(f"{name}: missing smiles")
+            er["ok"] = False
+            er["reason"] = "missing smiles"
+        else:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                issues.append(f"{name}: RDKit cannot parse '{smi}'")
+                er["ok"] = False
+                er["reason"] = "RDKit parse failed"
+            else:
+                try:
+                    canon = Chem.MolToSmiles(mol)
+                    n_heavy = mol.GetNumHeavyAtoms()
+                    n_stereo = sum(
+                        1 for _ in Chem.FindMolChiralCenters(
+                            mol, includeUnassigned=True))
+                    formal_charge = Chem.GetFormalCharge(mol)
+                    er.update({
+                        "ok": True,
+                        "canon_smiles": canon,
+                        "n_heavy_atoms": n_heavy,
+                        "n_stereocenters": n_stereo,
+                        "formal_charge": formal_charge,
+                    })
+                    # Biologist gotchas: formal charge ≠ 0 means the
+                    # alchemical FEP needs a counter-ion correction
+                    # we haven't wired; flag it.
+                    if formal_charge != 0:
+                        issues.append(
+                            f"{name}: formal charge "
+                            f"{formal_charge:+d} — alchemical FEP "
+                            "needs a Rocklin / Warren correction "
+                            "(not wired in Phase-1); Phase-2 item")
+                    if n_heavy > 60:
+                        issues.append(
+                            f"{name}: {n_heavy} heavy atoms > 60 — "
+                            "AM1-BCC will be slow (minutes/compound)")
+                except Exception as e:
+                    issues.append(f"{name}: RDKit descriptor "
+                                  f"failure: {e}")
+                    er["ok"] = False
+                    er["reason"] = f"descriptor failure: {e}"
+
+        if expt is None:
+            issues.append(
+                f"{name}: missing expt ΔG "
+                "(dG_bind_kcalmol / dG_hydration_kcalmol)")
+        entries_report.append(er)
+
+    report = {
+        "yaml_path": str(args.yaml_path),
+        "receptor": receptor_report,
+        "entries": entries_report,
+        "issues": issues,
+        "pass": len(issues) == 0,
+    }
+
+    if args.json:
+        print(_json.dumps(report, indent=2, default=str))
+    else:
+        print(f"[fep-binding validate] {args.yaml_path}")
+        print(f"  kind:       {yaml_kind}")
+        if yaml_kind == "hydration":
+            print(f"  receptor:   n/a (hydration YAML)")
+        elif receptor_report.get("exists"):
+            print(
+                f"  receptor:   {receptor_pdb}  "
+                f"atoms={receptor_report.get('n_atoms')}  "
+                f"chains={receptor_report.get('n_chains')}  "
+                f"hetatm={receptor_report.get('n_hetatm')}")
+        else:
+            print(f"  receptor:   {receptor_pdb}  [MISSING]")
+        print(f"  entries:    {len(entries_report)}")
+        print()
+        # Table
+        hdr = (f"  {'name':<20s} {'heavy':>5s} {'stereo':>6s} "
+               f"{'chg':>4s} {'expt':>7s}  {'status'}")
+        print(hdr)
+        print("  " + "-" * (len(hdr) - 2))
+        for er in entries_report:
+            if not er.get("ok"):
+                print(f"  {er['name']:<20s} "
+                      f"{'—':>5s} {'—':>6s} {'—':>4s} "
+                      f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
+                      f"FAIL: {er.get('reason', '?')}")
+            else:
+                print(
+                    f"  {er['name']:<20s} "
+                    f"{er['n_heavy_atoms']:>5d} "
+                    f"{er['n_stereocenters']:>6d} "
+                    f"{er['formal_charge']:>+4d} "
+                    f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
+                    "ok")
+        print()
+        if issues:
+            print(f"  {len(issues)} issue(s):")
+            for it in issues:
+                print(f"    ! {it}")
+            print()
+            print("[fep-binding validate] FAIL")
+        else:
+            print("[fep-binding validate] PASS — "
+                  "ready for bench / dg / ddg")
+    return 0 if not issues else 1
 
 
 if __name__ == "__main__":
