@@ -108,6 +108,52 @@ def test_missing_receptor_fails_on_binding_yaml():
     assert "MISSING" in out or "not found" in out.lower()
 
 
+def test_undefined_stereo_bond_flagged():
+    """Exocyclic imino (C=N) with unpinned E/Z should be flagged —
+    the openff builder would otherwise pick arbitrarily.
+    Precision: must NOT also flag amide C=O (biotin) or urea C=N
+    ring-constrained geometry."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: iminobiotin_unpinned
+        smiles: "N=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bind_kcalmol: -10.8
+      - name: biotin_clean
+        smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bind_kcalmol: -18.3
+    """
+    rc, out = _run(yaml)
+    assert rc != 0, "unpinned imino should fail validation"
+    assert "iminobiotin_unpinned" in out
+    assert "undefined E/Z" in out
+    # Precision: biotin must NOT be flagged (its C=O is terminal).
+    lines = [line for line in out.splitlines()
+             if "biotin_clean" in line and "undefined" in line]
+    assert not lines, (
+        f"biotin_clean was false-positive-flagged; "
+        f"amide C=O is terminal, not E/Z-ambiguous: {lines}")
+
+
+def test_pinned_stereo_passes():
+    """Pinning E/Z with / \\ should let the SMILES through."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: iminobiotin_pinned
+        smiles: "[H]/N=C1/N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bind_kcalmol: -10.8
+    """
+    rc, out = _run(yaml)
+    assert rc == 0, (
+        f"pinned-stereo SMILES should pass; got rc={rc}\n{out}")
+    assert "PASS" in out
+
+
 def test_charged_ligand_flagged():
     """Formal-charge != 0 needs a Rocklin/Warren correction we
     haven't wired. Validator must flag so the biologist knows."""
@@ -197,6 +243,8 @@ if __name__ == "__main__":
         test_valid_hydration_yaml_passes_without_receptor,
         test_typod_smiles_fails,
         test_missing_receptor_fails_on_binding_yaml,
+        test_undefined_stereo_bond_flagged,
+        test_pinned_stereo_passes,
         test_charged_ligand_flagged,
         test_duplicate_names_flagged,
         test_empty_entries_list_fails,
