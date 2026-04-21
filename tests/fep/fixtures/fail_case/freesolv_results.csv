@@ -1,0 +1,13 @@
+name,smiles,dG_expt_kcalmol,dG_pred_kcalmol,uncertainty_kcalmol,residual_kcalmol,wall_seconds,ok,reason
+methane,C,2.00,-1.85,0.45,-3.85,180,True,
+ethane,CC,1.83,-1.20,0.50,-3.03,195,True,
+propane,CCC,1.95,0.80,0.55,-1.15,220,True,
+benzene,c1ccccc1,-0.87,-3.20,0.60,-2.33,280,True,
+toluene,Cc1ccccc1,-0.90,-2.45,0.65,-1.55,305,True,
+methanol,CO,-5.11,-5.80,0.55,-0.69,170,True,
+ethanol,CCO,-5.01,-6.40,0.58,-1.39,185,True,
+ammonia,N,-4.30,-4.55,0.60,-0.25,150,True,
+methylamine,CN,-4.56,-5.20,0.62,-0.64,165,True,
+pyridine,c1ccncc1,-4.70,-6.82,0.70,-2.12,290,True,
+acetic_acid,CC(=O)O,-6.70,-8.30,0.80,-1.60,240,True,
+acetamide,CC(=O)N,-9.71,-11.20,0.85,-1.49,265,True,

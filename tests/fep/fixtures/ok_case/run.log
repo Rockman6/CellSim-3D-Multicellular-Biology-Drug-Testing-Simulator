@@ -1,0 +1,29 @@
+============================================================
+CellSim — FreeSolv FEP gate (Milestone A)
+============================================================
+  started:     2026-04-22 08:00:00
+  machine:     Darwin henrys-m5max 25.0.0 Darwin Kernel Version …
+  ram:         65.0 GB
+  git commit:  d1668ea2beefcafe9f8e7d6c5b4a39281f0b
+  git ref:     milestone-a-pilot-1-1-gd1668ea
+  output:      run/fep/20260422_080000/
+
+FEP sampling platform: Metal
+python        3.11.6
+openmm        8.1.2
+openmmtools   0.23.1
+openff-toolkit 0.18.0
+pymbar        4.2.0
+
+[freesolv] methane  C
+  pred = +1.72  expt = +2.00  resid = -0.28
+[OK]   FEP sampling  ΔG = +2.22 ± 0.25 kcal/mol  (11 windows × 100 samples,  wall 180.0 s)  GHMC accept mean=78% min=72%
+[OK]   FEP sampling  ΔG = +0.50 ± 0.12 kcal/mol  (11 windows × 100 samples,  wall 240.0 s)  GHMC accept mean=81% min=76%
+[freesolv] ethane  CC
+  pred = +1.55  expt = +1.83  resid = -0.28
+[OK]   FEP sampling  ΔG = +2.05 ± 0.28 kcal/mol  GHMC accept mean=79% min=73%
+[OK]   FEP sampling  ΔG = +0.50 ± 0.15 kcal/mol  GHMC accept mean=80% min=75%
+[freesolv] acetamide  CC(=O)N
+  pred = -8.90  expt = -9.71  resid = +0.81
+[OK]   FEP sampling  ΔG = -9.40 ± 0.50 kcal/mol  GHMC accept mean=75% min=71%
+[OK]   FEP sampling  ΔG = -0.50 ± 0.20 kcal/mol  GHMC accept mean=78% min=73%
