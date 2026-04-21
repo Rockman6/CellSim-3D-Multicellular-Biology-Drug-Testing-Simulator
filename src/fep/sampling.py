@@ -146,13 +146,7 @@ def sample_alchemical_windows(
         # alchemical coupling together produce close contacts
         # that send Langevin to NaN on the first integrator
         # step. Tight tolerance + many iterations is needed for
-        # solvated systems with polar/aromatic solutes; methane
-        # survives looser settings but ethanol / benzene do not.
-        # TODO: Milestone-A blocker — some solvated compounds
-        # still NaN even after this minimisation; likely needs
-        # short low-timestep equilibration before the real
-        # integrator takes over. Tracked via the freesolv-smoke
-        # failure profile.
+        # solvated systems with polar/aromatic solutes.
         try:
             LocalEnergyMinimizer.minimize(
                 ctx, tolerance=1.0, maxIterations=2000)
@@ -167,8 +161,18 @@ def sample_alchemical_windows(
         # potential at EVERY λ state (to populate u_kn).
         for _ in range(n_samples_per):
             integrator.step(sample_stride)
-            state = ctx.getState(getPositions=True)
+            # Snapshot full state — positions AND velocities —
+            # so the inner cross-λ energy-evaluation loop can
+            # restore them cleanly. Without saving velocities
+            # the Langevin integrator's internal velocity
+            # cache goes stale after setPositions calls inside
+            # the inner loop and the next integrator.step()
+            # blows up with a NaN. This is the load-bearing
+            # fix for solvated-system sampling.
+            state = ctx.getState(
+                getPositions=True, getVelocities=True)
             pos = state.getPositions(asNumpy=True)
+            vel = state.getVelocities(asNumpy=True)
             # Evaluate this sample at each target state n.
             for n, lam_n in enumerate(schedule):
                 alch_state.lambda_electrostatics = lam_n
@@ -180,11 +184,13 @@ def sample_alchemical_windows(
                 ).getPotentialEnergy().value_in_unit(
                     ommunit.kilocalorie_per_mole)
                 u_kn[n, col] = U / kT
-            # Restore λ_k for next production step.
+            # Restore λ_k, positions AND velocities for the
+            # next production step.
             alch_state.lambda_electrostatics = lam
             alch_state.lambda_sterics = lam
             alch_state.apply_to_context(ctx)
             ctx.setPositions(pos)
+            ctx.setVelocities(vel)
             col += 1
 
     # Free-energy estimate via MBAR.
