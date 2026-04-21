@@ -49,6 +49,9 @@ usage: cellsim <subcommand> [args...]
   shortlist   filter a batch CSV to only follow_up + review rows
                 -> src/dock/shortlist.py
 
+  to-md       batch CSV -> markdown table (lab-notebook paste)
+                -> src/dock/to_md.py
+
   redock      single-pair re-dock with crystal-RMSD
                 -> src/dock/vina.py
 
@@ -163,6 +166,7 @@ case "${1:-}" in
     off-target)  shift; exec python -m src.dock.off_target "$@" ;;
     triage-png)  shift; exec python -m src.dock.triage_viewer "$@" ;;
     shortlist)   shift; exec python -m src.dock.shortlist "$@" ;;
+    to-md)       shift; exec python -m src.dock.to_md "$@" ;;
     redock)      shift; exec python -m src.dock.vina "$@" ;;
     pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
     profile)     shift; exec python -m src.chem.profile "$@" ;;
