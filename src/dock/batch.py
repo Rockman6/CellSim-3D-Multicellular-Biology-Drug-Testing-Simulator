@@ -913,6 +913,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"  • {n_drop} drop compound(s): too weak / "
                   "non-physical pose / known-bad ADMET. Do not "
                   "synthesise.")
+        n_fail = sum(1 for r in records if not r.get("ok"))
+        if n_fail:
+            print(f"  ⚠  {n_fail} compound(s) failed to prep "
+                  "or dock (bad SMILES, timeout, ligand FF gap) — "
+                  "see the CSV 'reason' column.")
         if n_follow == 0 and n_review == 0:
             print("  ⚠  No compounds qualify for wet-lab "
                   "follow-up in this batch. Either the library "
