@@ -205,6 +205,14 @@ EOF
     --refine-poses
 ```
 
+You can also pipe SMILES from stdin — useful for filtering a
+large library on the fly:
+
+```bash
+grep '^CC' /path/to/chembl.smi | ./scripts/cellsim dock \
+    --smi - --receptor 1STP
+```
+
 SDF input works out of the box — just pass a `.sdf` / `.mol` /
 `.sd` file to `--smi` and CellSim uses each record's `_Name`
 title property as the compound name:
