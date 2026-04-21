@@ -156,6 +156,41 @@ def test_tarball_path_unwraps_cleanly():
     assert r.n_ok == 12
 
 
+def test_partial_run_flagged_even_if_per_row_looks_ok():
+    """Friend's M5 Max dies at 6/12. Analyser must refuse to PASS
+    even if those 6 rows look fine per-row, because the other 6
+    might be the hard ones (methane / acetamide included). Matches
+    the professor's 'do not pass on incomplete data' rule."""
+    r = analyse(FIXTURES / "ok_case", expected_rows=24)
+    assert r.is_partial is True
+    assert r.pass_overall is False, (
+        "partial run must fail overall even if MAE on rows "
+        "present looks good")
+    # n_ok still reports the actual rows present — don't hide the
+    # count, just make the verdict partial.
+    assert r.n_ok == 12
+    assert r.expected_rows == 24
+
+
+def test_full_run_matches_expected_passes():
+    """When n_total == expected_rows, no partial flag; PASS if
+    gates pass."""
+    r = analyse(FIXTURES / "ok_case", expected_rows=12)
+    assert r.is_partial is False
+    assert r.pass_overall is True
+
+
+def test_partial_run_markdown_has_partial_header():
+    """The verdict header must scream 'partial run' so a skimming
+    biologist doesn't mistakenly treat the report as a pass."""
+    r = analyse(FIXTURES / "ok_case", expected_rows=24)
+    md = format_markdown(r)
+    assert "partial" in md.lower(), (
+        f"header should contain 'partial' for n_total < expected; "
+        f"got: {md[:200]}")
+    assert "PARTIAL — Milestone A cannot pass" in md
+
+
 if __name__ == "__main__":
     funcs = [
         test_ok_case_passes_gate,
@@ -164,6 +199,9 @@ if __name__ == "__main__":
         test_scaffold_only_csv_is_inconclusive_not_fail,
         test_markdown_render_stable,
         test_tarball_path_unwraps_cleanly,
+        test_partial_run_flagged_even_if_per_row_looks_ok,
+        test_full_run_matches_expected_passes,
+        test_partial_run_markdown_has_partial_header,
     ]
     fails = []
     for f in funcs:
