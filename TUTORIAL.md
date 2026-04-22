@@ -436,7 +436,7 @@ before trusting a ΔG / hit-list.
 
 | Target class | Evidence | What to do instead |
 |---|---|---|
-| Kinase ATP sites (EGFR, Abl, CDK, …) | [`benchmarks/dock/egfr_calibration.yaml`](benchmarks/dock/egfr_calibration.yaml) — Spearman −0.49 on 6 EGFR inhibitors | Use Vina for pose/pocket-fit sanity only; rescore with FEP (Layer 1.3 perses integration — pending) |
+| Kinase ATP sites (EGFR, Abl, CDK, …) | [`benchmarks/dock/egfr_calibration.yaml`](benchmarks/dock/egfr_calibration.yaml) — Spearman −0.49 on 6 EGFR inhibitors | Use Vina for pose/pocket-fit sanity only; rescore with alchemical FEP via [`benchmarks/fep/binding_egfr.yaml`](benchmarks/fep/binding_egfr.yaml) → `cellsim fep-binding bench --sample` (Kendall τ gate) |
 | Anything where the strain ratio > 3 on top pose | `strain_band = suspicious` / `reject` in the batch CSV | Don't trust the ΔG; strain means Vina contorted the ligand |
 | Compounds with > 15 rotatable bonds | Vina's degrees-of-freedom scaling | Flag for refinement (`--refine-poses` + MD rescoring) |
 | Metal-coordinating inhibitors (imidazole/pyridine on Zn/Fe targets) | Vina has no metal term | Use our pocket-geometric post-filter (cf. ketoconazole in `cyp-inhibit`); raw ΔG is under-scored |
@@ -489,20 +489,32 @@ A regression on any of the ~11 smoke gates blocks merge.
 - **No ML predictions.** If you want a neural scorer, use a
   different tool; CellSim is deliberately physics-only (see
   [`MISSION.md`](MISSION.md) §"No black-box / no AI surrogates").
-- **No rigorous binding affinity for the top hit yet.** Vina ΔG
-  is triage-grade; Layer 1.3's FEP hook is under construction.
-  The scaffold is in and callable:
+- **Vina ΔG is triage-grade; alchemical FEP is shipped for
+  rigorous binding.** Layer 1.3's Milestone A (hydration ΔG via
+  `compute_hydration_dg`) and Milestone B (binding ΔG via DDM,
+  `compute_absolute_binding_dg` + `compute_relative_binding_ddg`)
+  are both callable end-to-end:
 
   ```bash
-  cellsim fep-hyd CCO
-  # [OK] ΔG_hyd CCO  phase=scaffolded  n_alchemical_atoms=9
-  #      (MD sampling not yet implemented)
+  # Pre-flight: every YAML in benchmarks/fep/ validates <10 s
+  cellsim bench-all
+
+  # Binding ΔG on one compound (scaffold in seconds, --sample
+  # for real MD which needs GPU)
+  cellsim fep-binding dg "c1ccc(Nc2ncnc3ccccc23)cc1" \
+      benchmarks/dock/1m17.pdb
+
+  # Batch a YAML with wall-time estimate + GPU detection
+  cellsim fep-binding bench benchmarks/fep/binding_egfr.yaml \
+      --sample --out-csv egfr.csv --resume
+
+  # Verdict: PASS / FAIL / partial + parity PNG
+  cellsim fep-report egfr.csv --yaml benchmarks/fep/binding_egfr.yaml
   ```
 
-  This confirms the SMILES → OpenFF + AM1-BCC → OpenMM →
-  openmmtools.alchemy → alchemical System pipeline works. MD
-  sampling + MBAR against FreeSolv is the next commit; relative-
-  binding FEP (the EGFR kinase rank-order rescorer) follows.
+  The sampled Milestone A numbers on the FreeSolv-12 gate are
+  currently running on an M5 Max; Milestone B sampled runs on
+  streptavidin-biotin + the EGFR 6-compound series follow.
 - **No membrane proteins yet.** GPCRs / ion channels in a bilayer
   need Layer 1.5 Martini 3, scaffold-only at the moment.
 
