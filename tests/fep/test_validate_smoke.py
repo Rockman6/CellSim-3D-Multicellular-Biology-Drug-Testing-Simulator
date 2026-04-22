@@ -285,6 +285,37 @@ def test_bundled_freesolv_yaml_validates():
     assert "PASS" in out
 
 
+def test_hydration_wall_time_estimate_matches_m5max_observation():
+    """Pin the hydration estimator against the M5 Max ground-truth
+    (friend's in-flight FreeSolv-12 run at production parameters
+    takes 4-6 h GPU). Our estimator must land in [3 h, 10 h] for
+    the bundled freesolv_12.yaml.
+
+    If the hydration estimator reverts to the binding per-atom-
+    step model (which gave 4.5 min → 60× underestimate against
+    real hardware), this test fires. Similarly catches any
+    accidental unit drift (s vs min vs h).
+    """
+    import io as _io
+    import re
+    from src.fep.binding import main
+
+    old = sys.stdout
+    sys.stdout = _io.StringIO()
+    try:
+        main(["validate", "benchmarks/fep/freesolv_12.yaml"])
+        out = sys.stdout.getvalue()
+    finally:
+        sys.stdout = old
+    m = re.search(r"sampled \(GPU\) : ([\d.]+)\s*(s|min|h)", out)
+    assert m, f"GPU estimate missing from hydration output:\n{out}"
+    val, unit = m.groups()
+    gpu_s = float(val) * {"s": 1, "min": 60, "h": 3600}[unit]
+    assert 3 * 3600 < gpu_s < 10 * 3600, (
+        f"hydration GPU estimate {gpu_s/3600:.1f} h outside "
+        "[3 h, 10 h] — M5 Max ground truth is 4-6 h")
+
+
 def test_wall_time_estimate_within_reasonable_range():
     """Pin the wall-time estimator constants against silent drift.
 
@@ -352,6 +383,7 @@ if __name__ == "__main__":
         test_bundled_streptavidin_yaml_validates,
         test_bundled_freesolv_yaml_validates,
         test_wall_time_estimate_within_reasonable_range,
+        test_hydration_wall_time_estimate_matches_m5max_observation,
     ]
     fails = []
     for f in funcs:
