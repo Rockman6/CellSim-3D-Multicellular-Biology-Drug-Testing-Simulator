@@ -1091,6 +1091,12 @@ def main(argv=None) -> int:
         "--out-csv", default=None,
         help="write per-entry results (same schema as FreeSolv so "
              "`cellsim fep-report` can consume it)")
+    bp.add_argument(
+        "--resume", action="store_true",
+        help="if --out-csv already exists, skip compounds already "
+             "present with a non-empty dG_pred_kcalmol. Intended "
+             "for restarting a crashed multi-hour run without "
+             "losing completed compounds.")
 
     vp = sub.add_parser(
         "validate",
@@ -1168,17 +1174,73 @@ def _run_bench(args) -> int:
 
     entries = data.get("entries", [])
     rows = []
+
+    # --resume: if the output CSV already exists and contains
+    # compounds with a non-empty dG_pred_kcalmol, seed `rows` with
+    # those prior entries and skip them when iterating. The biologist
+    # restarting a crashed 6-hour EGFR run recovers without losing
+    # the completed compounds.
+    completed_names: set[str] = set()
+    if args.resume and args.out_csv and Path(args.out_csv).exists():
+        try:
+            with Path(args.out_csv).open(
+                    "r", encoding="utf-8-sig", newline="") as fi:
+                reader = _csv.DictReader(fi)
+                for prior in reader:
+                    pred = (prior.get("dG_pred_kcalmol") or "").strip()
+                    if pred and pred != "None":
+                        # Normalise numeric columns (CSV dict has all
+                        # strings).
+                        def _f(key):
+                            v = (prior.get(key) or "").strip()
+                            if not v or v == "None":
+                                return None
+                            try:
+                                return float(v)
+                            except ValueError:
+                                return None
+                        rows.append({
+                            "name": prior.get("name", "").strip(),
+                            "smiles": prior.get("smiles", "").strip(),
+                            "dG_expt_kcalmol": _f("dG_expt_kcalmol"),
+                            "dG_pred_kcalmol": _f("dG_pred_kcalmol"),
+                            "uncertainty_kcalmol":
+                                _f("uncertainty_kcalmol"),
+                            "residual_kcalmol": _f("residual_kcalmol"),
+                            "ghmc_accept_mean":
+                                _f("ghmc_accept_mean"),
+                            "ghmc_accept_min": _f("ghmc_accept_min"),
+                            "wall_seconds": _f("wall_seconds"),
+                            "ok": (prior.get("ok", "").strip().lower()
+                                   in ("true", "1")),
+                            "reason": prior.get("reason", "").strip(),
+                        })
+                        completed_names.add(
+                            prior.get("name", "").strip())
+        except OSError as e:
+            print(f"bench --resume: cannot read {args.out_csv}: {e}",
+                  file=_sys.stderr)
+            return 2
+
     t_all = _time.time()
     print(f"[fep-binding bench] {args.yaml_path}")
     print(f"  receptor:   {receptor_pdb}")
     print(f"  entries:    {len(entries)}")
     print(f"  sample:     {bool(args.sample)}")
+    if completed_names:
+        print(f"  resumed:    {len(completed_names)} compounds "
+              f"already in {args.out_csv} — skipping "
+              f"{sorted(completed_names)}")
     print()
 
     for entry in entries:
         name = entry.get("name", "?")
         smi = entry.get("smiles", "")
         expt = entry.get("dG_bind_kcalmol")
+        if name in completed_names:
+            print(f"[bench] {name}  (skipped, resumed from CSV)",
+                  flush=True)
+            continue
         print(f"[bench] {name}  {smi}", flush=True)
         ts = _time.time()
         r = compute_absolute_binding_dg(
