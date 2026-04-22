@@ -1233,6 +1233,7 @@ def _run_bench(args) -> int:
               f"{sorted(completed_names)}")
     print()
 
+    interrupted = False
     for entry in entries:
         name = entry.get("name", "?")
         smi = entry.get("smiles", "")
@@ -1243,18 +1244,26 @@ def _run_bench(args) -> int:
             continue
         print(f"[bench] {name}  {smi}", flush=True)
         ts = _time.time()
-        r = compute_absolute_binding_dg(
-            smi, receptor_pdb,
-            binding_site_center_nm=bsc,
-            n_windows=args.n_windows,
-            softcore_alpha=args.softcore_alpha,
-            padding_nm=args.padding,
-            restraint_k_kJ_per_nm2=args.restraint_k,
-            sample=bool(args.sample),
-            n_equilibration_steps=args.equilibration_steps,
-            n_production_steps=args.production_steps,
-            sample_stride=args.sample_stride,
-            force_field_path=args.force_field_path)
+        try:
+            r = compute_absolute_binding_dg(
+                smi, receptor_pdb,
+                binding_site_center_nm=bsc,
+                n_windows=args.n_windows,
+                softcore_alpha=args.softcore_alpha,
+                padding_nm=args.padding,
+                restraint_k_kJ_per_nm2=args.restraint_k,
+                sample=bool(args.sample),
+                n_equilibration_steps=args.equilibration_steps,
+                n_production_steps=args.production_steps,
+                sample_stride=args.sample_stride,
+                force_field_path=args.force_field_path)
+        except KeyboardInterrupt:
+            # Graceful exit: the crash-proof CSV (previous commit)
+            # already has every completed compound. Just announce
+            # the halt + partial-CSV location so biologist knows
+            # there's something to resume from.
+            interrupted = True
+            break
         wall = _time.time() - ts
         pred = r.dG_bind_kcalmol
         unc = r.uncertainty_kcalmol
@@ -1336,9 +1345,20 @@ def _run_bench(args) -> int:
     t_total = _time.time() - t_all
     n_ok = sum(1 for row in rows if row["ok"])
     print()
-    print(f"[fep-binding bench] {n_ok}/{len(rows)} ok  "
-          f"total wall {t_total:.1f} s  "
-          f"({args.yaml_path})")
+    if interrupted:
+        n_remaining = (
+            len(entries) - len(completed_names) - len(
+                [row for row in rows
+                 if row.get("name") not in completed_names]))
+        print(f"[fep-binding bench] INTERRUPTED after "
+              f"{n_ok}/{len(rows)} completed "
+              f"({n_remaining} of YAML's entries skipped).  "
+              f"total wall {t_total:.1f} s  "
+              f"({args.yaml_path})")
+    else:
+        print(f"[fep-binding bench] {n_ok}/{len(rows)} ok  "
+              f"total wall {t_total:.1f} s  "
+              f"({args.yaml_path})")
 
     if args.out_csv:
         # Final re-write ensures even a 0-entry YAML produces the
@@ -1346,7 +1366,15 @@ def _run_bench(args) -> int:
         _write_bench_csv(args.out_csv, rows)
         print(f"  wrote {args.out_csv}  "
               f"(schema compatible with `cellsim fep-report`)")
+        if interrupted:
+            print(f"  to continue: cellsim fep-binding bench "
+                  f"{args.yaml_path} --out-csv {args.out_csv} "
+                  "--resume [other args]")
 
+    # Interrupted → exit 130 (conventional Ctrl-C code, >1 for
+    # CI to detect).
+    if interrupted:
+        return 130
     return 0 if n_ok == len(rows) else 1
 
 

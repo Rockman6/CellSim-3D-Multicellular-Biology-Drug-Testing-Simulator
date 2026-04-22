@@ -105,6 +105,67 @@ def test_resume_skips_completed_compounds():
             f"{ethane}")
 
 
+def test_ctrl_c_exits_cleanly_with_partial_csv():
+    """Simulate Ctrl-C during bench: monkey-patch
+    compute_absolute_binding_dg to raise KeyboardInterrupt on the
+    2nd call. Expected behaviour:
+      - bench returns exit 130 (SIGINT convention)
+      - output contains 'INTERRUPTED'
+      - CSV has the 1 completed row (crash-proof incremental
+        write from commit 9732e0b preserves it)
+      - output suggests --resume as the restart path
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory(
+            prefix="cellsim_ctrlc_") as tmp:
+        tmp = Path(tmp)
+        yaml = tmp / "ctrlc.yaml"
+        csv_path = tmp / "ctrlc.csv"
+        _write_yaml(yaml, [
+            ("methane", "C"),
+            ("ethane", "CC"),
+            ("propane", "CCC"),
+        ])
+        # Use a subprocess that raises on 2nd compound via a
+        # wrapper python -c script. Monkey-patching main()
+        # from here is fraught because bench imports eagerly.
+        harness = f"""
+import sys
+sys.path.insert(0, "{REPO_ROOT}")
+import src.fep.binding as binding
+_real = binding.compute_absolute_binding_dg
+_counter = {{"n": 0}}
+def mock(*a, **kw):
+    _counter["n"] += 1
+    if _counter["n"] == 2:
+        raise KeyboardInterrupt()
+    return _real(*a, **kw)
+binding.compute_absolute_binding_dg = mock
+sys.exit(binding.main([
+    "bench", "{yaml}", "--padding", "0.6",
+    "--out-csv", "{csv_path}",
+]))
+"""
+        r = subprocess.run(
+            ["python", "-c", harness],
+            cwd=REPO_ROOT,
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 130, (
+            f"Ctrl-C should exit 130; got {r.returncode}\n"
+            f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}")
+        out = r.stdout + r.stderr
+        assert "INTERRUPTED" in out
+        assert "--resume" in out, (
+            f"partial-run message should suggest --resume\n{out}")
+        # CSV should have one completed row (methane).
+        assert csv_path.exists()
+        with csv_path.open("r", encoding="utf-8-sig") as fi:
+            rows = list(csv.DictReader(fi))
+        assert len(rows) == 1
+        assert rows[0]["name"] == "methane"
+
+
 def test_resume_without_flag_overwrites():
     """Without --resume, an existing CSV is overwritten and every
     compound is re-scaffolded. Regression guard on default."""
@@ -138,6 +199,7 @@ if __name__ == "__main__":
     funcs = [
         test_resume_skips_completed_compounds,
         test_resume_without_flag_overwrites,
+        test_ctrl_c_exits_cleanly_with_partial_csv,
     ]
     fails = []
     for f in funcs:
