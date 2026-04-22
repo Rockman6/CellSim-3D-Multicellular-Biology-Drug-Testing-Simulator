@@ -880,9 +880,12 @@ def _write_table_csv(r: ReportResult, out_path: Path) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Analyse a FreeSolv FEP run — tarball, run "
-                    "directory, or raw CSV — and emit a pass/fail "
-                    "markdown report. Exit 0 on gate pass, 1 on fail.")
+        description="Analyse a FEP run (hydration or binding) — "
+                    "tarball, run directory, or raw CSV — and emit "
+                    "a pass/fail markdown report + parity PNG + "
+                    "normalised table. --yaml auto-infers kind "
+                    "(gate, sign-rule, expected row count). Exit 0 "
+                    "on gate pass OR inconclusive, 1 on real FAIL.")
     ap.add_argument(
         "path", nargs="?", default=None,
         help="freesolv_m5max_<stamp>.tar.gz, the extracted "
