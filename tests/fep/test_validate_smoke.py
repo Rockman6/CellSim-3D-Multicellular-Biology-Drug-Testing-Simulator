@@ -310,6 +310,54 @@ def test_binding_site_center_unit_mismatch_warns():
         f"suggested nm conversion should be printed; got:\n{out}")
 
 
+def test_yaml_entry_key_typo_flagged():
+    """Typos in per-entry keys (dG_bond_kcalmol instead of
+    dG_bind_kcalmol) should warn with a specific 'did you mean X'
+    suggestion. The bench driver silently ignores unknown keys so
+    undetected typos would produce a run with missing data.
+
+    Two scenarios:
+      A. Typo on dG_bind_kcalmol alongside valid smiles + missing
+         ΔG → warning + 'missing expt ΔG' error (rc != 0).
+      B. Only an extra custom-looking key (no load-bearing typo) →
+         warning + clean pass."""
+    # Scenario A: typo on the expt ΔG key.
+    yaml_a = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: biotin
+        smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bond_kcalmol: -18.3
+    """
+    rc, out = _run(yaml_a)
+    # The typo'd key would silently drop expt ΔG — validator
+    # detects 'missing expt ΔG' as a hard error AND flags the
+    # typo.
+    assert rc != 0
+    assert "unknown entry key 'dG_bond_kcalmol'" in out
+    assert "did you mean 'dG_bind_kcalmol'" in out
+
+    # Scenario B: author extends schema with a custom field — no
+    # load-bearing typo, just a warning.
+    yaml_b = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: biotin
+        smiles: "O=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bind_kcalmol: -18.3
+        assay_id: "Green1975"
+    """
+    rc, out = _run(yaml_b)
+    assert rc == 0, (
+        f"custom-looking extra key should warn but not fail; "
+        f"got rc={rc}\n{out}")
+    assert "unknown entry key 'assay_id'" in out
+
+
 def test_binding_site_center_outside_protein_bbox_warns():
     """Correct nm units but coordinate far outside the protein —
     possible wrong-receptor copy-paste. Validator warns (not FAIL)
@@ -452,6 +500,7 @@ if __name__ == "__main__":
         test_binding_site_center_unit_mismatch_warns,
         test_binding_site_center_outside_protein_bbox_warns,
         test_binding_site_center_correct_nm_no_warn,
+        test_yaml_entry_key_typo_flagged,
     ]
     fails = []
     for f in funcs:
