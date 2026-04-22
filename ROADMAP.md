@@ -30,20 +30,32 @@ renumbered accordingly.
 - **1.2 Classical MD (OpenMM + ff14SB + TIP3P)** — DONE (MVP).
   Vacuum Langevin on ligands, 1UBQ solvate + 1 ps MD. Full
   100-ns ubiquitin gate pending GPU runner.
-- **1.3 Docking + FEP (AutoDock Vina primary + perses FEP)** —
-  Docking side substantially DONE; FEP pending. Covered:
-  Meeko prep, re-dock gate, mini-bench, fpocket auto-detect,
-  Vina cache, MC-dock, refine, SDF/PDB export, off-target
-  panel, CYP3A4 inhibition screen, UFF-ensemble strain as a
-  cross-cutting pose-trust gate, triage verdict column,
-  strain-gate top-pose promotion, shortlist CSV, triage-PNG
-  dashboard, kinase-receptor heads-up, "next steps" paste-ready
-  guidance. **FEP integration is the open Layer 1.3 work item**
-  (blocks kinase rank-order fix). Scaffold landed at `src/fep/`
-  with an `alchemical_state_smoke()` sanity gate pinning the
-  openmmtools alchemy primitives in CI; next pieces are
-  `ligand_hydration_fep` (FreeSolv validation) and
-  `relative_binding_fep` (EGFR-series rescoring).
+- **1.3 Docking + FEP (AutoDock Vina primary; non-AI alchemical
+  FEP via openmmtools + pymbar)** — Docking DONE; alchemical FEP
+  pipeline COMPLETE end-to-end. Docking side covered: Meeko prep,
+  re-dock gate, mini-bench, fpocket auto-detect, Vina cache,
+  MC-dock, refine, SDF/PDB export, off-target panel, CYP3A4
+  inhibition screen, UFF-ensemble strain as a cross-cutting
+  pose-trust gate, triage verdict column, strain-gate top-pose
+  promotion, shortlist CSV, triage-PNG dashboard, kinase-receptor
+  heads-up, "next steps" paste-ready guidance. FEP side covered:
+    * Milestone A (hydration): `compute_hydration_dg` ready;
+      FreeSolv-12 gate running on M5 Max, awaiting tarball.
+    * Milestone B (binding): DDM + hybrid amber14/SMIRNOFF
+      builder; `compute_absolute_binding_dg` +
+      `compute_relative_binding_ddg`; end-to-end sampled ΔG_bind
+      validated on 1ubq+methane (82.5 s CPU).
+    * Biologist entry points: `cellsim fep-binding {dg,ddg,bench,
+      validate}` + `cellsim fep-report` + `cellsim bench-all`.
+      Validate emits Lipinski table + wall-time estimate with
+      local-GPU detection; bench has --resume + Ctrl-C handler +
+      per-compound ETA + crash-proof incremental CSV; report
+      autodiscovers latest run, infers YAML kind, kind-aware
+      sign-critical rule + parity PNG labels.
+    * 50+ smoke tests CI-wired; `cellsim doctor` step 13 drives
+      every benchmarks/fep/*.yaml through `validate` on every PR.
+    * Open: sampled Phase-2 runs (streptavidin + EGFR) pending
+      Milestone A clearance + GPU time.
 - **1.4 Quantum (xtb + PySCF)** — DONE (MVP). GFN2 single-point,
   homolytic C-H BDE ranking for CYP3A4 SoM, optional DFT top-N
   rescore, CYP3A4 heme-accessibility pose-SoM with ensemble pose
