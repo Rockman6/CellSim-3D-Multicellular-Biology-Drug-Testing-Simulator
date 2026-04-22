@@ -500,6 +500,36 @@ linearly with ligand heavy-atom count (AM1-BCC dominates at ~2-5
 s/heavy atom); the protein part is fast. Phase-2 sampling cost
 will be dominated by MD on the 110k-atom complex on GPU.
 
+### First end-to-end sampled ΔG_bind (2026-04-22)
+
+Toy-parameter sampled run on 1 ubq + methane (3 windows, 100 eq
++ 100 prod steps × 2 legs, 1 fs timestep, CPU, seed 1):
+
+```
+wall: 82.5 s
+ΔG_bind               = -6.71 ± 3.63 kcal/mol
+  ΔG_dec_complex      = +1.00  kcal/mol
+  ΔG_dec_solvent      = -0.44  kcal/mol
+  ΔG_restraint_corr   = -5.27  kcal/mol
+```
+
+The arithmetic reproduces: −(+1.00 − (−0.44)) + (−5.27) = −6.71.
+The restraint correction matches the closed-form Hamelberg-Gilson
+value for k=4184 kJ/mol/nm² that
+`_harmonic_restraint_free_energy_kcalmol` returns (and that the
+unit test pins to 1 e-6).
+
+The absolute ΔG is numerical noise at these tiny params — methane
+has no real pocket on ubiquitin — but the pipeline running end-to-
+end is the gate the `test_sampled_binding_smoke.py` opt-in test
+enforces: no NaN, uncertainty finite, corrections paired.
+
+Load-bearing finding: **the Milestone B pipeline is now complete
+end-to-end.** Scaffold → sample → MBAR → ΔG_bind all work; every
+downstream stage for the EGFR / streptavidin Phase-2 runs is wired.
+Remaining work is sampling parameter sweeps on GPU, not module
+plumbing.
+
 ---
 
 ## x-cut Cache hit speed-up (on cellsim conda env)
