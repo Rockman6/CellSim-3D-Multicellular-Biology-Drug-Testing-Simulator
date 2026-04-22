@@ -123,6 +123,10 @@ usage: cellsim <subcommand> [args...]
   doctor      end-to-end install sanity check
                 -> scripts/doctor.py
 
+  bench-all   biologist dashboard: validate every benchmark YAML
+                under benchmarks/fep/ + per-YAML wall estimates
+                -> scripts/bench_all_yamls.py
+
   calib       run one calibration-set YAML + render scatter PNG
                 -> scripts/calib_cli.py
 
@@ -167,6 +171,8 @@ case "${1:-}" in
         _version ;;
     doctor)
         exec python scripts/doctor.py ;;
+    bench-all)
+        exec python scripts/bench_all_yamls.py ;;
     calib)
         shift; exec python scripts/calib_cli.py "$@" ;;
     bench)
