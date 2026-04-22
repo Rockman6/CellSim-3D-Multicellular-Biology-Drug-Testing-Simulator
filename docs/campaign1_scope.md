@@ -7,11 +7,13 @@ potential) removed per the non-AI / physics-only commitment in
 **Scope horizon:** 1–2 years, 1 → 3–5 FTE.
 
 **Current progress (April 2026):** Layers 1.1 / 1.2 / 1.4 / 1.6
-shipped MVP, Layer 1.3 docking-side shipped with triage / strain /
-shortlist / off-target / DDI-risk surfaces (FEP integration open),
-Layer 1.5 scaffolded, Layer 1.7 harness partial (PoseBusters
-integrated). See `ROADMAP.md` for the current status table and
-`BENCHMARKS.md` for the numbers being enforced by the 34-gate CI.
+shipped MVP, Layer 1.3 docking AND alchemical FEP both shipped
+end-to-end (absolute + relative binding ΔG via DDM, 4 biologist
+CLIs, 50+ smoke tests; Milestone A + B sampled numbers pending
+M5 Max + GPU time). Layer 1.5 scaffolded, Layer 1.7 harness
+partial (PoseBusters integrated). See `ROADMAP.md` for the
+current status table and `BENCHMARKS.md` for the numbers being
+enforced by the CI gate suite.
 
 **Single-sentence deliverable:** `cellsim-chem`, a transparent,
 physics-first chemistry engine that screens 10⁴–10⁵ compounds for
@@ -40,12 +42,20 @@ NVT at seeded temperature, HBonds constraints, rigid water,
 equilibration protocols. GROMACS as optional independent-engine
 cross-check. Viewer: live protein Cα trace + T / E / Cα-RMSD panel.
 
-### 1.3 Docking + FEP — `src/dock/`, `src/cache/`
+### 1.3 Docking + FEP — `src/dock/`, `src/fep/`, `src/cache/`
 **AutoDock Vina as primary docking engine** (empirical, auditable
-scoring function). `perses` + `openmmtools` alchemical FEP for
-relative binding free energies. SQLite + HDF5 pose / ΔG cache keyed
-by `(ligand_hash, receptor_hash, method, ff_version)`. Viewer:
-receptor Cα ribbon + top-pose overlay + ΔG bar with Monte-Carlo CI.
+scoring function). **Alchemical FEP** via `openmmtools.alchemy` +
+`pymbar` MBAR for hydration ΔG (Milestone A) and absolute /
+relative binding ΔG via the double-decoupling method + harmonic
+CoM restraint + analytical Hamelberg-Gilson correction (Milestone
+B). perses evaluated and left out — openmmtools primitives cover
+the scope with less dependency weight. Hybrid parametrisation
+path: amber14-all + tip3pfb for protein + water via OpenMM's
+classical ForceField, SMIRNOFFTemplateGenerator for the ligand
+(OpenFF Sage 2.1.0 bonded + AM1-BCC charges). SQLite + HDF5 pose
+/ ΔG cache keyed by `(ligand_hash, receptor_hash, method,
+ff_version)`. Viewer: receptor Cα ribbon + top-pose overlay +
+ΔG bar with Monte-Carlo CI.
 
 **No CNN-scored mode.** Per the 2026-04-20 non-AI amendment in
 `MISSION.md`, GNINA CNN scoring is excluded from Campaign 1.
