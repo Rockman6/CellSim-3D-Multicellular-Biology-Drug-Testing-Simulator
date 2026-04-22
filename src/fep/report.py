@@ -74,6 +74,9 @@ class CompoundRow:
     ghmc_accept_mean: Optional[float] = None
     ghmc_accept_min: Optional[float] = None
     sign_correct: Optional[bool] = None
+    # |residual| ≤ uncertainty (statistically consistent with
+    # experiment). None when residual/σ is missing (scaffold-only).
+    within_sigma: Optional[bool] = None
     # Warnings attached to this row: e.g. "abs residual > 3 kcal/mol",
     # "GHMC mean < 0.70", "NaN in uncertainty".
     flags: list = field(default_factory=list)
@@ -384,6 +387,14 @@ def analyse(path: str | Path,
             r.sign_correct = (
                 (r.dG_pred_kcalmol >= 0) == (r.dG_expt_kcalmol >= 0)
                 or abs(r.dG_expt_kcalmol) < 0.3)   # near-zero ok either way
+        # within_sigma: |residual| ≤ uncertainty. Single source of
+        # truth — markdown + table.csv + JSON all read from the
+        # row attribute now instead of recomputing.
+        if (r.residual_kcalmol is not None
+                and r.uncertainty_kcalmol is not None
+                and r.uncertainty_kcalmol > 0):
+            r.within_sigma = (
+                abs(r.residual_kcalmol) <= r.uncertainty_kcalmol)
         if (r.residual_kcalmol is not None
                 and abs(r.residual_kcalmol) > 3.0):
             r.flags.append(
@@ -655,14 +666,10 @@ def format_markdown(r: ReportResult) -> str:
         # under- or over-binding.
         within_rows = [
             rr for rr in r.rows
-            if rr.ok
-            and rr.residual_kcalmol is not None
-            and rr.uncertainty_kcalmol is not None
-            and rr.uncertainty_kcalmol > 0]
+            if rr.ok and rr.within_sigma is not None]
         if within_rows:
             within_ok = sum(
-                1 for rr in within_rows
-                if abs(rr.residual_kcalmol) <= rr.uncertainty_kcalmol)
+                1 for rr in within_rows if rr.within_sigma)
             lines.append(
                 f"- within σ     = {within_ok}/{len(within_rows)} "
                 f"compounds ({100*within_ok/len(within_rows):.0f}%) "
@@ -711,9 +718,10 @@ def format_markdown(r: ReportResult) -> str:
         resid = rr.residual_kcalmol
         resid_abs = abs(resid) if resid is not None else None
         unc = rr.uncertainty_kcalmol
-        within_sigma = "—"
-        if resid_abs is not None and unc is not None and unc > 0:
-            within_sigma = "✓" if resid_abs <= unc else ""
+        if rr.within_sigma is None:
+            within_sigma = "—"
+        else:
+            within_sigma = "✓" if rr.within_sigma else ""
         flag_str = "; ".join(rr.flags) if rr.flags else ""
         if rr.ghmc_accept_mean is not None:
             flag_str = (flag_str + "; " if flag_str else "") + (
@@ -849,10 +857,8 @@ def _write_table_csv(r: ReportResult, out_path: Path) -> None:
         for rr in r.rows:
             abs_r = (abs(rr.residual_kcalmol)
                      if rr.residual_kcalmol is not None else None)
-            within_sigma: Optional[bool] = None
-            if (abs_r is not None and rr.uncertainty_kcalmol is not None
-                    and rr.uncertainty_kcalmol > 0):
-                within_sigma = abs_r <= rr.uncertainty_kcalmol
+            # within_sigma is now populated once in analyse()
+            # and read from the row attribute here.
             w.writerow({
                 "name": rr.name,
                 "smiles": rr.smiles,
@@ -861,7 +867,7 @@ def _write_table_csv(r: ReportResult, out_path: Path) -> None:
                 "uncertainty_kcalmol": rr.uncertainty_kcalmol,
                 "residual_kcalmol": rr.residual_kcalmol,
                 "abs_residual": abs_r,
-                "within_sigma": within_sigma,
+                "within_sigma": rr.within_sigma,
                 "sign_correct": rr.sign_correct,
                 "ghmc_accept_mean": rr.ghmc_accept_mean,
                 "ghmc_accept_min": rr.ghmc_accept_min,
@@ -988,13 +994,15 @@ def main(argv=None) -> int:
             if png_ok:
                 print(f"wrote {args.out_dir / 'parity.png'}")
 
-    if not args.quiet:
-        if args.json:
-            d = asdict(r)
-            d["rows"] = [asdict(rr) for rr in r.rows]
-            print(json.dumps(d, indent=2, default=str))
-        else:
-            print(format_markdown(r))
+    # --json emits machine-readable output even in --quiet mode;
+    # --quiet was meant to silence chatter (info/progress), not
+    # suppress the primary output format the caller asked for.
+    if args.json:
+        d = asdict(r)
+        d["rows"] = [asdict(rr) for rr in r.rows]
+        print(json.dumps(d, indent=2, default=str))
+    elif not args.quiet:
+        print(format_markdown(r))
 
     # Exit: 0 for pass OR inconclusive (scaffold-only / empty CSV
     # shouldn't fail CI); 1 for a real evaluable failure.
