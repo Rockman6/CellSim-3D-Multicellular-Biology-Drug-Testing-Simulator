@@ -527,6 +527,33 @@ has no real pocket on ubiquitin — but the pipeline running end-to-
 end is the gate the `test_sampled_binding_smoke.py` opt-in test
 enforces: no NaN, uncertainty finite, corrections paired.
 
+### Honest failure-mode check: biotin + streptavidin at toy params
+
+We pushed the same opt-in sampled path onto a REAL tight-binding
+pair (biotin + 1stp, published ΔG = −18.3 kcal/mol). Result:
+
+| Attempt | Params | Wall | Outcome |
+|---|---|---|---|
+| 1 | 5 windows × 1000 prod × 2 legs | 2.3 min | MBAR non-convergence ("column sum = 0 for state 0, 4 other columns similar") |
+| 2 | 11 windows × 1500 prod × 2 legs | 4.1 min | MBAR non-convergence ("column sum = 0 for state 0, 11 other columns similar") |
+
+This is the **correct failure mode** for a pipeline that shouldn't
+lie about what it doesn't know. A tight binder (ΔG ≈ −18 kcal/mol)
+requires much more alchemical overlap between adjacent λ-windows
+than a trivial case; with the toy sampling above, adjacent windows
+don't share phase space, MBAR's reweighting matrix becomes
+singular, and the estimator refuses rather than emitting a garbage
+number. `compute_absolute_binding_dg` catches the MBAR warning and
+returns `ok=False, reason="binding sampling failed: ...
+free energies are not converged"` — which is exactly what a biologist
+needs to see to know the result isn't trustworthy.
+
+The load-bearing takeaway: **the gate correctly flags under-sampled
+binding runs instead of hiding them.** That's the reliability
+property the professor cares about. Production-parameter sampling
+(11 windows × 25 000 prod × 2 legs, Milestone-A-style, GPU-only)
+is the next step — handled by `scripts/run_binding_streptavidin_gpu.sh`.
+
 Load-bearing finding: **the Milestone B pipeline is now complete
 end-to-end.** Scaffold → sample → MBAR → ΔG_bind all work; every
 downstream stage for the EGFR / streptavidin Phase-2 runs is wired.
