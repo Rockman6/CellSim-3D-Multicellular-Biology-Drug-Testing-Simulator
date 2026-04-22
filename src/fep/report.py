@@ -894,9 +894,11 @@ def main(argv=None) -> int:
              "run/fep/ or any freesolv_*.tar.gz at the repo root.")
     ap.add_argument(
         "--yaml", dest="yaml_path", default=None,
-        help="source benchmark YAML — auto-sets --expected to the "
-             "entry count so partial runs are flagged correctly. "
-             "Cannot use with --expected.")
+        help="source benchmark YAML — auto-sets --expected (entry "
+             "count), --mae-gate (1.5 hydration / 2.0 binding), "
+             "and the sign-critical rule (methane+acetamide for "
+             "hydration; every ΔG < 0 for binding). Explicit "
+             "--mae-gate still wins. Cannot pass with --expected.")
     ap.add_argument(
         "--out-dir", type=Path, default=None,
         help="write report.md + table.csv + parity.png here")
@@ -905,7 +907,8 @@ def main(argv=None) -> int:
         help="emit the ReportResult as JSON instead of markdown")
     ap.add_argument(
         "--quiet", action="store_true",
-        help="suppress all stdout; only set exit code")
+        help="suppress markdown stdout (info/chatter); --json "
+             "output always prints; exit code is always set")
     ap.add_argument(
         "--mae-gate", type=float, default=GATE_MAE_KCALMOL,
         help=f"MAE pass threshold in kcal/mol "
