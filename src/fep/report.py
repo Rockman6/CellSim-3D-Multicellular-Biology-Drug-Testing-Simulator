@@ -645,10 +645,14 @@ def format_markdown(r: ReportResult) -> str:
     # worst offenders are at the top.
     lines.append("## Per-compound results")
     lines.append("")
-    hdr = ("| name | smiles | expt | pred | residual | "
-           "|resid| | wall (s) | flags |")
-    sep = ("|------|--------|------|------|----------|"
-           "-----:|---------:|-------|")
+    # 'within-σ' column: '✓' if |residual| ≤ uncertainty (prediction
+    # statistically consistent with expt), '—' if we lack data.
+    # Biologists skim this column to spot which residuals are
+    # actually bigger than the error bar.
+    hdr = ("| name | smiles | expt | pred | ± | residual | "
+           "|resid| | within σ | wall (s) | flags |")
+    sep = ("|------|--------|------|------|---|----------|"
+           "-----:|---------:|---------:|-------|")
     lines.append(hdr)
     lines.append(sep)
 
@@ -661,8 +665,8 @@ def format_markdown(r: ReportResult) -> str:
         if not rr.ok:
             lines.append(
                 f"| {rr.name} | `{rr.smiles}` | "
-                f"{rr.dG_expt_kcalmol:+.2f} | FAIL | — | — | "
-                f"{(rr.wall_seconds or 0):.0f} | "
+                f"{rr.dG_expt_kcalmol:+.2f} | FAIL | — | — | — | "
+                f"— | {(rr.wall_seconds or 0):.0f} | "
                 f"{rr.reason[:60]} |")
             continue
         # Scaffold-only row: ok=True but pred is None. Render as
@@ -671,12 +675,17 @@ def format_markdown(r: ReportResult) -> str:
         if rr.dG_pred_kcalmol is None:
             lines.append(
                 f"| {rr.name} | `{rr.smiles}` | "
-                f"{rr.dG_expt_kcalmol:+.2f} | scaffolded | — | — | "
+                f"{rr.dG_expt_kcalmol:+.2f} | scaffolded | — | "
+                f"— | — | — | "
                 f"{(rr.wall_seconds or 0):.0f} | "
                 "(no sample) |")
             continue
         resid = rr.residual_kcalmol
         resid_abs = abs(resid) if resid is not None else None
+        unc = rr.uncertainty_kcalmol
+        within_sigma = "—"
+        if resid_abs is not None and unc is not None and unc > 0:
+            within_sigma = "✓" if resid_abs <= unc else ""
         flag_str = "; ".join(rr.flags) if rr.flags else ""
         if rr.ghmc_accept_mean is not None:
             flag_str = (flag_str + "; " if flag_str else "") + (
@@ -688,8 +697,10 @@ def format_markdown(r: ReportResult) -> str:
             f"| {rr.name} | `{rr.smiles}` | "
             f"{rr.dG_expt_kcalmol:+.2f} | "
             f"{rr.dG_pred_kcalmol:+.2f} | "
+            f"{(unc or 0):.2f} | "
             f"{(resid if resid is not None else 0):+.2f} | "
             f"{(resid_abs if resid_abs is not None else 0):.2f} | "
+            f"{within_sigma} | "
             f"{(rr.wall_seconds or 0):.0f} | "
             f"{flag_str} |")
     lines.append("")

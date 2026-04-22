@@ -135,8 +135,10 @@ def test_markdown_render_stable():
         f"header line changed:\n{md[:200]}")
     # Gate-verdict section must reference the 1.5 gate.
     assert f"≤ {GATE_MAE_KCALMOL} kcal/mol" in md
-    # Per-compound table header must be present and stable.
-    assert "| name | smiles | expt | pred | residual |" in md
+    # Per-compound table header must be present and stable —
+    # current shape ends with 'within σ | wall (s) | flags |'.
+    assert "| name | smiles | expt | pred | ± | residual |" in md
+    assert "within σ" in md
     # Sign-critical compounds must be labelled explicitly.
     assert "acetamide/methane" in md
 
