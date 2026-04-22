@@ -69,6 +69,7 @@ omit `--center` / `--box` and CellSim auto-detects pockets via fpocket
 | **1.1 Chem** | SMILES → OpenFF-parametrised system (AM1-BCC charges) | ✅ 9/10 full tier, 10/10 RDKit tier |
 | **1.2 MD** | Classical Langevin MD, solvated protein loader (AMBER14 + TIP3P) | ✅ 1 ps ubiquitin Cα RMSD 0.74 Å |
 | **1.3 Docking** | Vina + Meeko + PoseBusters + fpocket auto-site | ✅ mini-bench 2/3 canonical gate |
+| **1.3 FEP** | Alchemical ΔG_hyd + ΔG_bind (DDM); `cellsim fep-binding {dg,ddg,bench,validate}` + `fep-report` + `bench-all` | ✅ pipeline complete end-to-end; 50+ smoke tests; Milestone A + B numbers pending GPU |
 | **1.4 Quantum** | xTB GFN2 single-point + CYP3A4 SoM predictor (BDE) | ✅ 10/10 sane + 3/3 SoM smoke |
 | **1.5 Coarse-grained** | Martini 3 membrane / bilayer MD | ⏳ scaffold only |
 | **1.6 UQ** | Monte-Carlo / Sobol / split-conformal for ΔG bounds | ✅ triad shipped |
