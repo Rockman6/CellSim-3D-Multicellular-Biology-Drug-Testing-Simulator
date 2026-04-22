@@ -68,9 +68,14 @@ dependencies:
                               # for a manual FEP driver in the
                               # meantime.
 
-  # Metabolism (Campaign 2 prep)
-  - cobra>=0.29               # COBRApy FBA
-  - python-libsbml>=5.20      # SBML I/O for pathway models
+  # Metabolism (Campaign 2 — NOT pinned here)
+  # cobra + python-libsbml were previously listed in anticipation of
+  # Campaign 2 pathway modelling, but (a) they have zero callers in
+  # Campaign 1 (grep src/ tests/ scripts/ → none) and (b) the pinned
+  # python-libsbml>=5.20 had no satisfier on bioconda (tops out at
+  # 5.19.x), which blocked fresh env creation on the M5 Max during
+  # the Milestone A gate. Dropped from this env; re-introduce in
+  # Campaign 2 with version pins verified at that time.
 
   # UQ + stats (non-AI)
   - salib>=1.4                # Sobol, Morris, FAST sensitivity
