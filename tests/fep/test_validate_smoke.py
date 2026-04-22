@@ -203,8 +203,11 @@ def test_pinned_stereo_passes():
 
 
 def test_charged_ligand_flagged():
-    """Formal-charge != 0 needs a Rocklin/Warren correction we
-    haven't wired. Validator must flag so the biologist knows."""
+    """Formal-charge != 0 carries a PBC self-interaction error in
+    absolute ΔG (Rocklin 2013). Validator emits a WARNING (not
+    a hard error) so biologists studying ionic series aren't
+    blocked — the error cancels in same-charge ΔΔG.
+    """
     yaml = """
     receptor:
       pdb_path: benchmarks/dock/1stp.pdb
@@ -215,8 +218,14 @@ def test_charged_ligand_flagged():
         dG_bind_kcalmol: -5.0
     """
     rc, out = _run(yaml)
-    assert rc != 0, "charged ligand should be flagged as an issue"
-    assert "formal charge" in out.lower() or "rocklin" in out.lower()
+    # Warning, not hard fail — proceed.
+    assert rc == 0, (
+        f"charged ligand should warn but pass; got rc={rc}\n{out}")
+    assert "formal charge" in out.lower()
+    assert "rocklin" in out.lower()
+    assert "PBC self-interaction error" in out
+    assert "ΔΔG within a same-charge" in out, (
+        "biologist actionability: must mention ΔΔG-cancels caveat")
 
 
 def test_duplicate_names_flagged():
