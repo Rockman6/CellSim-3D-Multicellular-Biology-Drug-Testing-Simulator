@@ -178,6 +178,9 @@ jobs:
       - name: cellsim bench-all (biologist dashboard regression)
         run: python -u tests/fep/test_bench_all_smoke.py
 
+      - name: fep-binding bench --resume regression
+        run: python -u tests/fep/test_bench_resume_smoke.py
+
       - name: fep sampled binding smoke (opt-in, ~10 min, manual)
         if: >
           github.event_name == 'workflow_dispatch' &&
