@@ -166,6 +166,49 @@ sys.exit(binding.main([
         assert rows[0]["name"] == "methane"
 
 
+def test_ctrl_c_without_outcsv_warns_data_lost():
+    """Ctrl-C with no --out-csv: biologist loses work silently
+    unless we tell them. Validator should print a clear 'NOT
+    saved, re-run with --out-csv' nudge."""
+    import tempfile
+    with tempfile.TemporaryDirectory(
+            prefix="cellsim_ctrlc_") as tmp:
+        tmp = Path(tmp)
+        yaml = tmp / "ctrlc_nocsv.yaml"
+        _write_yaml(yaml, [
+            ("methane", "C"),
+            ("ethane", "CC"),
+            ("propane", "CCC"),
+        ])
+        harness = f"""
+import sys
+sys.path.insert(0, "{REPO_ROOT}")
+import src.fep.binding as binding
+_real = binding.compute_absolute_binding_dg
+_counter = {{"n": 0}}
+def mock(*a, **kw):
+    _counter["n"] += 1
+    if _counter["n"] == 2:
+        raise KeyboardInterrupt()
+    return _real(*a, **kw)
+binding.compute_absolute_binding_dg = mock
+sys.exit(binding.main([
+    "bench", "{yaml}", "--padding", "0.6",
+]))  # no --out-csv
+"""
+        r = subprocess.run(
+            ["python", "-c", harness],
+            cwd=REPO_ROOT,
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 130
+        out = r.stdout + r.stderr
+        assert "NOT saved" in out, (
+            f"Ctrl-C without --out-csv should warn of data loss; "
+            f"got:\n{out}")
+        assert "--out-csv" in out
+
+
 def test_resume_without_flag_overwrites():
     """Without --resume, an existing CSV is overwritten and every
     compound is re-scaffolded. Regression guard on default."""
@@ -200,6 +243,7 @@ if __name__ == "__main__":
         test_resume_skips_completed_compounds,
         test_resume_without_flag_overwrites,
         test_ctrl_c_exits_cleanly_with_partial_csv,
+        test_ctrl_c_without_outcsv_warns_data_lost,
     ]
     fails = []
     for f in funcs:
