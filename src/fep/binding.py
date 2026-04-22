@@ -1370,6 +1370,14 @@ def _run_bench(args) -> int:
             print(f"  to continue: cellsim fep-binding bench "
                   f"{args.yaml_path} --out-csv {args.out_csv} "
                   "--resume [other args]")
+    elif interrupted and rows:
+        # No --out-csv was set. The in-memory results are lost
+        # on process exit; at least tell the biologist what
+        # happened so they re-run with the flag.
+        print(f"  partial results for {len(rows)} compounds "
+              "NOT saved (no --out-csv flag). Re-run with e.g. "
+              "--out-csv bench_run.csv so the next Ctrl-C "
+              "preserves completed compounds.")
 
     # Interrupted → exit 130 (conventional Ctrl-C code, >1 for
     # CI to detect).
