@@ -160,6 +160,9 @@ jobs:
       - name: fep sampling smoke (Layer 1.3, methane vacuum Langevin+MBAR)
         run: python -u tests/fep/test_sampling_smoke.py
 
+      - name: fep MBAR-error translator (biologist-actionable failure messages)
+        run: python -u tests/fep/test_mbar_error_translation_smoke.py
+
       - name: fep end-to-end smoke (Layer 1.3, methane hydration ΔG pipeline)
         run: python -u tests/fep/test_hydration_dg_smoke.py
 
