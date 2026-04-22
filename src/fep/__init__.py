@@ -1,4 +1,4 @@
-"""Layer 1.3 — alchemical free-energy scaffold (non-AI, physics).
+"""Layer 1.3 — alchemical free-energy perturbation (non-AI, physics).
 
 Why this module exists
 ----------------------
@@ -12,41 +12,59 @@ oncology drug discovery.
 
 The physics-legitimate fix is alchemical free-energy perturbation
 (FEP): integrate a softcore-enabled ligand through a
-λ = 0 → λ = 1 path and recover ΔΔG from the ensemble of short
-simulations. This module wraps `openmmtools.alchemy` to do that
-non-AI FEP path without pulling in choderalab/perses (which the
-conda env doesn't currently ship cleanly — see environment.yml).
+λ = 0 → λ = 1 path and recover ΔG / ΔΔG from the ensemble of short
+simulations. This module wraps `openmmtools.alchemy` + `pymbar` to
+do that non-AI FEP path without pulling in choderalab/perses
+(evaluated and not required — openmmtools primitives cover the
+Milestone A/B scope).
 
-What's here now
----------------
-- `alchemical_state_smoke()` — sanity check that the openmmtools
-  alchemical factory can build a valid AbsoluteAlchemicalFactory
-  on a trivial OpenMM test system. This is the "the building
-  blocks import and work on this machine" gate.
+Shipped primitives (Milestone A — hydration)
+--------------------------------------------
+- `alchemical_state_smoke()` — openmmtools-import sanity gate.
+- `compute_hydration_dg(smiles)` — full ΔG_hyd via 11-window
+  MBAR on vacuum + TIP3P decoupling; end-to-end, no callbacks.
+  Calibration: FreeSolv-12 at production parameters (M5 Max run
+  in flight).
+- `ligand_hydration_fep(smiles)` — the earlier scaffold-phase
+  primitive, kept for the smoke CI gate that pins the scaffold
+  architecture. Production users want `compute_hydration_dg`.
 
-What's NOT here yet (named open items for subsequent PRs)
----------------------------------------------------------
-- `ligand_hydration_fep(smiles)` — compute absolute hydration ΔG
-  by a 12-window alchemical transformation (vacuum → TIP3P
-  solvation). Calibration: published hydration free energies on
-  a small-molecule subset of FreeSolv.
+Shipped primitives (Milestone B — binding, see `src.fep.binding`)
+-----------------------------------------------------------------
+- `compute_absolute_binding_dg(smiles, pdb)` — absolute ΔG_bind
+  via DDM (complex decouple − solvent decouple + Hamelberg-Gilson
+  restraint correction). Two builder paths:
+    * amber14 (default) — OpenMM amber14-all + tip3pfb for
+      protein/solvent, SMIRNOFF ligand via SMIRNOFFTemplateGenerator.
+    * smirnoff (fallback) — pure Interchange.from_smirnoff.
+- `compute_relative_binding_ddg(smi_A, smi_B, pdb)` — ΔΔG(A→B)
+  via two independent absolute-ΔG runs + subtraction (avoids a
+  perses-style atom-mapper; corrections cancel).
 
-- `relative_binding_fep(smiles_A, smiles_B, receptor_pdb, box)` —
-  compute ΔΔG(A→B) for a congeneric-series pair. This is what
-  will rescue the EGFR kinase ranking failure.
+Biologist CLIs (see `scripts/cellsim`)
+--------------------------------------
+- `cellsim fep-hyd <smi>` — single-compound hydration scaffold.
+- `cellsim fep-freesolv <yaml>` — FreeSolv-12 gate runner.
+- `cellsim fep-binding validate <yaml>` — sub-second YAML +
+  SMILES hygiene check (RDKit + Lipinski + stereo + pKa / pocket
+  sanity + wall-time estimate with local-GPU detection).
+- `cellsim fep-binding bench <yaml>` — batch runner with
+  crash-proof incremental CSV + Ctrl-C handler + `--resume`
+  + per-compound ETA.
+- `cellsim fep-binding dg / ddg` — single-compound /-pair variants.
+- `cellsim fep-report <path>` — autodiscovers latest run, infers
+  YAML kind, emits PASS/FAIL/partial verdict + parity PNG +
+  normalised CSV for downstream tooling.
+- `cellsim bench-all` — one-line-per-YAML regression dashboard.
 
-- `fep_batch_rescore(batch_csv)` — accept a `cellsim dock` output
-  CSV and emit a rescored CSV with FEP ΔΔG for the top-K hits.
+FEP at production scale requires GPU hours; the scaffold-mode
+paths (build + minimise, no MD) run in seconds on CPU and are
+the subject of 50+ CI smoke tests that guard every entry point.
 
-FEP requires real GPU time (hours, not seconds). Batch-rescore
-will run locally on small N and delegate to a cloud H100 for
-scale screens; compute path TBD with the Layer 1.7 blind-bench
-GPU runner.
-
-Non-AI: every energy term in the softcore potential comes from
-an explicit force-field parameter (ff14SB / OpenFF Sage) and the
-MBAR / BAR free-energy estimator is closed-form from the
-alchemical-state samples — no learned surrogate anywhere.
+Non-AI: every energy term comes from an explicit force-field
+parameter (AMBER14 / OpenFF Sage + AM1-BCC / TIP3P) and the MBAR
+free-energy estimator is closed-form from the alchemical-state
+samples — no learned surrogate anywhere.
 """
 
 from __future__ import annotations
