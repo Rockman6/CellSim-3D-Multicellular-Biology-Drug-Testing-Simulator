@@ -557,7 +557,17 @@ def format_markdown(r: ReportResult) -> str:
         else "inconclusive")
     if r.is_partial:
         overall_icon = "FAIL (partial run)" if r.pass_overall is False else "partial"
-    lines.append(f"# FreeSolv FEP report — {overall_icon}")
+    # Title reflects the YAML kind the run was scored against so
+    # biologists reading the markdown know immediately whether
+    # they're looking at a hydration or binding report, not the
+    # legacy FreeSolv-era generic title.
+    if r.yaml_kind == "binding":
+        _title = "Binding FEP report"
+    elif r.yaml_kind == "hydration":
+        _title = "Hydration FEP report"
+    else:
+        _title = "FEP report"
+    lines.append(f"# {_title} — {overall_icon}")
     lines.append("")
     lines.append(f"- source: `{r.source}`")
     if r.platform_line:
