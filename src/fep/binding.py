@@ -1023,9 +1023,11 @@ def main(argv=None) -> int:
     import sys
 
     ap = argparse.ArgumentParser(
-        description="Milestone B FEP — absolute or relative "
-                    "binding ΔG. Phase-1 scaffold (default) builds "
-                    "the alchemical systems; --sample drives MD.")
+        description="Milestone B FEP — absolute and relative "
+                    "binding ΔG. Typical workflow: (1) validate — "
+                    "sub-second YAML + SMILES hygiene check; "
+                    "(2) bench — build & optionally sample on GPU; "
+                    "(3) dg / ddg — single-compound variants.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     dgp = sub.add_parser("dg", help="absolute ΔG_bind")
