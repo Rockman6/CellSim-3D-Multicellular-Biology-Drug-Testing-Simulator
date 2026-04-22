@@ -147,20 +147,38 @@ import importlib, sys
 mods = [
     ("rdkit", "rdkit"),
     ("openmm", "openmm"),
+    ("openmmtools", "openmmtools"),
+    ("openmmforcefields", "openmmforcefields"),
     ("openff-toolkit", "openff.toolkit"),
+    ("openff-interchange", "openff.interchange"),
     ("pdbfixer", "pdbfixer"),
+    ("pymbar", "pymbar"),
     ("vina", "vina"),
     ("meeko", "meeko"),
     ("posebusters", "posebusters"),
+    ("xtb", "xtb"),
+    ("pyscf", "pyscf"),
+    ("salib", "SALib"),
 ]
 print("cellsim   — Campaign-1 non-AI drug-discovery stack")
 print("python    ", sys.version.split()[0])
 for label, m in mods:
     try:
         mod = importlib.import_module(m)
-        print(f"{label:<16s}", getattr(mod, "__version__", "?"))
+        v = getattr(mod, "__version__", None)
+        # pdbfixer exposes the version on a submodule attribute.
+        if v is None:
+            for subname in ("pdbfixer.pdbfixer",):
+                try:
+                    sub = importlib.import_module(subname)
+                    v = getattr(sub, "__version__", None)
+                    if v:
+                        break
+                except ImportError:
+                    pass
+        print(f"{label:<20s}", v or "?")
     except ImportError:
-        print(f"{label:<16s} MISSING (env not activated?)")
+        print(f"{label:<20s} MISSING (env not activated?)")
 PY
 }
 
