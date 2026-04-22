@@ -1051,11 +1051,17 @@ def main(argv=None) -> int:
     dgp = sub.add_parser("dg", help="absolute ΔG_bind")
     dgp.add_argument("smiles")
     dgp.add_argument("receptor_pdb")
-    dgp.add_argument("--n-windows", type=int, default=11)
-    dgp.add_argument("--softcore-alpha", type=float, default=0.5)
-    dgp.add_argument("--padding", type=float, default=1.2)
+    dgp.add_argument(
+        "--n-windows", type=int, default=11,
+        help="alchemical λ-windows per leg (default 11)")
+    dgp.add_argument(
+        "--softcore-alpha", type=float, default=0.5,
+        help="softcore LJ smoothing (default 0.5)")
+    dgp.add_argument(
+        "--padding", type=float, default=1.2,
+        help="water padding around complex in nm (default 1.2)")
     dgp.add_argument("--restraint-k", type=float, default=4184.0,
-                     help="spring constant kJ/mol/nm² "
+                     help="CoM harmonic spring in kJ/mol/nm² "
                           "(default 4184 ≈ 10 kcal/mol/Å²)")
     dgp.add_argument("--sample", action="store_true",
                      help="run MD (slow on CPU; intended for GPU)")
@@ -1071,30 +1077,63 @@ def main(argv=None) -> int:
     ddgp.add_argument("smiles_a")
     ddgp.add_argument("smiles_b")
     ddgp.add_argument("receptor_pdb")
-    ddgp.add_argument("--n-windows", type=int, default=11)
-    ddgp.add_argument("--softcore-alpha", type=float, default=0.5)
-    ddgp.add_argument("--padding", type=float, default=1.2)
-    ddgp.add_argument("--restraint-k", type=float, default=4184.0)
-    ddgp.add_argument("--sample", action="store_true")
+    ddgp.add_argument(
+        "--n-windows", type=int, default=11,
+        help="alchemical λ-windows per leg (default 11)")
+    ddgp.add_argument(
+        "--softcore-alpha", type=float, default=0.5,
+        help="softcore LJ smoothing (default 0.5)")
+    ddgp.add_argument(
+        "--padding", type=float, default=1.2,
+        help="water padding around complex in nm (default 1.2)")
+    ddgp.add_argument(
+        "--restraint-k", type=float, default=4184.0,
+        help="CoM harmonic spring in kJ/mol/nm² (default 4184)")
+    ddgp.add_argument(
+        "--sample", action="store_true",
+        help="run MD (slow on CPU; intended for GPU)")
     ddgp.add_argument("--force-field-path", default="amber14",
-                      choices=["amber14", "smirnoff"])
+                      choices=["amber14", "smirnoff"],
+                      help="protein/ligand parametrisation path "
+                           "(default amber14)")
     ddgp.add_argument("--json", action="store_true")
 
     bp = sub.add_parser(
         "bench",
         help="YAML-driven batch (e.g. binding_streptavidin.yaml)")
     bp.add_argument("yaml_path")
-    bp.add_argument("--n-windows", type=int, default=11)
-    bp.add_argument("--softcore-alpha", type=float, default=0.5)
-    bp.add_argument("--padding", type=float, default=1.2)
-    bp.add_argument("--restraint-k", type=float, default=4184.0)
+    bp.add_argument(
+        "--n-windows", type=int, default=11,
+        help="number of alchemical λ-windows per leg "
+             "(default 11 — matches Milestone A production)")
+    bp.add_argument(
+        "--softcore-alpha", type=float, default=0.5,
+        help="softcore LJ smoothing parameter (default 0.5; "
+             "raise to 1.0 for less-kinked PMF on hard systems)")
+    bp.add_argument(
+        "--padding", type=float, default=1.2,
+        help="water padding around complex in nm (default 1.2; "
+             "a 1.0 nm nonbonded cutoff wants padding ≥ 1.0)")
+    bp.add_argument(
+        "--restraint-k", type=float, default=4184.0,
+        help="CoM harmonic restraint spring in kJ/mol/nm² "
+             "(default 4184 ≈ 10 kcal/mol/Å², standard Boresch k)")
     bp.add_argument(
         "--sample", action="store_true",
         help="run MD on every entry (HOURS per compound on CPU; "
              "a full streptavidin set is a GPU-only operation)")
-    bp.add_argument("--production-steps", type=int, default=2000)
-    bp.add_argument("--equilibration-steps", type=int, default=500)
-    bp.add_argument("--sample-stride", type=int, default=100)
+    bp.add_argument(
+        "--production-steps", type=int, default=2000,
+        help="GHMC production steps per window (default 2000 ≈ "
+             "4 ps at 2 fs; Milestone A uses 25 000 = 50 ps)")
+    bp.add_argument(
+        "--equilibration-steps", type=int, default=500,
+        help="GHMC equilibration steps per window (default 500 = "
+             "1 ps; Milestone A uses 2 500 = 5 ps)")
+    bp.add_argument(
+        "--sample-stride", type=int, default=100,
+        help="sample interval in production steps (default 100 = "
+             "200 samples per 2 000-step window)")
     bp.add_argument(
         "--force-field-path", default="amber14",
         choices=["amber14", "smirnoff"],
