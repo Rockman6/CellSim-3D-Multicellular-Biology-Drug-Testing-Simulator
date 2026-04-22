@@ -25,6 +25,7 @@ python -u tests/<path>/<test>.py    # or cellsim <subcommand> …
 | 1.1 | SMILES → OpenFF system, AM1-BCC charges | ✅ | ✅ | 99 % round-trip on 10 k ChEMBL (currently 100 % on 10/10 smoke) |
 | 1.2 | Classical MD (ligand vacuum + protein solvated) | ✅ | ✅ | Ubiquitin 100 ns RMSD < 3 Å (short gate shipped) |
 | 1.3 | AutoDock Vina docking + Meeko + PoseBusters + fpocket + MC + refine + batch + profile + export + off-target | ✅ | ✅ | 3-cocrystal mini-bench ≥ 66 % pose recovery |
+| 1.3 FEP | Alchemical free-energy: hydration ΔG (Milestone A) + binding ΔG / ΔΔG (Milestone B, DDM + amber14 + SMIRNOFF lig) + fep-report + 4 biologist commands (validate / bench / bench-all / report) | ✅ scaffold + sampler end-to-end | ✅ 36 smoke | A: MAE ≤ 1.5 on FreeSolv-12 (pending M5 Max); B: Kendall τ ≥ 0.6 on EGFR 6-cpd (GPU-blocked) |
 | 1.4 | xTB GFN2 single-point + CYP3A4 SoM predictor | ✅ | ✅ | 15/20 marketed drugs CYP3A4 primary SoM match (pending) |
 | 1.5 | Martini 3 bilayer + CG MD | ⏳ scaffold | ❌ | 10 µs POPC area-per-lipid within 2 % of literature |
 | 1.6 | UQ triad: MC + Sobol + split-conformal | ✅ | ✅ | Conformal coverage ≤ 10 % calibration error |
