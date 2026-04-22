@@ -808,12 +808,21 @@ def _write_parity_png(r: ReportResult, out_path: Path) -> bool:
         ax.annotate(rr.name, (xi, yi),
                     xytext=(4, 4), textcoords="offset points",
                     fontsize=7, alpha=0.75)
-    ax.set_xlabel("experimental ΔG_hyd (kcal/mol)")
-    ax.set_ylabel("predicted ΔG_hyd (kcal/mol)")
+    # Axis + title labels mirror the kind so a biologist reading
+    # a binding parity PNG isn't confused by 'ΔG_hyd' axis labels.
+    if r.yaml_kind == "binding":
+        label = "ΔG_bind"
+        title_prefix = "Binding FEP parity"
+    else:
+        label = "ΔG_hyd"
+        title_prefix = "Hydration FEP parity"
+    ax.set_xlabel(f"experimental {label} (kcal/mol)")
+    ax.set_ylabel(f"predicted {label} (kcal/mol)")
     title_bits = [f"MAE = {r.mae_kcalmol:.2f}" if r.mae_kcalmol else ""]
     if r.pearson_r is not None:
         title_bits.append(f"r = {r.pearson_r:+.2f}")
-    ax.set_title("FreeSolv FEP parity — " + ", ".join(t for t in title_bits if t))
+    ax.set_title(
+        f"{title_prefix} — " + ", ".join(t for t in title_bits if t))
     ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
     ax.set_aspect("equal", "box")
     ax.legend(loc="lower right", fontsize=8)
