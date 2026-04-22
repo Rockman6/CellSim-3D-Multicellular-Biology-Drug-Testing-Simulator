@@ -1233,6 +1233,15 @@ def _run_bench(args) -> int:
             "ok": r.ok,
             "reason": r.reason,
         })
+        # Write CSV after EVERY compound finishes, not just at the
+        # end. On a multi-hour bench a biologist might Ctrl-C, lose
+        # power, or hit a segfault; they still want the CSV with
+        # completed compounds. Overwrite-whole-file is O(n) in rows
+        # per compound but bench is typically < 20 compounds so this
+        # is < 1 ms overhead per compound — unmeasurable vs the 10+
+        # min sample time.
+        if args.out_csv:
+            _write_bench_csv(args.out_csv, rows)
 
     t_total = _time.time() - t_all
     n_ok = sum(1 for row in rows if row["ok"])
@@ -1242,23 +1251,38 @@ def _run_bench(args) -> int:
           f"({args.yaml_path})")
 
     if args.out_csv:
-        out = Path(args.out_csv)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        cols = ["name", "smiles", "dG_expt_kcalmol",
-                "dG_pred_kcalmol", "uncertainty_kcalmol",
-                "residual_kcalmol", "ghmc_accept_mean",
-                "ghmc_accept_min", "wall_seconds", "ok", "reason"]
-        with out.open("w", newline="",
-                      encoding="utf-8-sig") as fo:
-            w = _csv.DictWriter(
-                fo, fieldnames=cols, extrasaction="ignore")
-            w.writeheader()
-            for row in rows:
-                w.writerow(row)
-        print(f"  wrote {out}  "
+        # Final re-write ensures even a 0-entry YAML produces the
+        # header (no compounds → incremental writer never fired).
+        _write_bench_csv(args.out_csv, rows)
+        print(f"  wrote {args.out_csv}  "
               f"(schema compatible with `cellsim fep-report`)")
 
     return 0 if n_ok == len(rows) else 1
+
+
+def _write_bench_csv(out_csv, rows) -> None:
+    """Atomically write the bench CSV (overwrite whole file).
+    Called after every compound finishes so a Ctrl-C / power-off
+    mid-bench still leaves the partial CSV on disk."""
+    import csv as _csv
+    out = Path(out_csv)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cols = ["name", "smiles", "dG_expt_kcalmol",
+            "dG_pred_kcalmol", "uncertainty_kcalmol",
+            "residual_kcalmol", "ghmc_accept_mean",
+            "ghmc_accept_min", "wall_seconds", "ok", "reason"]
+    # Write to a temp sibling file first then rename — atomic on
+    # POSIX, so a crash during the write doesn't corrupt the
+    # previous incremental CSV.
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    with tmp.open("w", newline="", encoding="utf-8-sig") as fo:
+        w = _csv.DictWriter(
+            fo, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            w.writerow(row)
+    import os
+    os.replace(tmp, out)
 
 
 def _run_validate(args) -> int:
