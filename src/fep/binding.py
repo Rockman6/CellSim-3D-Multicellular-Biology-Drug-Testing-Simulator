@@ -1558,6 +1558,30 @@ def _run_validate(args) -> int:
                         return f"{s/60:.1f} min"
                     return f"{s/3600:.1f} h"
 
+                # Detect which OpenMM platform is actually usable
+                # on THIS machine so the biologist reads the right
+                # column. OpenMM ships Reference + CPU everywhere;
+                # Metal / OpenCL / CUDA appear only where hardware
+                # + drivers are installed.
+                try:
+                    from openmm import Platform as _Plat
+                    _plats = {
+                        _Plat.getPlatform(i).getName()
+                        for i in range(_Plat.getNumPlatforms())}
+                except Exception:
+                    _plats = {"CPU"}
+                _gpu_name = next(
+                    (n for n in ("Metal", "CUDA", "OpenCL")
+                     if n in _plats), None)
+                _rec_wall = total_gpu if _gpu_name else total_cpu
+                _rec_note = (
+                    f"THIS machine: {_gpu_name} available → "
+                    f"~{_fmt_wall(_rec_wall)} expected"
+                    if _gpu_name else
+                    f"THIS machine: no GPU detected → use CPU "
+                    f"wall (~{_fmt_wall(_rec_wall)}); rent a GPU "
+                    "for production runs")
+
                 print("  estimated wall time (full YAML, 11 "
                       "windows × 25 000 prod steps × 2 legs):")
                 print(f"    scaffold only : {_fmt_wall(total_scaffold)}")
@@ -1565,6 +1589,7 @@ def _run_validate(args) -> int:
                       "(single-threaded, not recommended for real runs)")
                 print(f"    sampled (GPU) : {_fmt_wall(total_gpu)}  "
                       "(M-series Metal / CUDA estimate)")
+                print(f"    → {_rec_note}")
                 print()
 
         if warnings:
