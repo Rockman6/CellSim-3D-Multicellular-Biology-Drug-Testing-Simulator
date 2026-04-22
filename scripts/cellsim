@@ -86,17 +86,23 @@ usage: cellsim <subcommand> [args...]
   cyp-inhibit  CYP3A4 inhibition / DDI-risk screen (1TQN dock)
                 -> src/dock/cyp_inhibition.py
 
-  fep-hyd     alchemical hydration-ΔG FEP scaffold (Layer 1.3)
+  fep-hyd     alchemical hydration ΔG for a single SMILES —
+                scaffold-only primitive; real hydration gate is
+                `cellsim fep-freesolv`
                 -> src/fep/__init__.py
 
-  fep-freesolv FreeSolv 12-compound accuracy gate (Milestone A)
+  fep-freesolv FreeSolv 12-compound hydration accuracy gate
+                (Milestone A, MAE ≤ 1.5 kcal/mol)
                 -> src/fep/freesolv_validate.py
 
-  fep-report  analyse a FreeSolv tarball / run dir / CSV and emit
-                a pass/fail markdown report + parity PNG
+  fep-report  analyse a FEP run (hydration or binding) — tarball,
+                run dir, or CSV — emit pass/fail verdict +
+                parity PNG + normalised CSV
                 -> src/fep/report.py
 
-  fep-binding absolute or relative binding ΔG FEP (Milestone B)
+  fep-binding absolute or relative binding ΔG (Milestone B; DDM
+                via amber14 + SMIRNOFF-ligand). Subcommands:
+                validate / dg / ddg / bench
                 -> src/fep/binding.py
 
   md-ligand   vacuum Langevin MD on a SMILES
