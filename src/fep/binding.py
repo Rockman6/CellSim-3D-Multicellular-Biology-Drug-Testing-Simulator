@@ -1012,14 +1012,29 @@ __all__ = [
 
 
 def main(argv=None) -> int:
-    """CLI: `cellsim fep-binding` — two subcommands.
+    """CLI: `cellsim fep-binding` — four subcommands.
+
+      cellsim fep-binding validate <yaml>
+          Sub-second YAML + SMILES hygiene check (RDKit + Lipinski +
+          stereo + pKa + unit check + wall-time estimate with
+          local-GPU detection). Run this BEFORE any multi-hour
+          sampled run.
 
       cellsim fep-binding dg <SMILES> <receptor.pdb>
-      cellsim fep-binding ddg <SMI_A> <SMI_B> <receptor.pdb>
+          Absolute ΔG_bind for a single compound. --sample drives
+          MD; without --sample, scaffold-only phase returns.
 
-    Phase-1 scaffolding mode by default (no MD). Pass ``--sample``
-    to actually drive the sampler on both legs; that will only
-    complete in reasonable wall time on a GPU.
+      cellsim fep-binding ddg <SMI_A> <SMI_B> <receptor.pdb>
+          Relative ΔΔG(A→B) via two independent absolute-binding
+          runs + subtraction.
+
+      cellsim fep-binding bench <yaml>
+          YAML-driven batch with crash-proof incremental CSV,
+          --resume for restarting from a crash, per-compound ETA,
+          Ctrl-C handler with partial-CSV preservation.
+
+    Scaffold mode (no --sample) runs in seconds per compound on
+    CPU; sampled mode requires GPU hours for real-benchmark YAMLs.
     """
     import argparse
     import json as _json
