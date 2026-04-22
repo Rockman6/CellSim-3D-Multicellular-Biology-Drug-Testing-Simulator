@@ -296,6 +296,47 @@ def test_cli_end_to_end_binding_csv_via_yaml_flag():
     assert "partial" in out.lower() or "PARTIAL" in out
 
 
+def test_table_csv_export_schema_stable():
+    """The normalised table.csv written by --out-dir is an
+    export contract for downstream tooling (Campaign 2 prior
+    emitter, post-hoc analysis scripts). Pin the column list so
+    a silent rename / drop breaks CI instead of breaking
+    downstream silently.
+    """
+    import io as _io
+    from src.fep.report import main as _report_main
+
+    with tempfile.TemporaryDirectory(
+            prefix="cellsim_table_") as tmp:
+        tmp = Path(tmp)
+        old = sys.stdout
+        sys.stdout = _io.StringIO()
+        try:
+            _report_main([
+                str(FIXTURES / "ok_case"),
+                "--out-dir", str(tmp),
+                "--quiet",
+            ])
+        finally:
+            sys.stdout = old
+        table_csv = tmp / "table.csv"
+        assert table_csv.exists(), "table.csv not written"
+        with table_csv.open("r", encoding="utf-8-sig") as fi:
+            header = next(csv.reader(fi))
+
+    expected = [
+        "name", "smiles", "dG_expt_kcalmol", "dG_pred_kcalmol",
+        "uncertainty_kcalmol", "residual_kcalmol", "abs_residual",
+        "within_sigma", "sign_correct",
+        "ghmc_accept_mean", "ghmc_accept_min",
+        "wall_seconds", "ok", "reason", "flags",
+    ]
+    assert header == expected, (
+        f"table.csv column drift:\n"
+        f"  got:      {header}\n"
+        f"  expected: {expected}")
+
+
 def test_yaml_flag_auto_infers_gate_from_kind():
     """--yaml binding_*.yaml should auto-set gate 2.0; --yaml
     hydration YAML (freesolv) should stay at 1.5. Explicit
@@ -348,6 +389,7 @@ if __name__ == "__main__":
         test_hydration_sign_critical_rule_unchanged,
         test_binding_kind_renders_correct_markdown_label,
         test_cli_end_to_end_binding_csv_via_yaml_flag,
+        test_table_csv_export_schema_stable,
         test_yaml_flag_auto_infers_gate_from_kind,
     ]
     fails = []
