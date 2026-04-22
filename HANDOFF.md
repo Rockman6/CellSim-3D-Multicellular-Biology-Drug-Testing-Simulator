@@ -70,8 +70,19 @@ The pipeline is:
    ```bash
    ./scripts/cellsim doctor
    ```
-   You should see "**39/39 checks passed**". If fewer pass, send
-   Henry the output — do **not** proceed.
+   You should see "**≥ 42/42 checks passed**" (the count bumps as
+   new gates ship; the important part is the green "N/N"). If
+   fewer pass than expected, send Henry the output — do **not**
+   proceed.
+
+   Optional: dashboard across every shipped benchmark YAML
+   (< 10 s, zero MD):
+   ```bash
+   ./scripts/cellsim bench-all
+   ```
+   Shows "N/M YAMLs validate clean" + per-YAML sampled wall-time
+   estimate on YOUR machine's GPU. Useful to know in advance
+   whether the 4-6h ±wall estimate matches your hardware.
 
 ## The run
 
