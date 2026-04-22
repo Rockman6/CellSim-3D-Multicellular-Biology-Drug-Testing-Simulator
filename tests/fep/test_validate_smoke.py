@@ -310,6 +310,27 @@ def test_binding_site_center_unit_mismatch_warns():
         f"suggested nm conversion should be printed; got:\n{out}")
 
 
+def test_binding_site_center_outside_protein_bbox_warns():
+    """Correct nm units but coordinate far outside the protein —
+    possible wrong-receptor copy-paste. Validator warns (not FAIL)
+    with the bounding-box numbers so biologist can sanity-check."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1m17.pdb
+      binding_site_center_nm: [8.0, 8.0, 8.0]
+
+    entries:
+      - name: erlotinib
+        smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+        dG_bind_kcalmol: -11.86
+    """
+    rc, out = _run(yaml)
+    assert rc == 0, "off-box warning must not fail exit"
+    assert "outside the protein's atom-coord bounding box" in out
+    # Must mention which axis is off.
+    assert "axis" in out
+
+
 def test_binding_site_center_correct_nm_no_warn():
     """Sanity: valid nm coordinates should NOT trigger the unit
     warning. Use the bundled binding_egfr.yaml values."""
@@ -429,6 +450,7 @@ if __name__ == "__main__":
         test_wall_time_estimate_within_reasonable_range,
         test_hydration_wall_time_estimate_matches_m5max_observation,
         test_binding_site_center_unit_mismatch_warns,
+        test_binding_site_center_outside_protein_bbox_warns,
         test_binding_site_center_correct_nm_no_warn,
     ]
     fails = []
