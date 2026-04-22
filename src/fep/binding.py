@@ -1260,16 +1260,44 @@ def _run_bench(args) -> int:
         unc = r.uncertainty_kcalmol
         resid = (pred - expt
                  if pred is not None and expt is not None else None)
+        # Progress ETA: based on the compounds completed so far in
+        # THIS bench (skipped/resumed ones don't count — no new
+        # wall observed). Format 'n/m done; eta ~Xm|h remaining'.
+        # Biologist can step away and estimate when to come back.
+        active_rows = [
+            row for row in rows
+            if row.get("name") not in completed_names]
+        n_done_now = len(active_rows) + 1  # includes current
+        n_remaining = max(
+            0,
+            len(entries) - len(completed_names) - n_done_now)
+        elapsed_now = _time.time() - t_all
+        if n_done_now >= 1 and n_remaining > 0:
+            mean_per = elapsed_now / n_done_now
+            eta_s = mean_per * n_remaining
+            if eta_s < 90:
+                eta_tag = f"eta ~{eta_s:.0f}s"
+            elif eta_s < 3600:
+                eta_tag = f"eta ~{eta_s/60:.1f}m"
+            else:
+                eta_tag = f"eta ~{eta_s/3600:.1f}h"
+            progress = (
+                f"  [{n_done_now}/"
+                f"{len(entries) - len(completed_names)} active; "
+                f"{eta_tag}]")
+        else:
+            progress = ""
+
         if r.ok and pred is None:
             print(f"  scaffolded {r.phase}  "
                   f"atoms={r.n_total_atoms_complex}  "
-                  f"wall={wall:.1f}s", flush=True)
+                  f"wall={wall:.1f}s{progress}", flush=True)
         elif r.ok:
             print(f"  pred = {pred:+.2f}  expt = {expt:+.2f}  "
                   f"resid = {(resid or 0):+.2f}  "
-                  f"wall={wall:.1f}s", flush=True)
+                  f"wall={wall:.1f}s{progress}", flush=True)
         else:
-            print(f"  FAIL: {r.reason}", flush=True)
+            print(f"  FAIL: {r.reason}{progress}", flush=True)
 
         # Minimum across both legs is the conservative per-compound
         # acceptance; if either leg was under-sampled the ΔG bind
