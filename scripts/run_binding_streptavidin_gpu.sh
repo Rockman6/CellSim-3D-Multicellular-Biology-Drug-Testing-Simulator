@@ -48,16 +48,21 @@ OUT_DIR="run/fep/streptavidin_${STAMP}"
 mkdir -p "${OUT_DIR}"
 CSV="${OUT_DIR}/streptavidin_results.csv"
 
-echo "============================================================"
-echo "CellSim — Streptavidin binding FEP (Milestone B)"
-echo "============================================================"
-echo "  started:     $(date)"
-echo "  machine:     $(uname -a)"
-echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
-echo "  git commit:  $(git rev-parse HEAD)"
-echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
-echo "  output:      ${OUT_DIR}/"
-echo ""
+# Header block — mirror to env.log so `cellsim fep-report` extracts
+# `git commit:` for provenance. Previously stdout-only, which made
+# report.git_commit=None on the tarball.
+{
+    echo "============================================================"
+    echo "CellSim — Streptavidin binding FEP (Milestone B)"
+    echo "============================================================"
+    echo "  started:     $(date)"
+    echo "  machine:     $(uname -a)"
+    echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
+    echo "  git commit:  $(git rev-parse HEAD)"
+    echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
+    echo "  output:      ${OUT_DIR}/"
+    echo ""
+} | tee "${OUT_DIR}/env.log"
 
 # Env + platform report (critical for reproducibility).
 python -c "
@@ -76,7 +81,7 @@ for i in range(Platform.getNumPlatforms()):
     print(f'  {p.getName()} (speed {p.getSpeed()})')
 print()
 print('Pipeline will prefer Metal -> CUDA -> OpenCL -> CPU.')
-" 2>&1 | tee "${OUT_DIR}/env.log"
+" 2>&1 | tee -a "${OUT_DIR}/env.log"
 echo ""
 
 # Cellsim doctor — fail fast if env is broken.

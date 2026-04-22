@@ -39,18 +39,25 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 OUT_DIR="run/fep/${STAMP}"
 mkdir -p "${OUT_DIR}"
 
-echo "============================================================"
-echo "CellSim — FreeSolv FEP gate (Milestone A)"
-echo "============================================================"
-echo "  started:     $(date)"
-echo "  machine:     $(uname -a)"
-echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
-echo "  git commit:  $(git rev-parse HEAD)"
-echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
-echo "  output:      ${OUT_DIR}/"
-echo ""
+# Header block — mirror to env.log so `cellsim fep-report` can
+# extract the `git commit:` line for provenance. Earlier versions
+# of this script sent the header to stdout only, which left
+# report.env_log metadata empty on the tarball.
+{
+    echo "============================================================"
+    echo "CellSim — FreeSolv FEP gate (Milestone A)"
+    echo "============================================================"
+    echo "  started:     $(date)"
+    echo "  machine:     $(uname -a)"
+    echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
+    echo "  git commit:  $(git rev-parse HEAD)"
+    echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
+    echo "  output:      ${OUT_DIR}/"
+    echo ""
+} | tee "${OUT_DIR}/env.log"
 
-# Env + platform report — critical for reproducibility
+# Env + platform report — critical for reproducibility. Appended
+# to env.log (not overwriting the header we just wrote).
 python -c "
 import openmm, openmmtools, openff.toolkit, pymbar, sys
 from openmm import Platform
@@ -66,7 +73,7 @@ for i in range(Platform.getNumPlatforms()):
     print(f'  {p.getName()} (speed {p.getSpeed()})')
 print()
 print('Pipeline will prefer Metal → OpenCL → CUDA → CPU.')
-" 2>&1 | tee "${OUT_DIR}/env.log"
+" 2>&1 | tee -a "${OUT_DIR}/env.log"
 echo ""
 
 # Cellsim doctor — fail fast if env is broken
