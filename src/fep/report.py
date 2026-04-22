@@ -97,6 +97,9 @@ class ReportResult:
     # and cannot pass even if those rows all look fine.
     expected_rows: Optional[int] = None
     is_partial: bool = False
+    # 'hydration' | 'binding' — drives the sign-critical rule and
+    # the markdown header wording.
+    yaml_kind: str = "hydration"
     # Aggregate GHMC stats (across all windows × compounds that
     # report data); None if no GHMC info in log.
     ghmc_accept_overall_mean: Optional[float] = None
@@ -344,6 +347,7 @@ def analyse(path: str | Path,
             *,
             mae_gate_kcalmol: float = GATE_MAE_KCALMOL,
             expected_rows: Optional[int] = None,
+            yaml_kind: str = "hydration",
             ) -> ReportResult:
     """Top-level: path in, ReportResult out.
 
@@ -357,6 +361,13 @@ def analyse(path: str | Path,
     have good MAE on its 6 rows is NOT a Milestone A pass; the
     other 6 compounds might have been the hard ones. Matches the
     professor's 'do not pass on incomplete data' rule.
+
+    `yaml_kind` selects the sign-critical rule:
+      'hydration' → methane must be ≥0 and acetamide must be <0
+          (rule applies per the specific FreeSolv benchmark).
+      'binding'   → every compound must have ΔG_bind < 0; an
+          entry in a binding YAML that the sampler predicts as
+          non-binding is a loud 'pipeline broke' signal.
     """
     path = Path(path)
     run_dir, csv_path = _resolve_inputs(path)
@@ -418,6 +429,7 @@ def analyse(path: str | Path,
         expected_rows=expected_rows,
         is_partial=(
             expected_rows is not None and n_total < expected_rows),
+        yaml_kind=yaml_kind,
         pearson_r=_pearson(preds, expts),
         spearman_rho=_spearman(preds, expts),
         kendall_tau=_kendall_tau(preds, expts),
@@ -458,19 +470,43 @@ def analyse(path: str | Path,
         # No acceptance data → can't evaluate; warn but don't fail.
         result.pass_ghmc = None
 
-    # Sign-critical check: methane + acetamide must have correct
-    # sign. Only count rows that have a prediction — scaffold-only
-    # rows have sign_correct=None and would incorrectly fail the
-    # gate otherwise.
-    sign_critical = [r for r in rows
-                     if r.name in _SIGN_CRITICAL_NAMES
-                     and r.ok
-                     and r.sign_correct is not None]
-    if sign_critical:
-        result.pass_sign_critical = all(
-            r.sign_correct for r in sign_critical)
+    # Sign-critical check. Rule depends on YAML kind:
+    if yaml_kind == "binding":
+        # Every binder must predict ΔG_bind < 0. A positive
+        # prediction on a compound labelled as a binder is a loud
+        # 'sampler broke / restraint escaped / force field wrong'
+        # signal and must fail the gate regardless of MAE.
+        bind_rows = [
+            r for r in rows
+            if r.ok and r.dG_pred_kcalmol is not None]
+        if bind_rows:
+            result.pass_sign_critical = all(
+                r.dG_pred_kcalmol < 0 for r in bind_rows)
+            # Tag per-row flag for the markdown table.
+            for r in bind_rows:
+                if r.dG_pred_kcalmol >= 0:
+                    r.sign_correct = False
+                    if "predicted non-binder" not in " ".join(r.flags):
+                        r.flags.append(
+                            "predicted ΔG_bind ≥ 0 (non-binder) — "
+                            "unexpected for a curated binding set")
+                else:
+                    r.sign_correct = True
+        else:
+            result.pass_sign_critical = None
     else:
-        result.pass_sign_critical = None
+        # Hydration: methane + acetamide must have correct sign.
+        # Only count rows that have a prediction — scaffold-only
+        # rows have sign_correct=None and would incorrectly fail.
+        sign_critical = [r for r in rows
+                         if r.name in _SIGN_CRITICAL_NAMES
+                         and r.ok
+                         and r.sign_correct is not None]
+        if sign_critical:
+            result.pass_sign_critical = all(
+                r.sign_correct for r in sign_critical)
+        else:
+            result.pass_sign_critical = None
 
     # Overall verdict tri-state:
     #   True  = at least one gate evaluable and all evaluable pass
@@ -574,15 +610,19 @@ def format_markdown(r: ReportResult) -> str:
             f"{verdict_icon[r.pass_ghmc]}  "
             f"(overall mean {gmean}, worst {gmin}, "
             f"{r.ghmc_accept_compound_count} compounds report)")
+    if r.yaml_kind == "binding":
+        sign_label = "every ΔG_bind < 0"
+    else:
+        sign_label = "/".join(sorted(_SIGN_CRITICAL_NAMES))
     if r.pass_sign_critical is None:
         lines.append(
             "- **Sign-critical check** "
-            f"({'/'.join(sorted(_SIGN_CRITICAL_NAMES))}): "
+            f"({sign_label}): "
             "inconclusive (no rows for critical compounds)")
     else:
         lines.append(
             "- **Sign-critical check** "
-            f"({'/'.join(sorted(_SIGN_CRITICAL_NAMES))}): "
+            f"({sign_label}): "
             f"{verdict_icon[r.pass_sign_critical]}")
     lines.append("")
 
@@ -828,7 +868,7 @@ def main(argv=None) -> int:
             print(f"auto-discovered: {discovered}", file=sys.stderr)
         args.path = str(discovered)
 
-    # Auto-derive --expected + --mae-gate from --yaml.
+    # Auto-derive --expected + --mae-gate + yaml_kind from --yaml.
     # YAML with dG_hydration_kcalmol → FreeSolv-style, gate 1.5.
     # YAML with dG_bind_kcalmol      → binding-style, gate 2.0
     # (per BENCHMARKS.md Milestone B scope — protein FEP carries
@@ -838,6 +878,7 @@ def main(argv=None) -> int:
     user_set_mae_gate = any(
         s == "--mae-gate" or s.startswith("--mae-gate=")
         for s in (argv or sys.argv[1:]))
+    yaml_kind = "hydration"  # default
     if args.yaml_path is not None:
         if args.expected is not None:
             print("fep-report: pass either --yaml or --expected, "
@@ -852,10 +893,13 @@ def main(argv=None) -> int:
                 "dG_bind_kcalmol" in (e or {}) for e in entries)
             is_hydration = any(
                 "dG_hydration_kcalmol" in (e or {}) for e in entries)
-            if not user_set_mae_gate:
-                if is_binding and not is_hydration:
+            if is_binding and not is_hydration:
+                yaml_kind = "binding"
+                if not user_set_mae_gate:
                     args.mae_gate = 2.0
-                elif is_hydration and not is_binding:
+            elif is_hydration and not is_binding:
+                yaml_kind = "hydration"
+                if not user_set_mae_gate:
                     args.mae_gate = 1.5
             if not args.quiet:
                 print(f"yaml {args.yaml_path}: "
@@ -870,7 +914,8 @@ def main(argv=None) -> int:
     try:
         r = analyse(args.path,
                     mae_gate_kcalmol=args.mae_gate,
-                    expected_rows=args.expected)
+                    expected_rows=args.expected,
+                    yaml_kind=yaml_kind)
     except Exception as e:
         print(f"fep-report: failed to parse {args.path}: {e}",
               file=sys.stderr)
