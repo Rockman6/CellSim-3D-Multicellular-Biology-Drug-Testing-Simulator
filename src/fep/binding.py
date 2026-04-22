@@ -1393,6 +1393,33 @@ def _run_validate(args) -> int:
                     except Exception:
                         n_rot = n_hbd = n_hba = 0
                         tpsa = 0.0
+
+                    # Per-compound scaffold + sampled wall estimates.
+                    # Constants calibrated from 2026-04-22 1ubq
+                    # smoke: 82.5 s for ~1200 MCMC steps × 15k-atom
+                    # complex → ~5e-7 s per atom-step on CPU. GPU
+                    # conservative 20× speedup (Metal/OpenCL on
+                    # M-series).
+                    receptor_atoms = (
+                        receptor_report.get("n_atoms") or 0)
+                    # Scaffold estimate (AM1-BCC + OpenMM parametrise
+                    # + packmol): empirically ~3 s/heavy-atom.
+                    scaffold_s = max(5.0, 3.0 * n_heavy)
+                    # Complex atom count guess: receptor × 10 for
+                    # padding 0.8 nm (fits 1ubq 15k, 1stp 25k, 1m17
+                    # 110k from today's benches).
+                    complex_atoms = max(15_000, receptor_atoms * 10)
+                    # Default Milestone-A-ish sampled params:
+                    # 11 windows × 25 k prod steps × 2 legs = 550 k
+                    # integration steps total per compound. Plus
+                    # ~10% equilibration overhead.
+                    n_steps = 11 * (25_000 + 2_500) * 2
+                    cpu_s_per_atom_step = 5e-7  # from 1ubq smoke
+                    gpu_s_per_atom_step = 2.5e-8
+                    sampled_cpu_s = (
+                        complex_atoms * n_steps * cpu_s_per_atom_step)
+                    sampled_gpu_s = (
+                        complex_atoms * n_steps * gpu_s_per_atom_step)
                     er.update({
                         "ok": True,
                         "canon_smiles": canon,
@@ -1404,6 +1431,9 @@ def _run_validate(args) -> int:
                         "n_hbd": n_hbd,
                         "n_hba": n_hba,
                         "tpsa_A2": tpsa,
+                        "est_scaffold_wall_s": scaffold_s,
+                        "est_sampled_wall_cpu_s": sampled_cpu_s,
+                        "est_sampled_wall_gpu_s": sampled_gpu_s,
                     })
                     # Biologist gotchas: formal charge ≠ 0 means the
                     # alchemical FEP needs a counter-ion correction
@@ -1506,6 +1536,37 @@ def _run_validate(args) -> int:
                     f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
                     "ok")
         print()
+        # Wall-time budget summary (only meaningful for binding
+        # YAMLs — hydration YAMLs skip protein build).
+        if yaml_kind in ("binding", "mixed"):
+            ok_entries = [e for e in entries_report if e.get("ok")]
+            if ok_entries:
+                total_scaffold = sum(
+                    e.get("est_scaffold_wall_s", 0)
+                    for e in ok_entries)
+                total_cpu = sum(
+                    e.get("est_sampled_wall_cpu_s", 0)
+                    for e in ok_entries)
+                total_gpu = sum(
+                    e.get("est_sampled_wall_gpu_s", 0)
+                    for e in ok_entries)
+
+                def _fmt_wall(s):
+                    if s < 90:
+                        return f"{s:.0f} s"
+                    if s < 3600:
+                        return f"{s/60:.1f} min"
+                    return f"{s/3600:.1f} h"
+
+                print("  estimated wall time (full YAML, 11 "
+                      "windows × 25 000 prod steps × 2 legs):")
+                print(f"    scaffold only : {_fmt_wall(total_scaffold)}")
+                print(f"    sampled (CPU) : {_fmt_wall(total_cpu)}  "
+                      "(single-threaded, not recommended for real runs)")
+                print(f"    sampled (GPU) : {_fmt_wall(total_gpu)}  "
+                      "(M-series Metal / CUDA estimate)")
+                print()
+
         if warnings:
             print(f"  {len(warnings)} warning(s):")
             for w in warnings:
