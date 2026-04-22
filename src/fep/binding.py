@@ -1580,6 +1580,18 @@ def _run_validate(args) -> int:
     if not entries:
         issues.append("no entries in YAML")
 
+    # Allowed per-entry key names — anything else is a probable
+    # typo (dG_bond_kcalmol vs dG_bind_kcalmol, Smiles vs smiles)
+    # which would silently skip the field and give the biologist
+    # a ΔG of None or a missing SMILES.
+    _ALLOWED_ENTRY_KEYS = {
+        "name", "smiles",
+        "dG_bind_kcalmol", "dG_hydration_kcalmol",
+        "IC50_M",
+        "expt_unc_kcalmol",
+        "source_notes",
+    }
+
     seen_names: set[str] = set()
     for i, entry in enumerate(entries):
         name = entry.get("name", f"<entry_{i}>")
@@ -1587,6 +1599,35 @@ def _run_validate(args) -> int:
         expt = entry.get("dG_bind_kcalmol",
                          entry.get("dG_hydration_kcalmol"))
         er: dict = {"name": name, "smiles": smi, "expt_kcalmol": expt}
+
+        # Typo detection: any key not in the allowed set is
+        # suspicious. Don't FAIL — authors may legitimately extend
+        # the schema with custom fields (e.g. series tag, assay
+        # ID) — just WARN with the specific key.
+        if isinstance(entry, dict):
+            extra = set(entry.keys()) - _ALLOWED_ENTRY_KEYS
+            for bad_key in sorted(extra):
+                # Suggest the closest known key via a tiny
+                # Levenshtein-ish heuristic (no stdlib dep).
+                def _similar(a, b):
+                    a, b = a.lower(), b.lower()
+                    if a == b:
+                        return 100
+                    common = sum(1 for c in a if c in b)
+                    return common * 100 // max(len(a), len(b))
+                suggestion = max(
+                    _ALLOWED_ENTRY_KEYS, key=lambda k: _similar(
+                        k, bad_key))
+                if _similar(suggestion, bad_key) >= 70:
+                    warnings.append(
+                        f"{name}: unknown entry key '{bad_key}' — "
+                        f"did you mean '{suggestion}'? (Will be "
+                        "silently ignored by the bench driver.)")
+                else:
+                    warnings.append(
+                        f"{name}: unknown entry key '{bad_key}' "
+                        "(silently ignored; custom fields are OK "
+                        "but may hide typos)")
 
         if name in seen_names:
             issues.append(f"duplicate name: {name}")
