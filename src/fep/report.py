@@ -839,13 +839,20 @@ def _write_table_csv(r: ReportResult, out_path: Path) -> None:
     not care about free text `reason`."""
     cols = ["name", "smiles", "dG_expt_kcalmol", "dG_pred_kcalmol",
             "uncertainty_kcalmol", "residual_kcalmol", "abs_residual",
-            "sign_correct", "ghmc_accept_mean", "ghmc_accept_min",
+            "within_sigma", "sign_correct",
+            "ghmc_accept_mean", "ghmc_accept_min",
             "wall_seconds", "ok", "reason", "flags"]
     with out_path.open(
             "w", newline="", encoding="utf-8-sig") as fo:
         w = csv.DictWriter(fo, fieldnames=cols)
         w.writeheader()
         for rr in r.rows:
+            abs_r = (abs(rr.residual_kcalmol)
+                     if rr.residual_kcalmol is not None else None)
+            within_sigma: Optional[bool] = None
+            if (abs_r is not None and rr.uncertainty_kcalmol is not None
+                    and rr.uncertainty_kcalmol > 0):
+                within_sigma = abs_r <= rr.uncertainty_kcalmol
             w.writerow({
                 "name": rr.name,
                 "smiles": rr.smiles,
@@ -853,9 +860,8 @@ def _write_table_csv(r: ReportResult, out_path: Path) -> None:
                 "dG_pred_kcalmol": rr.dG_pred_kcalmol,
                 "uncertainty_kcalmol": rr.uncertainty_kcalmol,
                 "residual_kcalmol": rr.residual_kcalmol,
-                "abs_residual": (
-                    abs(rr.residual_kcalmol)
-                    if rr.residual_kcalmol is not None else None),
+                "abs_residual": abs_r,
+                "within_sigma": within_sigma,
                 "sign_correct": rr.sign_correct,
                 "ghmc_accept_mean": rr.ghmc_accept_mean,
                 "ghmc_accept_min": rr.ghmc_accept_min,
