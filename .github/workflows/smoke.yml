@@ -54,6 +54,11 @@ on:
         description: "Run the ChEMBL scale test with N compounds (0 = skip)"
         required: false
         default: "0"
+      run_sampled_binding_smoke:
+        description: "Run the opt-in sampled binding smoke (~10 min CPU)"
+        required: false
+        default: "false"
+        type: boolean
 
 jobs:
   # One mega-job that runs chem + md-ligand + md-protein smoke gates
@@ -172,6 +177,14 @@ jobs:
 
       - name: cellsim bench-all (biologist dashboard regression)
         run: python -u tests/fep/test_bench_all_smoke.py
+
+      - name: fep sampled binding smoke (opt-in, ~10 min, manual)
+        if: >
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.run_sampled_binding_smoke == 'true'
+        env:
+          CELLSIM_RUN_SAMPLED_SMOKE: "1"
+        run: python -u tests/fep/test_sampled_binding_smoke.py
 
       - name: halogen-parse smoke (Layer 1.3, regress PDBQT Cl/Br parsing)
         run: python -u tests/dock/test_halogen_parse_smoke.py
