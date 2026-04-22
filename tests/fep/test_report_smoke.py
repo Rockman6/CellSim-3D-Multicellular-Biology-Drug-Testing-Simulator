@@ -337,6 +337,37 @@ def test_table_csv_export_schema_stable():
         f"  expected: {expected}")
 
 
+def test_json_output_carries_within_sigma_and_yaml_kind():
+    """--json output must include within_sigma per row + yaml_kind
+    at top level. Downstream programmatic consumers (Campaign-2
+    prior emitter) depend on both — silent drop would be invisible
+    without a test."""
+    import io as _io
+    import json as _json
+    from src.fep.report import main as _report_main
+
+    old = sys.stdout
+    sys.stdout = _io.StringIO()
+    try:
+        _report_main([
+            str(FIXTURES / "ok_case"),
+            "--json",
+            "--quiet",   # exercises the --json + --quiet combo too
+        ])
+        out = sys.stdout.getvalue()
+    finally:
+        sys.stdout = old
+
+    data = _json.loads(out)
+    assert "yaml_kind" in data
+    assert data["yaml_kind"] in ("hydration", "binding")
+    assert "rows" in data
+    assert data["rows"], "no rows in JSON output"
+    for row in data["rows"]:
+        assert "within_sigma" in row, (
+            f"row missing within_sigma: {row}")
+
+
 def test_yaml_flag_auto_infers_gate_from_kind():
     """--yaml binding_*.yaml should auto-set gate 2.0; --yaml
     hydration YAML (freesolv) should stay at 1.5. Explicit
@@ -390,6 +421,7 @@ if __name__ == "__main__":
         test_binding_kind_renders_correct_markdown_label,
         test_cli_end_to_end_binding_csv_via_yaml_flag,
         test_table_csv_export_schema_stable,
+        test_json_output_carries_within_sigma_and_yaml_kind,
         test_yaml_flag_auto_infers_gate_from_kind,
     ]
     fails = []
