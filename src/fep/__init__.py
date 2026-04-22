@@ -505,12 +505,30 @@ def compute_hydration_dg(
     return result
 
 
-from src.fep.binding import (
-    BindingDGResult,
-    RelativeBindingDDGResult,
-    compute_absolute_binding_dg,
-    compute_relative_binding_ddg,
-)
+# Lazy re-export of binding primitives: eager `from src.fep.binding
+# import ...` at module-init pulls in binding.py before anyone can
+# run `python -m src.fep.binding` as __main__, producing a
+# RuntimeWarning about the module being in sys.modules prior to
+# execution. Using __getattr__ + a local cache defers the import
+# until a caller actually accesses `from src.fep import
+# compute_absolute_binding_dg` (which is still supported).
+_LAZY_BINDING_ATTRS = {
+    "BindingDGResult",
+    "RelativeBindingDDGResult",
+    "compute_absolute_binding_dg",
+    "compute_relative_binding_ddg",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_BINDING_ATTRS:
+        from src.fep import binding as _b
+        val = getattr(_b, name)
+        globals()[name] = val   # cache; single import after first use
+        return val
+    raise AttributeError(
+        f"module 'src.fep' has no attribute {name!r}")
+
 
 __all__ = [
     "alchemical_state_smoke",
