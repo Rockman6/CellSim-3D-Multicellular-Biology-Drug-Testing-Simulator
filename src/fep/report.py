@@ -828,7 +828,16 @@ def main(argv=None) -> int:
             print(f"auto-discovered: {discovered}", file=sys.stderr)
         args.path = str(discovered)
 
-    # Auto-derive --expected from --yaml.
+    # Auto-derive --expected + --mae-gate from --yaml.
+    # YAML with dG_hydration_kcalmol → FreeSolv-style, gate 1.5.
+    # YAML with dG_bind_kcalmol      → binding-style, gate 2.0
+    # (per BENCHMARKS.md Milestone B scope — protein FEP carries
+    # additional error sources so the absolute-MAE gate is looser).
+    # Only auto-sets --mae-gate if the user didn't override it on
+    # the CLI — their choice wins.
+    user_set_mae_gate = any(
+        s == "--mae-gate" or s.startswith("--mae-gate=")
+        for s in (argv or sys.argv[1:]))
     if args.yaml_path is not None:
         if args.expected is not None:
             print("fep-report: pass either --yaml or --expected, "
@@ -837,10 +846,22 @@ def main(argv=None) -> int:
         try:
             import yaml as _yaml
             data = _yaml.safe_load(Path(args.yaml_path).read_text())
-            args.expected = len((data or {}).get("entries") or [])
+            entries = (data or {}).get("entries") or []
+            args.expected = len(entries)
+            is_binding = any(
+                "dG_bind_kcalmol" in (e or {}) for e in entries)
+            is_hydration = any(
+                "dG_hydration_kcalmol" in (e or {}) for e in entries)
+            if not user_set_mae_gate:
+                if is_binding and not is_hydration:
+                    args.mae_gate = 2.0
+                elif is_hydration and not is_binding:
+                    args.mae_gate = 1.5
             if not args.quiet:
-                print(f"expected rows from {args.yaml_path}: "
-                      f"{args.expected}", file=sys.stderr)
+                print(f"yaml {args.yaml_path}: "
+                      f"{args.expected} expected rows, "
+                      f"gate = {args.mae_gate} kcal/mol",
+                      file=sys.stderr)
         except Exception as e:
             print(f"fep-report: cannot read --yaml {args.yaml_path}: "
                   f"{e}", file=sys.stderr)

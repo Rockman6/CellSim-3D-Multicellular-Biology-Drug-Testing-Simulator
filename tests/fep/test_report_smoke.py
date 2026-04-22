@@ -191,6 +191,43 @@ def test_partial_run_markdown_has_partial_header():
     assert "PARTIAL — Milestone A cannot pass" in md
 
 
+def test_yaml_flag_auto_infers_gate_from_kind():
+    """--yaml binding_*.yaml should auto-set gate 2.0; --yaml
+    hydration YAML (freesolv) should stay at 1.5. Explicit
+    --mae-gate on CLI always wins."""
+    import io as _io
+    from src.fep.report import main as _report_main
+
+    # Binding YAML → gate should be 2.0 (encoded in markdown).
+    old = sys.stdout
+    sys.stdout = _io.StringIO()
+    try:
+        _report_main([
+            str(FIXTURES / "ok_case"),
+            "--yaml",
+            str(REPO_ROOT / "benchmarks/fep/binding_streptavidin.yaml"),
+        ])
+        out = sys.stdout.getvalue()
+    finally:
+        sys.stdout = old
+    assert "≤ 2.0 kcal/mol" in out, (
+        f"binding YAML should render gate 2.0; got:\n{out[:400]}")
+
+    # Hydration YAML → 1.5.
+    sys.stdout = _io.StringIO()
+    try:
+        _report_main([
+            str(FIXTURES / "ok_case"),
+            "--yaml",
+            str(REPO_ROOT / "benchmarks/fep/freesolv_12.yaml"),
+        ])
+        out = sys.stdout.getvalue()
+    finally:
+        sys.stdout = old
+    assert "≤ 1.5 kcal/mol" in out, (
+        f"hydration YAML should render gate 1.5; got:\n{out[:400]}")
+
+
 if __name__ == "__main__":
     funcs = [
         test_ok_case_passes_gate,
@@ -202,6 +239,7 @@ if __name__ == "__main__":
         test_partial_run_flagged_even_if_per_row_looks_ok,
         test_full_run_matches_expected_passes,
         test_partial_run_markdown_has_partial_header,
+        test_yaml_flag_auto_infers_gate_from_kind,
     ]
     fails = []
     for f in funcs:
