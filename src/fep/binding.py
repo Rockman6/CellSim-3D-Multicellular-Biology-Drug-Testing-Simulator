@@ -396,6 +396,28 @@ def _harmonic_restraint_free_energy_kcalmol(
     return dG_kJ / 4.184
 
 
+# Charged-ligand finite-size PBC correction (Rocklin 2013 J Chem
+# Phys 139:184103) is NOT yet implemented. The full correction is
+# 5 terms (EMP + NET + RIP + DSC + ANA) and requires knowing the
+# protein's net charge + ion pairing distribution — too much
+# auxiliary state to derive from the YAML alone in a way I trust
+# to ship publication-grade numbers.
+#
+# Practical guidance for biologists hitting the validator's
+# 'formal_charge ≠ 0' message:
+#   - For a CONGENERIC SERIES of equally-charged ligands (e.g.
+#     all-anionic carboxylates), the PBC self-interaction error
+#     cancels in ΔΔG. Rank-correlation gates (Kendall τ) are still
+#     valid; absolute MAE is offset by a constant.
+#   - For absolute ΔG_bind on a charged ligand vs neutral protein,
+#     extend the Rocklin correction post-hoc per the cited paper.
+#     A typical -1 ligand in a 5 nm cubic TIP3P box adds ~5-15
+#     kcal/mol depending on protein charge.
+#   - When the Phase-3 implementation lands, this comment block
+#     gets replaced with an analytical _rocklin_pbc_correction
+#     function + autowiring into compute_absolute_binding_dg.
+
+
 def _build_complex_alchemical_system(
     smiles: str,
     receptor_pdb: str | Path,
@@ -1795,15 +1817,23 @@ def _run_validate(args) -> int:
                         "est_sampled_wall_cpu_s": sampled_cpu_s,
                         "est_sampled_wall_gpu_s": sampled_gpu_s,
                     })
-                    # Biologist gotchas: formal charge ≠ 0 means the
-                    # alchemical FEP needs a counter-ion correction
-                    # we haven't wired; flag it.
+                    # Charged ligand: PBC self-interaction error in
+                    # absolute ΔG. Cancels in ΔΔG within a same-charge
+                    # series (so still valid for rank-correlation
+                    # gates) but makes absolute MAE off by 5-15
+                    # kcal/mol depending on protein charge. Warning,
+                    # not error — biologists studying ionic ligand
+                    # series shouldn't be blocked, just informed.
                     if formal_charge != 0:
-                        issues.append(
+                        warnings.append(
                             f"{name}: formal charge "
-                            f"{formal_charge:+d} — alchemical FEP "
-                            "needs a Rocklin / Warren correction "
-                            "(not wired in Phase-1); Phase-2 item")
+                            f"{formal_charge:+d} — absolute ΔG_bind "
+                            "carries a 5-15 kcal/mol PBC self-"
+                            "interaction error (Rocklin 2013 J Chem "
+                            "Phys 139:184103). For ΔΔG within a "
+                            "same-charge congeneric series the error "
+                            "cancels; for absolute ΔG apply Rocklin "
+                            "post-hoc.")
                     if n_heavy > 60:
                         issues.append(
                             f"{name}: {n_heavy} heavy atoms > 60 — "
