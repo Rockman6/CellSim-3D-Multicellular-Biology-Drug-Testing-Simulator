@@ -191,6 +191,44 @@ def test_partial_run_markdown_has_partial_header():
     assert "PARTIAL — Milestone A cannot pass" in md
 
 
+def test_binding_sign_critical_rule_every_compound_negative():
+    """Binding-kind sign-critical rule: every predicted ΔG_bind
+    must be < 0 (entries in a binding YAML are labelled binders,
+    so non-binding predictions are a loud sampler/ff failure).
+
+    The hydration ok_case fixture has methane=+1.72 (positive,
+    correct for hydration); when the same CSV is analysed AS IF
+    it were a binding run, that positive prediction must fail
+    the sign-critical rule."""
+    r = analyse(FIXTURES / "ok_case", yaml_kind="binding")
+    assert r.pass_sign_critical is False, (
+        "binding rule: any positive ΔG should fail sign-critical")
+    # Per-row flag: methane (positive) should be marked
+    # 'predicted non-binder'.
+    methane = next(row for row in r.rows if row.name == "methane")
+    assert any("non-binder" in f.lower() for f in methane.flags), (
+        f"methane row should carry the 'non-binder' flag; "
+        f"got {methane.flags}")
+
+
+def test_hydration_sign_critical_rule_unchanged():
+    """Hydration kind (default): only methane + acetamide names
+    are checked against their expected signs. All other signs
+    are free — benzene's near-zero prediction doesn't fail."""
+    r = analyse(FIXTURES / "ok_case", yaml_kind="hydration")
+    # ok_case methane +1.72 vs expt +2.00 = same sign ✓
+    # ok_case acetamide -8.90 vs expt -9.71 = same sign ✓
+    assert r.pass_sign_critical is True
+
+
+def test_binding_kind_renders_correct_markdown_label():
+    r = analyse(FIXTURES / "ok_case", yaml_kind="binding")
+    md = format_markdown(r)
+    assert "every ΔG_bind < 0" in md, (
+        f"binding kind should render 'every ΔG_bind < 0'; "
+        f"got markdown:\n{md[:600]}")
+
+
 def test_yaml_flag_auto_infers_gate_from_kind():
     """--yaml binding_*.yaml should auto-set gate 2.0; --yaml
     hydration YAML (freesolv) should stay at 1.5. Explicit
@@ -239,6 +277,9 @@ if __name__ == "__main__":
         test_partial_run_flagged_even_if_per_row_looks_ok,
         test_full_run_matches_expected_passes,
         test_partial_run_markdown_has_partial_header,
+        test_binding_sign_critical_rule_every_compound_negative,
+        test_hydration_sign_critical_rule_unchanged,
+        test_binding_kind_renders_correct_markdown_label,
         test_yaml_flag_auto_infers_gate_from_kind,
     ]
     fails = []
