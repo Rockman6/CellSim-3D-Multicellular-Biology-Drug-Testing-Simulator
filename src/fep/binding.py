@@ -1536,6 +1536,41 @@ def _run_validate(args) -> int:
                     f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
                     "ok")
         print()
+        # Hydration wall-time estimate. Constants are empirical
+        # from friend's in-flight M5 Max run on binding=freesolv_12
+        # (observed 4-6 h GPU for the full 12-compound set → ~25
+        # min/compound GPU at production params). Small systems
+        # (1500-atom solvated ligand) have large per-step OpenMM
+        # fixed overhead that dwarfs the per-atom cost calibrated
+        # from a larger-box binding smoke. Base-per-step model:
+        #   per_step_s = 0.003 s (GPU) or 0.08 s (CPU)
+        # matches the observed small-hydration throughput.
+        if yaml_kind in ("hydration", "mixed"):
+            ok_entries = [e for e in entries_report if e.get("ok")]
+            if ok_entries:
+                def _fmt_wall(s):
+                    if s < 90:
+                        return f"{s:.0f} s"
+                    if s < 3600:
+                        return f"{s/60:.1f} min"
+                    return f"{s/3600:.1f} h"
+                total_scaffold = sum(
+                    max(5.0, 1.5 * e.get("n_heavy_atoms", 0))
+                    for e in ok_entries)
+                # 11 windows × 25 k prod + 2.5 k equil × 2 legs.
+                n_steps_per_cpd = 11 * (25_000 + 2_500) * 2
+                total_cpu = (
+                    len(ok_entries) * n_steps_per_cpd * 0.08)
+                total_gpu = (
+                    len(ok_entries) * n_steps_per_cpd * 0.003)
+                print("  estimated wall time (full YAML, 11 "
+                      "windows × 25 000 prod steps × 2 legs):")
+                print(f"    scaffold only : {_fmt_wall(total_scaffold)}")
+                print(f"    sampled (CPU) : {_fmt_wall(total_cpu)}")
+                print(f"    sampled (GPU) : {_fmt_wall(total_gpu)}  "
+                      "(M5 Max observed 4-6 h on 12 compounds)")
+                print()
+
         # Wall-time budget summary (only meaningful for binding
         # YAMLs — hydration YAMLs skip protein build).
         if yaml_kind in ("binding", "mixed"):
