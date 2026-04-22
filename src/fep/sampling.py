@@ -285,7 +285,15 @@ def sample_alchemical_windows(
             result.ghmc_acceptance.append(0.0)
     del _eval_ctx, _eval_int
 
-    dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
+    try:
+        dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
+    except Exception as e:
+        result.reason = _biologist_reason_for_mbar_error(
+            e, n_windows=n_windows,
+            n_production_steps=n_production_steps)
+        result.n_samples_per_window = n_samples_per
+        result.wall_seconds = time.time() - t0
+        return result
     kT = 0.0019872041 * temperature_K
     result.ok = True
     result.n_samples_per_window = n_samples_per
@@ -295,8 +303,65 @@ def sample_alchemical_windows(
     return result
 
 
+def _biologist_reason_for_mbar_error(
+    exc: BaseException,
+    *,
+    n_windows: int,
+    n_production_steps: int,
+) -> str:
+    """Translate pymbar/MBAR internal exceptions into biologist-
+    actionable guidance. The raw pymbar text says things like
+    "Column sum W_nk = 0" which is not meaningful to anyone who
+    hasn't read the MBAR paper. The translation names the physical
+    cause (adjacent λ-windows don't overlap, sampling too short)
+    and suggests exact parameter bumps.
+    """
+    msg = str(exc).lower()
+    # Suggested bumps: 2× windows, 3× prod steps, capped so we
+    # don't print absurdly large numbers that scare off users on
+    # laptops. These are the Milestone-A-tier numbers that
+    # reliably converge streptavidin-class binders on GPU.
+    suggest_windows = min(max(n_windows * 2, 21), 31)
+    suggest_prod = min(max(n_production_steps * 3, 25000), 100000)
+    hint = (
+        f" → try --n-windows {suggest_windows} "
+        f"--n-production-steps {suggest_prod} "
+        "(Milestone-A-tier sampling; GPU recommended)")
+
+    # Pattern-match the distinctive pymbar failure strings.
+    if ("column sum" in msg) or ("w_nk" in msg) or (
+            "overlap" in msg):
+        return (
+            "adjacent λ-windows don't overlap — sampling was "
+            "insufficient for MBAR to reweight between states. "
+            "This is common for tight binders (|ΔG| > 10 kcal/mol) "
+            "at smoke-tier parameters." + hint)
+    if ("singular" in msg) or ("convergence" in msg):
+        return (
+            "MBAR self-consistent iteration did not converge — "
+            "typically caused by states with near-identical "
+            "reduced potentials (redundant λ schedule) or NaN/Inf "
+            "samples." + hint)
+    if ("bounds" in msg) or ("negative uncertainty" in msg):
+        return (
+            "MBAR returned non-physical uncertainty — too few "
+            "independent samples per window." + hint)
+    if ("nan" in msg) or ("inf" in msg):
+        return (
+            "reduced-potential matrix contains NaN/Inf — the "
+            "integrator blew up on at least one window. Try a "
+            "smaller timestep (--timestep-fs 0.5) or verify the "
+            "input structure has no steric clashes." + hint)
+    # Fallback: preserve the original text but frame it clearly.
+    return (
+        f"MBAR failed with: {str(exc)[:200]}." + hint)
+
+
 def estimate_free_energy(u_kn, N_k) -> tuple[float, float]:
-    """Run MBAR and return (ΔG_λ=0→λ=1, uncertainty) in kT."""
+    """Run MBAR and return (ΔG_λ=0→λ=1, uncertainty) in kT.
+
+    Raises on convergence / overlap failure. Callers should wrap
+    with _biologist_reason_for_mbar_error to translate."""
     from pymbar import MBAR
 
     mbar = MBAR(u_kn, N_k)
