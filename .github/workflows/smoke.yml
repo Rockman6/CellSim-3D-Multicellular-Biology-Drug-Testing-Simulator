@@ -181,6 +181,9 @@ jobs:
       - name: fep-binding bench --resume regression
         run: python -u tests/fep/test_bench_resume_smoke.py
 
+      - name: bridge — Campaign-1 → Campaign-2 rate-law emitter
+        run: python -u tests/bridge/test_binding_to_hill_smoke.py
+
       - name: fep sampled binding smoke (opt-in, ~10 min, manual)
         if: >
           github.event_name == 'workflow_dispatch' &&
