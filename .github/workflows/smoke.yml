@@ -170,6 +170,9 @@ jobs:
       - name: cellsim doctor (step 13 = all benchmarks/fep/*.yaml dry-run)
         run: ./scripts/cellsim doctor
 
+      - name: cellsim bench-all (biologist dashboard regression)
+        run: python -u tests/fep/test_bench_all_smoke.py
+
       - name: halogen-parse smoke (Layer 1.3, regress PDBQT Cl/Br parsing)
         run: python -u tests/dock/test_halogen_parse_smoke.py
 
