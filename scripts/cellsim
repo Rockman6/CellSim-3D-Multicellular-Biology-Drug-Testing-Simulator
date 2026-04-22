@@ -143,42 +143,46 @@ USAGE
 
 _version() {
     python - <<'PY'
-import importlib, sys
+import importlib, importlib.metadata, sys
 mods = [
-    ("rdkit", "rdkit"),
-    ("openmm", "openmm"),
-    ("openmmtools", "openmmtools"),
-    ("openmmforcefields", "openmmforcefields"),
-    ("openff-toolkit", "openff.toolkit"),
-    ("openff-interchange", "openff.interchange"),
-    ("pdbfixer", "pdbfixer"),
-    ("pymbar", "pymbar"),
-    ("vina", "vina"),
-    ("meeko", "meeko"),
-    ("posebusters", "posebusters"),
-    ("xtb", "xtb"),
-    ("pyscf", "pyscf"),
-    ("salib", "SALib"),
+    # (label, import_name, dist_name)
+    ("rdkit", "rdkit", "rdkit"),
+    ("openmm", "openmm", "openmm"),
+    ("openmmtools", "openmmtools", "openmmtools"),
+    ("openmmforcefields", "openmmforcefields", "openmmforcefields"),
+    ("openff-toolkit", "openff.toolkit", "openff-toolkit"),
+    ("openff-interchange", "openff.interchange", "openff-interchange"),
+    ("pdbfixer", "pdbfixer", "pdbfixer"),
+    ("pymbar", "pymbar", "pymbar"),
+    ("vina", "vina", "vina"),
+    ("meeko", "meeko", "meeko"),
+    ("posebusters", "posebusters", "posebusters"),
+    ("xtb", "xtb", "xtb-python"),
+    ("pyscf", "pyscf", "pyscf"),
+    ("salib", "SALib", "SALib"),
 ]
 print("cellsim   — Campaign-1 non-AI drug-discovery stack")
 print("python    ", sys.version.split()[0])
-for label, m in mods:
+for label, mod_name, dist_name in mods:
+    # importlib.metadata is authoritative: it reads the installed
+    # distribution's METADATA file, which tracks the actual conda /
+    # pip version. Fallback to module.__version__ only if metadata
+    # lookup fails, because some packages (e.g. pdbfixer 1.12.0)
+    # ship a stale __version__ constant in their code while the
+    # real distribution version is higher.
+    v = None
     try:
-        mod = importlib.import_module(m)
-        v = getattr(mod, "__version__", None)
-        # pdbfixer exposes the version on a submodule attribute.
-        if v is None:
-            for subname in ("pdbfixer.pdbfixer",):
-                try:
-                    sub = importlib.import_module(subname)
-                    v = getattr(sub, "__version__", None)
-                    if v:
-                        break
-                except ImportError:
-                    pass
-        print(f"{label:<20s}", v or "?")
-    except ImportError:
-        print(f"{label:<20s} MISSING (env not activated?)")
+        v = importlib.metadata.version(dist_name)
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    if v is None:
+        try:
+            mod = importlib.import_module(mod_name)
+            v = getattr(mod, "__version__", None)
+        except ImportError:
+            print(f"{label:<20s} MISSING (env not activated?)")
+            continue
+    print(f"{label:<20s}", v or "?")
 PY
 }
 
