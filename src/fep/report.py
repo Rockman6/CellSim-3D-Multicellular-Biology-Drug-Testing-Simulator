@@ -639,6 +639,24 @@ def format_markdown(r: ReportResult) -> str:
             lines.append(f"- Spearman ρ   = {r.spearman_rho:+.3f}")
         if r.kendall_tau is not None:
             lines.append(f"- Kendall τ    = {r.kendall_tau:+.3f}")
+        # Within-σ summary: how many predictions agree with
+        # experiment inside the MBAR error bar? If it's most of
+        # them, the FF is accurate. If it's 0/N, systematic
+        # under- or over-binding.
+        within_rows = [
+            rr for rr in r.rows
+            if rr.ok
+            and rr.residual_kcalmol is not None
+            and rr.uncertainty_kcalmol is not None
+            and rr.uncertainty_kcalmol > 0]
+        if within_rows:
+            within_ok = sum(
+                1 for rr in within_rows
+                if abs(rr.residual_kcalmol) <= rr.uncertainty_kcalmol)
+            lines.append(
+                f"- within σ     = {within_ok}/{len(within_rows)} "
+                f"compounds ({100*within_ok/len(within_rows):.0f}%) "
+                "agree with experiment inside MBAR uncertainty")
         lines.append("")
 
     # Per-compound table — sorted by |residual| descending so the
