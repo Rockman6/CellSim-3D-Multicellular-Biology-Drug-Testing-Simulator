@@ -318,6 +318,91 @@ def _module_logger():
     return logging.getLogger(__name__)
 
 
+# Platform throughput anchors for the wall-time estimator.
+# Units: steps × atoms per second, measured empirically and used
+# as throughput[platform] / n_atoms → effective steps/sec for a
+# system of size n_atoms. The anchors assume a 2 fs timestep with
+# GHMC + HMR constraints (standard CellSim profile); large atomic
+# systems drop linearly in steps/sec with atom count.
+#
+# Anchors calibrated against:
+#  - CPU:    24-atom methane in vacuum, single-core measured at
+#            ~80 k steps/sec → 2 M steps·atom/sec
+#  - Metal:  ~2 k-atom FreeSolv M5 Max run, ~13 k steps/sec
+#            effective on the full Phase-2 sampler → ~26 M
+#  - CUDA:   ~150 M is the paper-quality anchor for an H100
+#            running dhfr-class 23k-atom systems at ~6 k steps/sec
+#
+# These are anchors with ±2-3× error bars. Reported as such in
+# the CLI output so biologists don't treat them as precise.
+_PLATFORM_STEP_ATOMS_PER_SECOND = {
+    "cpu": 2_000_000,
+    "metal_m5max": 26_000_000,
+    "cuda_h100": 150_000_000,
+}
+
+# Wall-time amortisation for per-λ overheads (minimisation,
+# context switches, MBAR eval). Empirically ~15-30% of pure MD
+# wall, so add a 25% surcharge.
+_OVERHEAD_SURCHARGE = 1.25
+
+
+def estimate_sampling_wall_hours(
+    n_atoms: int,
+    n_windows: int,
+    n_production_steps: int,
+    n_equilibration_steps: int,
+    n_legs: int = 2,
+) -> dict[str, float]:
+    """Rough estimate of sample_alchemical_windows wall time across
+    reference platforms. Returns {'cpu': h, 'metal_m5max': h,
+    'cuda_h100': h}. Accuracy: ±2-3× — this is a sanity-check
+    preview, not a guarantee.
+
+    Model: total_steps = n_legs × n_windows × (n_equil + n_prod).
+    Effective throughput on a given platform scales inversely with
+    n_atoms; multiply by a 25% overhead surcharge for per-λ
+    minimise + MBAR eval.
+    """
+    total_steps = n_legs * n_windows * (
+        n_equilibration_steps + n_production_steps)
+    out: dict[str, float] = {}
+    for plat, const in _PLATFORM_STEP_ATOMS_PER_SECOND.items():
+        steps_per_sec = const / max(n_atoms, 1)
+        seconds = total_steps / max(steps_per_sec, 1e-6)
+        seconds *= _OVERHEAD_SURCHARGE
+        out[plat] = seconds / 3600.0
+    return out
+
+
+def format_wall_estimate_block(
+    est: dict[str, float], *, gate_hours: float = 48.0,
+) -> str:
+    """Pretty-print the wall estimate as a biologist-readable block.
+    Flags anything over `gate_hours` on CPU as "CPU-only is not
+    viable" — a 48-hour run on CPU usually means the user forgot
+    to flag GPU, not that they want a CPU run of that length."""
+    def _fmt(h: float) -> str:
+        if h < 1.0:
+            return f"{h * 60:.0f} min"
+        if h < 48.0:
+            return f"{h:.1f} h"
+        return f"{h / 24:.1f} d"
+
+    lines = [
+        "  ~ Estimated sampling wall time "
+        "(±2-3× accuracy; for planning, not guarantees):",
+        f"      CPU            : {_fmt(est['cpu'])}",
+        f"      Metal (M5 Max) : {_fmt(est['metal_m5max'])}",
+        f"      CUDA H100      : {_fmt(est['cuda_h100'])}",
+    ]
+    if est["cpu"] > gate_hours:
+        lines.append(
+            "  ! CPU-only is not viable for this config "
+            "(> 48 h). Use Metal or CUDA.")
+    return "\n".join(lines)
+
+
 def _find_ca_indices_near(positions_nm, center_nm, radius_nm,
                           ca_candidate_indices):
     """Return the subset of Cα indices within `radius_nm` of the
@@ -1220,6 +1305,25 @@ def main(argv=None) -> int:
         print(_json.dumps(asdict(r), indent=2, default=str))
     else:
         print(r.summary())
+        # Biologist preview: when a scaffold-only run completes
+        # (no --sample), print how long a sampled run of this config
+        # would take on the reference platforms. Prevents "I'll just
+        # try --sample overnight" surprises that turn into 5-day CPU
+        # burns.
+        if (not getattr(args, "sample", False)
+                and args.cmd == "dg"
+                and isinstance(r, BindingDGResult)
+                and r.ok
+                and r.n_total_atoms_complex):
+            est = estimate_sampling_wall_hours(
+                n_atoms=r.n_total_atoms_complex,
+                n_windows=args.n_windows,
+                n_production_steps=25000,
+                n_equilibration_steps=2500)
+            print()
+            print("  (reference: 11 × 25 000 prod + 2 500 equil "
+                  "× 2 legs — Milestone-A-tier sampling)")
+            print(format_wall_estimate_block(est))
     return 0 if r.ok else 1
 
 
