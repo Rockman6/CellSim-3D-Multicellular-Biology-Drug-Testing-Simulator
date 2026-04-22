@@ -285,6 +285,57 @@ def test_bundled_freesolv_yaml_validates():
     assert "PASS" in out
 
 
+def test_wall_time_estimate_within_reasonable_range():
+    """Pin the wall-time estimator constants against silent drift.
+
+    Calibrated 2026-04-22 from the 1ubq + methane sampled smoke
+    (82.5 s / 1200 steps / 15k-atom complex → 5e-7 s per atom-
+    step CPU, 20× faster GPU). For EGFR (6 compounds on 1m17,
+    ~110k-atom complex × 6 = 55k atom-steps × 550k steps):
+
+      - CPU ≈ 100 × 0.05 = ~12 h (within [5, 50] h)
+      - GPU ≈ 12 h / 20 = ~35 min (within [10, 180] min)
+
+    Wide bands tolerate reasonable refinement but catch a 10×
+    reversal. If someone drops an exponent on atom-count scaling
+    or forgets the legs/windows factor, this fires.
+    """
+    from src.fep.binding import main
+
+    old = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        main(["validate", "benchmarks/fep/binding_egfr.yaml"])
+        out = sys.stdout.getvalue()
+    finally:
+        sys.stdout = old
+
+    assert "estimated wall time" in out
+    # Parse the 'sampled (CPU)' line: expect hours.
+    import re
+    cpu_m = re.search(
+        r"sampled \(CPU\) : ([\d.]+)\s*(s|min|h)", out)
+    gpu_m = re.search(
+        r"sampled \(GPU\) : ([\d.]+)\s*(s|min|h)", out)
+    assert cpu_m, f"CPU estimate missing from output:\n{out}"
+    assert gpu_m, f"GPU estimate missing from output:\n{out}"
+
+    def _s(val, unit):
+        return (float(val) * {"s": 1, "min": 60, "h": 3600}[unit])
+
+    cpu_s = _s(*cpu_m.groups())
+    gpu_s = _s(*gpu_m.groups())
+    assert 5 * 3600 < cpu_s < 50 * 3600, (
+        f"CPU estimate {cpu_s:.0f}s ({cpu_s/3600:.1f}h) "
+        "outside [5h, 50h] — constants drifted")
+    assert 10 * 60 < gpu_s < 180 * 60, (
+        f"GPU estimate {gpu_s:.0f}s ({gpu_s/60:.1f}min) "
+        "outside [10min, 180min] — constants drifted")
+    # CPU should always be considerably slower than GPU.
+    assert cpu_s > 5 * gpu_s, (
+        "CPU should be >> GPU; got CPU={cpu_s}, GPU={gpu_s}")
+
+
 if __name__ == "__main__":
     funcs = [
         test_valid_binding_yaml_passes,
@@ -300,6 +351,7 @@ if __name__ == "__main__":
         test_empty_entries_list_fails,
         test_bundled_streptavidin_yaml_validates,
         test_bundled_freesolv_yaml_validates,
+        test_wall_time_estimate_within_reasonable_range,
     ]
     fails = []
     for f in funcs:
