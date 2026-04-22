@@ -1242,7 +1242,12 @@ def _run_validate(args) -> int:
     from rdkit import Chem
     from rdkit.Chem import AllChem  # noqa: F401
 
-    issues: list[str] = []
+    # Severity split: errors fail the validate exit; warnings
+    # print but don't block. A biologist running validate on a
+    # drug-like ligand (e.g. lapatinib with 11 rotatable bonds)
+    # should get a heads-up, not a refusal to proceed.
+    issues: list[str] = []   # errors — make this a hard FAIL
+    warnings: list[str] = []  # advisories — print but exit 0
     entries_report: list[dict] = []
 
     try:
@@ -1375,6 +1380,19 @@ def _run_validate(args) -> int:
                         # Old RDKit without FindPotentialStereo —
                         # skip the check (better than false alarms).
                         pass
+                    # Rotatable bond count + HBD/HBA — biologists
+                    # already read these in Lipinski terms, and
+                    # they predict sampling convergence cost
+                    # (flexible ligands need more MD).
+                    from rdkit.Chem import rdMolDescriptors as _rmd
+                    try:
+                        n_rot = _rmd.CalcNumRotatableBonds(mol)
+                        n_hbd = _rmd.CalcNumHBD(mol)
+                        n_hba = _rmd.CalcNumHBA(mol)
+                        tpsa = _rmd.CalcTPSA(mol)
+                    except Exception:
+                        n_rot = n_hbd = n_hba = 0
+                        tpsa = 0.0
                     er.update({
                         "ok": True,
                         "canon_smiles": canon,
@@ -1382,6 +1400,10 @@ def _run_validate(args) -> int:
                         "n_stereocenters": n_stereo,
                         "n_undef_double_bonds": n_undef_bonds,
                         "formal_charge": formal_charge,
+                        "n_rotatable_bonds": n_rot,
+                        "n_hbd": n_hbd,
+                        "n_hba": n_hba,
+                        "tpsa_A2": tpsa,
                     })
                     # Biologist gotchas: formal charge ≠ 0 means the
                     # alchemical FEP needs a counter-ion correction
@@ -1404,6 +1426,20 @@ def _run_validate(args) -> int:
                             "explicit geometry in SMILES if ΔG "
                             "depends on it (e.g. iminobiotin's "
                             "exocyclic C=N)")
+                    # Advisory warning (not a FAIL): rotatable-bond
+                    # count suggests sampling difficulty. Lipinski
+                    # convention: > 10 is 'very flexible'. For FEP
+                    # this means standard 50 ps/window may not
+                    # converge; recommend longer production steps.
+                    # Goes into `warnings` so exit stays 0 — the
+                    # biologist gets a heads-up, not a block.
+                    if er.get("n_rotatable_bonds", 0) > 10:
+                        warnings.append(
+                            f"{name}: {er['n_rotatable_bonds']} "
+                            "rotatable bonds > 10 — highly flexible "
+                            "ligand. FEP may not converge at default "
+                            "50 ps/window. Consider "
+                            "--production-steps 100000 (200 ps)")
                 except Exception as e:
                     issues.append(f"{name}: RDKit descriptor "
                                   f"failure: {e}")
@@ -1421,6 +1457,7 @@ def _run_validate(args) -> int:
         "receptor": receptor_report,
         "entries": entries_report,
         "issues": issues,
+        "warnings": warnings,
         "pass": len(issues) == 0,
     }
 
@@ -1441,14 +1478,18 @@ def _run_validate(args) -> int:
             print(f"  receptor:   {receptor_pdb}  [MISSING]")
         print(f"  entries:    {len(entries_report)}")
         print()
-        # Table
-        hdr = (f"  {'name':<20s} {'heavy':>5s} {'stereo':>6s} "
-               f"{'chg':>4s} {'expt':>7s}  {'status'}")
+        # Table (wider: Lipinski-ish descriptors biologists read).
+        hdr = (
+            f"  {'name':<20s} {'heavy':>5s} {'rot':>4s} "
+            f"{'HBD':>3s} {'HBA':>3s} {'TPSA':>5s} "
+            f"{'stereo':>6s} {'chg':>4s} "
+            f"{'expt':>7s}  {'status'}")
         print(hdr)
         print("  " + "-" * (len(hdr) - 2))
         for er in entries_report:
             if not er.get("ok"):
                 print(f"  {er['name']:<20s} "
+                      f"{'—':>5s} {'—':>4s} {'—':>3s} {'—':>3s} "
                       f"{'—':>5s} {'—':>6s} {'—':>4s} "
                       f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
                       f"FAIL: {er.get('reason', '?')}")
@@ -1456,11 +1497,20 @@ def _run_validate(args) -> int:
                 print(
                     f"  {er['name']:<20s} "
                     f"{er['n_heavy_atoms']:>5d} "
+                    f"{er.get('n_rotatable_bonds', 0):>4d} "
+                    f"{er.get('n_hbd', 0):>3d} "
+                    f"{er.get('n_hba', 0):>3d} "
+                    f"{er.get('tpsa_A2', 0):>5.0f} "
                     f"{er['n_stereocenters']:>6d} "
                     f"{er['formal_charge']:>+4d} "
                     f"{(er.get('expt_kcalmol') or 0):>+7.2f}  "
                     "ok")
         print()
+        if warnings:
+            print(f"  {len(warnings)} warning(s):")
+            for w in warnings:
+                print(f"    ? {w}")
+            print()
         if issues:
             print(f"  {len(issues)} issue(s):")
             for it in issues:
@@ -1468,7 +1518,8 @@ def _run_validate(args) -> int:
             print()
             print("[fep-binding validate] FAIL")
         else:
-            print("[fep-binding validate] PASS — "
+            tag = (" (with warnings)" if warnings else "")
+            print(f"[fep-binding validate] PASS{tag} — "
                   "ready for bench / dg / ddg")
     return 0 if not issues else 1
 
