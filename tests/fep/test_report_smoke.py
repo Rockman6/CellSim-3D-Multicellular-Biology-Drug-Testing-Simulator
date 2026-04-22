@@ -130,9 +130,14 @@ def test_markdown_render_stable():
     CI will fail — protects the format downstream tooling parses."""
     r = analyse(FIXTURES / "ok_case")
     md = format_markdown(r)
-    # Verdict header is the first line and must say PASS.
-    assert md.startswith("# FreeSolv FEP report — PASS"), (
+    # Verdict header is the first line. Since analyse() defaults
+    # to yaml_kind='hydration', the title says 'Hydration FEP
+    # report'. Must end in 'PASS' for this fixture.
+    assert md.splitlines()[0].startswith(
+        "# Hydration FEP report — "), (
         f"header line changed:\n{md[:200]}")
+    assert "PASS" in md.splitlines()[0], (
+        f"header verdict changed:\n{md[:200]}")
     # Gate-verdict section must reference the 1.5 gate.
     assert f"≤ {GATE_MAE_KCALMOL} kcal/mol" in md
     # Per-compound table header must be present and stable —
