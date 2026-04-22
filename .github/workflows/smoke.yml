@@ -172,6 +172,9 @@ jobs:
       - name: fep-report analyser smoke (tarball → PASS/FAIL verdict)
         run: python -u tests/fep/test_report_smoke.py
 
+      - name: fep-report provenance fallback (git_commit across sibling logs)
+        run: python -u tests/fep/test_report_provenance_smoke.py
+
       - name: fep-binding validate dry-run (YAML hygiene, <1s)
         run: python -u tests/fep/test_validate_smoke.py
 

@@ -50,16 +50,20 @@ OUT_DIR="run/fep/egfr_${STAMP}"
 mkdir -p "${OUT_DIR}"
 CSV="${OUT_DIR}/egfr_results.csv"
 
-echo "============================================================"
-echo "CellSim — EGFR kinase binding FEP (Milestone B flagship)"
-echo "============================================================"
-echo "  started:     $(date)"
-echo "  machine:     $(uname -a)"
-echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
-echo "  git commit:  $(git rev-parse HEAD)"
-echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
-echo "  output:      ${OUT_DIR}/"
-echo ""
+# Header block — mirror to env.log so `cellsim fep-report` extracts
+# `git commit:` for provenance. Previously stdout-only.
+{
+    echo "============================================================"
+    echo "CellSim — EGFR kinase binding FEP (Milestone B flagship)"
+    echo "============================================================"
+    echo "  started:     $(date)"
+    echo "  machine:     $(uname -a)"
+    echo "  ram:         $(sysctl -n hw.memsize 2>/dev/null | awk '{print $1/1024/1024/1024 " GB"}' || echo '?')"
+    echo "  git commit:  $(git rev-parse HEAD)"
+    echo "  git ref:     $(git describe --tags --always 2>/dev/null || echo '?')"
+    echo "  output:      ${OUT_DIR}/"
+    echo ""
+} | tee "${OUT_DIR}/env.log"
 
 # Env + platform report.
 python -c "
@@ -78,7 +82,7 @@ for i in range(Platform.getNumPlatforms()):
     print(f'  {p.getName()} (speed {p.getSpeed()})')
 print()
 print('Pipeline will prefer Metal -> CUDA -> OpenCL -> CPU.')
-" 2>&1 | tee "${OUT_DIR}/env.log"
+" 2>&1 | tee -a "${OUT_DIR}/env.log"
 echo ""
 
 echo "=== cellsim doctor ==="

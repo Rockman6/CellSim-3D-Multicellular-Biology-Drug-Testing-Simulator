@@ -249,11 +249,20 @@ def _parse_run_log(log_path: Path, rows: list[CompoundRow]) -> dict:
     this section will just be empty and we report "no GHMC data in
     log (legacy format)". The parser still works when Phase-2 wires
     per-compound acceptance through the CSV.
+
+    Provenance fallback: if run.log doesn't carry `git commit:` (the
+    shell header block tees into env.log on some pre-2026-04-21 runs
+    and into run.log after), also scan env.log and doctor.log in the
+    same directory. Biologists care that *some* log captured the
+    commit — not which one.
     """
     meta: dict = {"platform": None, "git_commit": None,
                   "ghmc_means": [], "ghmc_mins": []}
     if not log_path.exists():
-        return meta
+        # Fall through to the sibling-log scan below so we at least
+        # pick up git_commit / platform from env.log when present.
+        return _scan_sibling_logs_for_provenance(
+            log_path.parent, meta)
 
     name_to_row = {r.name: r for r in rows}
     current: Optional[CompoundRow] = None
@@ -288,6 +297,37 @@ def _parse_run_log(log_path: Path, rows: list[CompoundRow]) -> dict:
                 current.ghmc_accept_min = mn
             meta["ghmc_means"].append(mean)
             meta["ghmc_mins"].append(mn)
+    # If provenance still missing, look in sibling logs.
+    if not meta["git_commit"] or not meta["platform"]:
+        meta = _scan_sibling_logs_for_provenance(log_path.parent, meta)
+    return meta
+
+
+def _scan_sibling_logs_for_provenance(
+    dir_path: Path, meta: dict,
+) -> dict:
+    """Scan env.log and doctor.log next to run.log for git_commit
+    and platform. These files are written by the shell wrapper
+    scripts; the header-tee pattern can land the provenance in any
+    of them depending on the script version."""
+    for sibling in ("env.log", "doctor.log", "header.log"):
+        p = dir_path / sibling
+        if not p.exists():
+            continue
+        try:
+            t = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not meta["git_commit"]:
+            m = _GIT_COMMIT_RE.search(t)
+            if m:
+                meta["git_commit"] = m.group(1).strip()
+        if not meta["platform"]:
+            m = _PLATFORM_RE.search(t)
+            if m:
+                meta["platform"] = m.group(1).strip()
+        if meta["git_commit"] and meta["platform"]:
+            break
     return meta
 
 
