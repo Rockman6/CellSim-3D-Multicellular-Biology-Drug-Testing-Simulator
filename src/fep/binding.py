@@ -1458,7 +1458,9 @@ def _run_validate(args) -> int:
     # expects nm). Protein bounding boxes are 3–10 nm per side; a
     # value > 10 nm is almost certainly an Å number that should
     # have been divided by 10. Warn loudly with the suggested
-    # nm conversion.
+    # nm conversion. Second check: is the coordinate actually
+    # inside the protein's ATOM-record bounding box? If not, the
+    # restraint would anchor at a phantom location.
     bsc = recv.get("binding_site_center_nm")
     if bsc is not None and yaml_kind != "hydration":
         try:
@@ -1472,6 +1474,47 @@ def _run_validate(args) -> int:
                     "are rarely > 10 nm. Set to null to let fpocket "
                     "auto-detect the druggable pocket.)")
             receptor_report["binding_site_center_nm"] = bsc_xyz
+
+            # In-bounds check — only if we successfully parsed the
+            # receptor PDB atoms above.
+            if receptor_pdb and Path(receptor_pdb).is_file():
+                try:
+                    xs, ys, zs = [], [], []
+                    for line in Path(receptor_pdb).read_text(
+                            encoding="utf-8",
+                            errors="replace").splitlines():
+                        if not line.startswith("ATOM"):
+                            continue
+                        # PDB columns 31-54 are X/Y/Z (8-char floats)
+                        try:
+                            xs.append(float(line[30:38]))
+                            ys.append(float(line[38:46]))
+                            zs.append(float(line[46:54]))
+                        except ValueError:
+                            continue
+                    if xs:
+                        # Å → nm, pad by 1.5 nm (accommodates
+                        # solvent-exposed surface sites).
+                        lo = [min(xs)/10 - 1.5, min(ys)/10 - 1.5,
+                              min(zs)/10 - 1.5]
+                        hi = [max(xs)/10 + 1.5, max(ys)/10 + 1.5,
+                              max(zs)/10 + 1.5]
+                        off_axis = [
+                            i for i, c in enumerate(bsc_xyz)
+                            if c < lo[i] or c > hi[i]]
+                        if off_axis:
+                            ax = ["x", "y", "z"]
+                            names = ",".join(ax[i] for i in off_axis)
+                            warnings.append(
+                                f"binding_site_center_nm {bsc_xyz} "
+                                f"is outside the protein's atom-"
+                                f"coord bounding box (lo={lo}, "
+                                f"hi={hi} nm) on axis {names}. "
+                                "Possible wrong-receptor paste or "
+                                "wrong frame; verify by opening the "
+                                "PDB in PyMOL and checking the site.")
+                except OSError:
+                    pass
         except (TypeError, ValueError):
             issues.append(
                 f"binding_site_center_nm must be a 3-element list "
