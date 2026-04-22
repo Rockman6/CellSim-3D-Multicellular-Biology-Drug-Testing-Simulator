@@ -137,6 +137,54 @@ def test_undefined_stereo_bond_flagged():
         f"amide C=O is terminal, not E/Z-ambiguous: {lines}")
 
 
+def test_warning_does_not_fail_exit():
+    """Rotatable-bond > 10 should emit a warning in stdout AND
+    leave exit code 0 — the biologist gets informed, not blocked.
+    Uses a deliberately flexible aliphatic chain (14 rot bonds);
+    lapatinib (11 rot) is the real-world motivator.
+    """
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: c20_chain
+        smiles: "CCCCCCCCCCCCCCCCCCCC"
+        dG_bind_kcalmol: -8.0
+    """
+    rc, out = _run(yaml)
+    assert rc == 0, (
+        f"advisory warning must not fail exit; got rc={rc}\n{out}")
+    assert "warning" in out.lower()
+    assert "rotatable bonds > 10" in out
+    assert ("PASS (with warnings)" in out
+            or "PASS — ready" in out), (
+        f"verdict line should still say PASS; got:\n{out[-300:]}")
+
+
+def test_error_does_fail_exit():
+    """A real error (unpinned stereo) must continue to hard-FAIL
+    even when mixed with warnings on other entries."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1stp.pdb
+
+    entries:
+      - name: flexible
+        smiles: "CCCCCCCCCCCCCCCCCCCC"
+        dG_bind_kcalmol: -8.0
+      - name: unpinned_imino
+        smiles: "N=C1N[C@@H]2[C@H](SC[C@@H]2CCCCC(=O)O)N1"
+        dG_bind_kcalmol: -10.0
+    """
+    rc, out = _run(yaml)
+    assert rc != 0, "any error should fail, even with warnings"
+    # Both printed: warning AND error sections.
+    assert "warning" in out.lower()
+    assert "issue(s)" in out
+    assert "FAIL" in out
+
+
 def test_pinned_stereo_passes():
     """Pinning E/Z with / \\ should let the SMILES through."""
     yaml = """
@@ -244,6 +292,8 @@ if __name__ == "__main__":
         test_typod_smiles_fails,
         test_missing_receptor_fails_on_binding_yaml,
         test_undefined_stereo_bond_flagged,
+        test_warning_does_not_fail_exit,
+        test_error_does_fail_exit,
         test_pinned_stereo_passes,
         test_charged_ligand_flagged,
         test_duplicate_names_flagged,
