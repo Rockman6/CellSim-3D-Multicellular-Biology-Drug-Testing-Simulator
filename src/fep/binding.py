@@ -923,6 +923,7 @@ def compute_relative_binding_ddg(
     n_production_steps: int = 2000,
     sample_stride: int = 100,
     seed: int = 1,
+    force_field_path: str = "amber14",
 ) -> RelativeBindingDDGResult:
     """Relative ΔΔG(A→B) = ΔG_bind(B) − ΔG_bind(A).
 
@@ -953,7 +954,8 @@ def compute_relative_binding_ddg(
         sample=sample,
         n_equilibration_steps=n_equilibration_steps,
         n_production_steps=n_production_steps,
-        sample_stride=sample_stride, seed=seed)
+        sample_stride=sample_stride, seed=seed,
+        force_field_path=force_field_path)
     result.bind_A = bind_A
     if not bind_A.ok:
         result.reason = f"ligand A: {bind_A.reason}"
@@ -972,7 +974,8 @@ def compute_relative_binding_ddg(
         sample=sample,
         n_equilibration_steps=n_equilibration_steps,
         n_production_steps=n_production_steps,
-        sample_stride=sample_stride, seed=seed)
+        sample_stride=sample_stride, seed=seed,
+        force_field_path=force_field_path)
     result.bind_B = bind_B
     if not bind_B.ok:
         result.reason = f"ligand B: {bind_B.reason}"
@@ -1041,6 +1044,12 @@ def main(argv=None) -> int:
                           "(default 4184 ≈ 10 kcal/mol/Å²)")
     dgp.add_argument("--sample", action="store_true",
                      help="run MD (slow on CPU; intended for GPU)")
+    dgp.add_argument("--force-field-path", default="amber14",
+                     choices=["amber14", "smirnoff"],
+                     help="amber14 (default; fast, AMBER14 protein "
+                          "+ tip3pfb + SMIRNOFF ligand) or "
+                          "smirnoff (pure Interchange, slower but "
+                          "provenance-identical with hydration)")
     dgp.add_argument("--json", action="store_true")
 
     ddgp = sub.add_parser("ddg", help="relative ΔΔG(A→B)")
@@ -1052,6 +1061,8 @@ def main(argv=None) -> int:
     ddgp.add_argument("--padding", type=float, default=1.2)
     ddgp.add_argument("--restraint-k", type=float, default=4184.0)
     ddgp.add_argument("--sample", action="store_true")
+    ddgp.add_argument("--force-field-path", default="amber14",
+                      choices=["amber14", "smirnoff"])
     ddgp.add_argument("--json", action="store_true")
 
     bp = sub.add_parser(
@@ -1069,6 +1080,13 @@ def main(argv=None) -> int:
     bp.add_argument("--production-steps", type=int, default=2000)
     bp.add_argument("--equilibration-steps", type=int, default=500)
     bp.add_argument("--sample-stride", type=int, default=100)
+    bp.add_argument(
+        "--force-field-path", default="amber14",
+        choices=["amber14", "smirnoff"],
+        help="protein/ligand parametrisation path (default "
+             "amber14; 'smirnoff' for the pure-Interchange "
+             "fallback that's slower but provenance-matches "
+             "hydration's solvent leg)")
     bp.add_argument(
         "--out-csv", default=None,
         help="write per-entry results (same schema as FreeSolv so "
@@ -1093,7 +1111,8 @@ def main(argv=None) -> int:
             softcore_alpha=args.softcore_alpha,
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
-            sample=args.sample)
+            sample=args.sample,
+            force_field_path=args.force_field_path)
     elif args.cmd == "ddg":
         r = compute_relative_binding_ddg(
             args.smiles_a, args.smiles_b, args.receptor_pdb,
@@ -1101,7 +1120,8 @@ def main(argv=None) -> int:
             softcore_alpha=args.softcore_alpha,
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
-            sample=args.sample)
+            sample=args.sample,
+            force_field_path=args.force_field_path)
     elif args.cmd == "bench":
         return _run_bench(args)
     else:  # validate
@@ -1171,7 +1191,8 @@ def _run_bench(args) -> int:
             sample=bool(args.sample),
             n_equilibration_steps=args.equilibration_steps,
             n_production_steps=args.production_steps,
-            sample_stride=args.sample_stride)
+            sample_stride=args.sample_stride,
+            force_field_path=args.force_field_path)
         wall = _time.time() - ts
         pred = r.dG_bind_kcalmol
         unc = r.uncertainty_kcalmol
