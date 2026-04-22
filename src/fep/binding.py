@@ -125,6 +125,11 @@ class BindingDGResult:
     n_total_atoms_solvent: Optional[int] = None
     wall_seconds: Optional[float] = None
     phase: Optional[str] = None
+    # GHMC acceptance per window per leg — prof's checklist
+    # requirement. < 0.70 signals timestep too large and ΔG
+    # untrustworthy. Passed through for the fep-report gate.
+    ghmc_acceptance_complex: list = field(default_factory=list)
+    ghmc_acceptance_solvent: list = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.ok:
@@ -895,6 +900,8 @@ def compute_absolute_binding_dg(
     result.dG_restraint_correction_kcalmol = dG_R_plus_std
     result.dG_standard_state_kcalmol = 0.0   # folded in above
     result.uncertainty_kcalmol = unc
+    result.ghmc_acceptance_complex = list(cx_r.ghmc_acceptance)
+    result.ghmc_acceptance_solvent = list(sv_r.ghmc_acceptance)
     result.wall_seconds = time.time() - t0
     return result
 
@@ -1179,6 +1186,17 @@ def _run_bench(args) -> int:
         else:
             print(f"  FAIL: {r.reason}", flush=True)
 
+        # Minimum across both legs is the conservative per-compound
+        # acceptance; if either leg was under-sampled the ΔG bind
+        # doesn't stand. Matches hydration's same-schema convention.
+        all_accepts = (
+            list(r.ghmc_acceptance_complex)
+            + list(r.ghmc_acceptance_solvent))
+        ghmc_mean = (
+            sum(all_accepts) / len(all_accepts)
+            if all_accepts else None)
+        ghmc_min = min(all_accepts) if all_accepts else None
+
         rows.append({
             "name": name,
             "smiles": smi,
@@ -1186,8 +1204,8 @@ def _run_bench(args) -> int:
             "dG_pred_kcalmol": pred,
             "uncertainty_kcalmol": unc,
             "residual_kcalmol": resid,
-            "ghmc_accept_mean": None,
-            "ghmc_accept_min": None,
+            "ghmc_accept_mean": ghmc_mean,
+            "ghmc_accept_min": ghmc_min,
             "wall_seconds": round(wall, 2),
             "ok": r.ok,
             "reason": r.reason,
