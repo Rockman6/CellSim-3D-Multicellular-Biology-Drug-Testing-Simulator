@@ -285,6 +285,50 @@ def test_bundled_freesolv_yaml_validates():
     assert "PASS" in out
 
 
+def test_binding_site_center_unit_mismatch_warns():
+    """Biologist copy-pastes a coordinate from the docking YAML
+    (Ångströms) into a binding FEP YAML (nm). Protein bounding
+    boxes are 3-10 nm — any axis > 10 nm is almost certainly a
+    factor-of-10 unit error. Validator warns (not FAIL) with
+    the suggested nm conversion."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1m17.pdb
+      binding_site_center_nm: [22.01, 0.25, 52.79]
+
+    entries:
+      - name: erlotinib
+        smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+        dG_bind_kcalmol: -11.86
+    """
+    rc, out = _run(yaml)
+    assert rc == 0, (
+        "unit warning must not fail exit (advisory only); "
+        f"got rc={rc}\n{out}")
+    assert "likely Å, not nm" in out
+    assert "[2.201, 0.025, 5.279]" in out, (
+        f"suggested nm conversion should be printed; got:\n{out}")
+
+
+def test_binding_site_center_correct_nm_no_warn():
+    """Sanity: valid nm coordinates should NOT trigger the unit
+    warning. Use the bundled binding_egfr.yaml values."""
+    yaml = """
+    receptor:
+      pdb_path: benchmarks/dock/1m17.pdb
+      binding_site_center_nm: [2.201, 0.025, 5.279]
+
+    entries:
+      - name: erlotinib
+        smiles: "COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC"
+        dG_bind_kcalmol: -11.86
+    """
+    rc, out = _run(yaml)
+    assert rc == 0
+    assert "likely Å, not nm" not in out, (
+        f"valid nm coordinate should NOT warn; got:\n{out}")
+
+
 def test_hydration_wall_time_estimate_matches_m5max_observation():
     """Pin the hydration estimator against the M5 Max ground-truth
     (friend's in-flight FreeSolv-12 run at production parameters
@@ -384,6 +428,8 @@ if __name__ == "__main__":
         test_bundled_freesolv_yaml_validates,
         test_wall_time_estimate_within_reasonable_range,
         test_hydration_wall_time_estimate_matches_m5max_observation,
+        test_binding_site_center_unit_mismatch_warns,
+        test_binding_site_center_correct_nm_no_warn,
     ]
     fails = []
     for f in funcs:

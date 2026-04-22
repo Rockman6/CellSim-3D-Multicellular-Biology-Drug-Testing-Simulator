@@ -1452,6 +1452,31 @@ def _run_validate(args) -> int:
                 issues.append(
                     f"cannot read receptor {p.name}: {e}")
 
+    # Unit-sanity check on binding_site_center_nm. A common
+    # biologist error is copy-pasting a coordinate from a docking
+    # YAML (which uses Ångströms) into a binding FEP YAML (which
+    # expects nm). Protein bounding boxes are 3–10 nm per side; a
+    # value > 10 nm is almost certainly an Å number that should
+    # have been divided by 10. Warn loudly with the suggested
+    # nm conversion.
+    bsc = recv.get("binding_site_center_nm")
+    if bsc is not None and yaml_kind != "hydration":
+        try:
+            bsc_xyz = [float(c) for c in bsc]
+            if any(abs(c) > 10.0 for c in bsc_xyz):
+                nm_conv = [round(c / 10.0, 4) for c in bsc_xyz]
+                warnings.append(
+                    f"binding_site_center_nm = {bsc_xyz} has a "
+                    f"component > 10 nm — likely Å, not nm. Did "
+                    f"you mean {nm_conv}? (Protein bounding boxes "
+                    "are rarely > 10 nm. Set to null to let fpocket "
+                    "auto-detect the druggable pocket.)")
+            receptor_report["binding_site_center_nm"] = bsc_xyz
+        except (TypeError, ValueError):
+            issues.append(
+                f"binding_site_center_nm must be a 3-element list "
+                f"of floats in nm; got {bsc!r}")
+
     entries = data.get("entries") or []
     if not entries:
         issues.append("no entries in YAML")
