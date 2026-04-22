@@ -1101,7 +1101,10 @@ def main(argv=None) -> int:
     bp = sub.add_parser(
         "bench",
         help="YAML-driven batch (e.g. binding_streptavidin.yaml)")
-    bp.add_argument("yaml_path")
+    bp.add_argument(
+        "yaml_path",
+        help="path to a binding YAML under benchmarks/fep/ — "
+             "run `cellsim fep-binding validate` on it first")
     bp.add_argument(
         "--n-windows", type=int, default=11,
         help="number of alchemical λ-windows per leg "
@@ -1157,7 +1160,10 @@ def main(argv=None) -> int:
         help="sub-second YAML dry-run: parse SMILES via RDKit, "
              "confirm receptor PDB exists, report issues — run "
              "this BEFORE launching a multi-hour sampled run")
-    vp.add_argument("yaml_path")
+    vp.add_argument(
+        "yaml_path",
+        help="path to a benchmark YAML (binding_*.yaml or "
+             "freesolv_*.yaml under benchmarks/fep/)")
     vp.add_argument(
         "--json", action="store_true",
         help="emit the diagnostic table as JSON instead of text")
