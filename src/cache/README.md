@@ -4,7 +4,8 @@
 
 ## Scope
 Memoise everything expensive. Every docking pose (AutoDock Vina),
-FEP ΔG (perses), xTB / PySCF energy, classical-FF force table,
+FEP ΔG (openmmtools + pymbar), xTB / PySCF energy,
+classical-FF force table,
 partial-charge table is written here keyed by content hashes and
 force-field / method versions. Invalidates on FF bump.
 

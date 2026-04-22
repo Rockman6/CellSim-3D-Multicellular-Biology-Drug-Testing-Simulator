@@ -130,7 +130,7 @@ Failing any → extend Campaign 1. Do not advance to Campaign 2.
 Open-source integrations (BUY):
 RDKit, OpenFF Toolkit / Sage, OpenMM, AMBER ff14SB/ff19SB, CHARMM36m,
 TIP3P-FB, PDBFixer, PROPKA, DimorphiteDL, AmberTools (antechamber,
-sqm), AutoDock Vina, perses + openmmtools + openff-evaluator,
+sqm), AutoDock Vina, openmmtools + openmmforcefields + pymbar,
 Martini 3 + martinize2 / vermouth, xtb, PySCF, SALib, MAPIE,
 Snakemake, Docker, HDF5, SQLite, Parquet, PDBBind, CASF-2016,
 ChEMBL, BindingDB, PoseBusters.

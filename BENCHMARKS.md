@@ -207,8 +207,10 @@ sanity. Do not use it for:
   — trypsin evidence);
 - kinase ATP-site series (saturation failure — EGFR evidence).
 
-Future perses-FEP integration (Layer 1.3) will tighten MAE to
-~1 kcal/mol and restore rank-order on kinase systems.
+Alchemical FEP integration (Layer 1.3, shipped — see
+`src/fep/` + the "Milestone B scaffold" section below) will
+tighten MAE to ~1 kcal/mol and restore rank-order on kinase
+systems once the Milestone A + B sampled gates complete on GPU.
 
 Reproducer: `cellsim uq ... ` (see `src/uq/calibration.py`).
 
@@ -695,9 +697,11 @@ One regression → merge blocked.
 
 ## What CellSim does NOT claim
 
-- **No rigorous ΔG for tight binders.** Vina saturates at ~−7 to
-  −10 kcal/mol; the Layer-1.3 perses-FEP hook (pending) fills this
-  gap.
+- **No rigorous ΔG for tight binders *from Vina alone*.** Vina
+  saturates at ~−7 to −10 kcal/mol; the Layer-1.3 alchemical FEP
+  pipeline (`cellsim fep-binding bench --sample`) is shipped
+  end-to-end to fill this gap, with the Milestone A + B sampled
+  gates currently pending GPU time.
 - **No membrane-embedded targets.** Layer 1.5 Martini 3 is scaffold
   only.
 - **No publication-grade Sobol.** N_base ≥ 32 (≥ 256 runs) needed;
