@@ -33,9 +33,13 @@ governs every layer:
    mechanism.
 2. **All forces are physics-derived or empirically parametrised.**
    Force fields (AMBER ff14SB, CHARMM36m, OpenFF Sage, Martini 3),
-   semi-empirical / DFT (xtb, PySCF), alchemical FEP (perses) —
-   yes. Neural potentials (MACE / OrbNet / NequIP / Allegro), CNN
-   scoring (GNINA default mode) as the primary path — no.
+   semi-empirical / DFT (xtb, PySCF), alchemical FEP via
+   `openmmtools.alchemy` + `pymbar` (non-AI MBAR estimator; the
+   perses path was evaluated and not required — openmmtools
+   primitives + a custom DDM driver cover the Milestone A/B
+   scope) — yes. Neural potentials (MACE / OrbNet / NequIP /
+   Allegro), CNN scoring (GNINA default mode) as the primary
+   path — no.
 3. **All uncertainty is deterministic or statistical, not
    neural.** Parameter sweeps, Monte-Carlo over rate constants and
    charges, Sobol global sensitivity indices (SALib) are the
