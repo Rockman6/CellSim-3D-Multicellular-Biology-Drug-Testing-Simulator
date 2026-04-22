@@ -88,7 +88,7 @@ usage: cellsim <subcommand> [args...]
 
   fep-hyd     alchemical hydration ΔG for a single SMILES —
                 scaffold-only primitive; real hydration gate is
-                `cellsim fep-freesolv`
+                'cellsim fep-freesolv'
                 -> src/fep/__init__.py
 
   fep-freesolv FreeSolv 12-compound hydration accuracy gate
