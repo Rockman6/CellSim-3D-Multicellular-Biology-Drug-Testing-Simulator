@@ -231,6 +231,66 @@ def test_binding_kind_renders_correct_markdown_label():
         f"got markdown:\n{md[:600]}")
 
 
+def test_cli_end_to_end_binding_csv_via_yaml_flag():
+    """End-to-end CLI test: synthesize a binding CSV (streptavidin
+    analogue set with every ΔG < 0), pass through `fep-report
+    --yaml binding_streptavidin.yaml`, assert the rendered markdown
+    uses the binding sign-rule + 2.0 kcal/mol gate."""
+    import io as _io
+    from src.fep.report import main as _report_main
+
+    bind_csv_rows = [
+        {"name": "biotin", "smiles": "...",
+         "dG_expt_kcalmol": -18.3, "dG_pred_kcalmol": -17.9,
+         "uncertainty_kcalmol": 0.5, "residual_kcalmol": 0.4,
+         "ghmc_accept_mean": 0.78, "ghmc_accept_min": 0.74,
+         "wall_seconds": 1200, "ok": True, "reason": ""},
+        {"name": "desthiobiotin", "smiles": "...",
+         "dG_expt_kcalmol": -13.2, "dG_pred_kcalmol": -12.5,
+         "uncertainty_kcalmol": 0.6, "residual_kcalmol": 0.7,
+         "ghmc_accept_mean": 0.76, "ghmc_accept_min": 0.72,
+         "wall_seconds": 1300, "ok": True, "reason": ""},
+    ]
+    with tempfile.TemporaryDirectory(
+            prefix="cellsim_bind_csv_") as tmp:
+        csv_path = Path(tmp) / "bind_results.csv"
+        with csv_path.open("w", newline="",
+                           encoding="utf-8-sig") as fo:
+            w = csv.DictWriter(
+                fo, fieldnames=list(bind_csv_rows[0].keys()))
+            w.writeheader()
+            for row in bind_csv_rows:
+                w.writerow(row)
+
+        old = sys.stdout
+        sys.stdout = _io.StringIO()
+        try:
+            rc = _report_main([
+                str(csv_path),
+                "--yaml",
+                str(REPO_ROOT /
+                    "benchmarks/fep/binding_streptavidin.yaml"),
+            ])
+            out = sys.stdout.getvalue()
+        finally:
+            sys.stdout = old
+
+    assert "every ΔG_bind < 0" in out, (
+        f"binding YAML should trigger binding sign-rule; "
+        f"got markdown:\n{out[:600]}")
+    assert "≤ 2.0 kcal/mol" in out, (
+        f"binding YAML should use 2.0 gate; got:\n{out[:600]}")
+    # Both ΔG values negative → sign-critical PASS.
+    # MAE ~0.55 ≪ 2.0 → MAE PASS.
+    # GHMC ~76%, all > 70% → PASS.
+    # Sum: overall PASS, exit 0. But n_total=2 vs expected=4
+    # (streptavidin YAML has 4 entries) → partial → overall FAIL.
+    assert rc != 0, (
+        f"partial run (2 CSV rows vs 4 YAML entries) should FAIL; "
+        f"got rc={rc}")
+    assert "partial" in out.lower() or "PARTIAL" in out
+
+
 def test_yaml_flag_auto_infers_gate_from_kind():
     """--yaml binding_*.yaml should auto-set gate 2.0; --yaml
     hydration YAML (freesolv) should stay at 1.5. Explicit
@@ -282,6 +342,7 @@ if __name__ == "__main__":
         test_binding_sign_critical_rule_every_compound_negative,
         test_hydration_sign_critical_rule_unchanged,
         test_binding_kind_renders_correct_markdown_label,
+        test_cli_end_to_end_binding_csv_via_yaml_flag,
         test_yaml_flag_auto_infers_gate_from_kind,
     ]
     fails = []
