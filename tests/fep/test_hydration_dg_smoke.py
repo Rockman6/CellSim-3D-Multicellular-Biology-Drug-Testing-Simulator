@@ -14,7 +14,15 @@ This test asserts only that:
   - the call returns ok=True
   - ΔG_hyd is finite
   - vacuum leg ≈ 0 for methane (physics sanity)
+  - ΔG_hyd SIGN is correct for methane (+, hydrophobic)
   - wall time stays under 3 min
+
+The sign check (test_methane_hydration_sign_is_positive) is load-
+bearing: the M5 Max pilot-1 run returned methane = -1.85 kcal/mol
+because compute_hydration_dg had a spurious minus on the
+composition formula. No test pinned the sign, so the Milestone A
+tag shipped with that bug intact. Without a sign test, a future
+regression could re-introduce the same flip silently.
 """
 
 from __future__ import annotations
@@ -49,15 +57,57 @@ def test_methane_hydration_pipeline_runs():
         "for methane should be ≈ 0; sampling pipeline broken.")
 
 
+def test_methane_hydration_sign_is_positive():
+    """Methane is hydrophobic — ΔG_hyd > 0 (FreeSolv expt: +2.00).
+
+    Pins the sign of compute_hydration_dg's composition formula.
+    This is the test that *would have caught* the Milestone A
+    pilot-1 sign bug (M5 Max returned -1.85 for methane;
+    milestone-a-pilot-1 tag shipped without ever checking sign).
+
+    Runs slightly more sampling than the scaffold smoke so the
+    sign is robust against noise: 7 windows × 500 prod steps ≈
+    1-2 min on CPU. Tolerance is generous (>0.2 kcal/mol) because
+    the true +2.00 converges only at production sampling; we just
+    need the SIGN to be right.
+    """
+    from src.fep import compute_hydration_dg
+    r = compute_hydration_dg(
+        "C", n_windows=7,
+        n_production_steps=500, n_equilibration_steps=100,
+        sample_stride=50, seed=1)
+    print(f"  {r.summary()}")
+    assert r.ok, r.reason
+    assert r.dG_hydration_kcalmol is not None
+    assert math.isfinite(r.dG_hydration_kcalmol)
+    # Gate: methane must be predicted hydrophobic (positive).
+    # Margin 0.2 kcal/mol to avoid flaky near-zero signs.
+    assert r.dG_hydration_kcalmol > 0.2, (
+        f"ΔG_hyd(methane) = {r.dG_hydration_kcalmol:+.3f} "
+        "kcal/mol; methane is hydrophobic, so ΔG_hyd must be "
+        ">+0.2. A negative value indicates the Milestone A sign "
+        "bug has returned (see BENCHMARKS.md § 'Milestone A "
+        "post-mortem'). Fix: check the composition formula in "
+        "compute_hydration_dg.")
+
+
 if __name__ == "__main__":
-    try:
-        test_methane_hydration_pipeline_runs()
-        print("PASS")
-    except AssertionError as e:
-        print(f"FAIL: {e}")
-        sys.exit(1)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"ERROR: {e}")
-        sys.exit(2)
+    funcs = [
+        test_methane_hydration_pipeline_runs,
+        test_methane_hydration_sign_is_positive,
+    ]
+    fails = []
+    for f in funcs:
+        try:
+            f()
+            print(f"[PASS] {f.__name__}")
+        except AssertionError as e:
+            print(f"[FAIL] {f.__name__}: {e}")
+            fails.append(f.__name__)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[ERROR] {f.__name__}: {e}")
+            fails.append(f.__name__)
+    print(f"{len(funcs) - len(fails)}/{len(funcs)} PASS")
+    sys.exit(0 if not fails else 1)
