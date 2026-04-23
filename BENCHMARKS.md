@@ -528,6 +528,39 @@ changes. Diagnostic scripts live in
 in `/tmp/test_amber14_hydration.py` is not committed (session-
 local).
 
+**Fourth-pass investigation (2026-04-24 night, autonomous):**
+two new hypotheses tested end-to-end on ethanol, both rejected.
+
+*Hypothesis A — PBC self-interaction (finite-box polarization).*
+Padding scan at 1.2 / 1.5 / 2.0 nm gave pred = +10.06 / +9.88 /
++12.40 (non-monotonic). Monotonic decrease would have indicated
+PBC; instead the pattern is flat within sampling noise. **Not a
+padding / box-size effect.**
+
+*Hypothesis B — hand-rolled sampler vs. reference MultiStateSampler.*
+Drop-in replacement of `sample_alchemical_windows` with
+`openmmtools.multistate.MultiStateSampler` on identical systems.
+Result: methane got *worse* (+2.01 hand-rolled → −0.18 multistate),
+ethanol same overshoot (+9.5–14.3 hand-rolled → +10.52
+multistate). **Sampler rewrite does not fix ethanol and regresses
+methane; the bug is upstream of the sampler.**
+
+Reduced hypothesis space for the polar overshoot:
+
+  - C: 1-4 exception scaling / softcore parameter interaction
+    (openff Sage 2.1.0 specifies 1-4 LJ=0.5 and 1-4 Coulomb=
+    0.833 — the AlchemicalFactory may not carry these through
+    to the softcore force)
+  - D: alchemical PME "exact treatment" implementation detail
+    (q² non-linearity under λ scaling)
+  - E: water model / ligand charge mismatch that only shows up
+    on polar solutes (non-polar methane insensitive to water
+    model)
+
+Next on-deck: softcore-parameter sweep (α ∈ {0.5, 1.0},
+β ∈ {0, 12}) + direct inspection of the alchemical exceptions
+on ethanol. All autonomous; results committing as they land.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
