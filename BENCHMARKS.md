@@ -483,6 +483,51 @@ via the amber14 stack). If the overshoot disappears, the issue
 is in the Interchange → AlchemicalFactory hand-off. If it
 persists, it's a deeper protocol bug.
 
+**Third-pass investigation (2026-04-23 late):** tested the
+amber14-all + tip3pfb native-OpenMM solvent leg. Result more
+informative than conclusive:
+
+| config | methane solv | ethanol solv | methane pred (sign-flip) | ethanol pred (sign-flip) |
+|---|---:|---:|---:|---:|
+| Interchange, per-λ min broken (bare numpy) | +1.81 | +15.5 | +1.81 ← close | +15.5 ← bad |
+| Interchange + direct-space PME | +0.64 | +10.3 | +0.64 | +10.3 |
+| amber14 native, per-λ min broken          | **+2.01** | +9.5  | **+2.01** ← **matches expt exactly** | +9.5 |
+| amber14 native + per-λ min FIXED (Quantity positions) | −0.42 | +15.0 | −0.42 ← regressed | +12.4 |
+
+The per-λ-minimize step in `sample_alchemical_windows` (the
+professor's checklist requirement) was silently failing with
+"Unit 'dimensionless' is not compatible with Unit 'nanometer'"
+because positions came in as bare numpy arrays. When the unit
+wrapping is fixed so per-λ minimize actually runs, BOTH methane
+and ethanol regress — each window falls into a different local
+basin, adjacent windows lose overlap, MBAR returns garbage.
+
+So we have at least three interacting issues:
+
+1. **Sign convention in compute_hydration_dg** (the minus on `ddg`).
+2. **Solvent-leg FF builder** — amber14 native gives methane
+   exactly right while Interchange undershoots ~10 %. Polar
+   compounds are too high on both.
+3. **Per-λ minimize harms convergence** in this pipeline, but
+   disabling it regresses GHMC acceptance on polar systems
+   (professor's original concern when he asked for per-λ min).
+
+Pausing code fixes and writing up the findings. The clean path
+forward is NOT another round of local patches — it's to stop
+hand-rolling the alchemical cycle and adopt
+`openmmtools.multistate` (Hamiltonian replica exchange) or
+`yank`, both from the same choderalab stack as `openmmtools`
+and both reference implementations for absolute hydration FEP.
+Our current driver is trying to replicate those capabilities by
+hand and losing the subtle physics at each step.
+
+Rollback of the existing hydration driver to the tag's exact
+state was kept during this investigation — no in-tree code
+changes. Diagnostic scripts live in
+`scripts/diagnose_hydration_sign.py`; ad-hoc test scaffolding
+in `/tmp/test_amber14_hydration.py` is not committed (session-
+local).
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
