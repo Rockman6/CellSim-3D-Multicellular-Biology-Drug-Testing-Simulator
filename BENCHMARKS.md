@@ -455,6 +455,34 @@ Reproducer: `python scripts/diagnose_hydration_sign.py` (5 min
 on laptop, no GPU). Investigation thread + commit handoff in
 the next Milestone A tag.
 
+**Follow-up investigation (2026-04-23 evening):** tested the
+standard yank-style decouple-only protocol
+(`annihilate_electrostatics=False, annihilate_sterics=False,
+alchemical_pme_treatment='direct-space'`) on ethanol. Result:
+overshoot reduced from +15.5 to +10.3, but still ~2× the
+physical value. Two protocols that SHOULD give identical
+ΔG_hyd (intramolecular cancels in the cycle either way) give
++13.1 vs +10.3 — so the pipeline is **not converging against a
+protocol-invariant answer**. Likely candidates narrowed to:
+
+  - 1-4 Coulomb scaling interaction with the alchemical factory
+    (openff-toolkit's 1/1.2 scale factor may not be passed
+    through the softcore path correctly)
+  - Something in how `Interchange.from_smirnoff(...).to_openmm(
+    combine_nonbonded_forces=True)` hands off exceptions to the
+    AbsoluteAlchemicalFactory
+  - A real physics term missing (free-energy correction for
+    inserting a finite-dipole ligand into PBC water)
+
+The sign fix alone would flip methane in the right direction
+but leave polars with the wrong sign AND wrong magnitude — so
+not shipping a half-fix. Next concrete step: switch the
+solvent-leg builder from `Interchange` to OpenMM's native
+`ForceField.createSystem` path (same one the binding leg uses
+via the amber14 stack). If the overshoot disappears, the issue
+is in the Interchange → AlchemicalFactory hand-off. If it
+persists, it's a deeper protocol bug.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
