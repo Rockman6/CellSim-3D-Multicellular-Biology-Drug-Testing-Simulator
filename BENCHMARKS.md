@@ -370,6 +370,91 @@ production parameters, via `gh workflow run fep-freesolv.yml`.
 Until that number exists, Milestone A is open and Campaign 2
 does not start.
 
+### Milestone A post-mortem — two bugs found on the first real run (2026-04-23)
+
+The friend's M5 Max partial run of the `milestone-a-pilot-1` tag
+(7 of 12 compounds, 25 000 prod steps per window, OpenCL
+platform) returned a systematic over-negative bias, with
+residuals growing with molecular size across BOTH polar and
+nonpolar compounds:
+
+| compound | expt | pred | residual |
+|---|---:|---:|---:|
+| methane | +2.00 | −1.85 | −3.85 |
+| ethane  | +1.83 | −3.13 | −4.96 |
+| propane | +1.95 | −4.76 | −6.71 |
+| benzene | −0.87 | −13.13 | −12.26 |
+| toluene | −0.90 | −13.91 | −13.01 |
+| ethanol | −5.01 | −16.90 | −11.89 |
+| ammonia | −4.30 | −12.20 | −7.90 |
+
+Initial hypothesis was OpenCL-specific (the tag's OpenMM 8.1
+build doesn't ship Metal; fell back to OpenCL). That was
+**disproved** by reproducing the failure on CPU/HEAD in ~5 min
+per compound with `scripts/diagnose_hydration_sign.py`:
+
+```
+methane:  vac=+0.000, solv=+1.813 → pred −1.81 (expt +2.00)
+ethanol:  vac=+2.36,  solv=+15.55 → pred −13.19 (expt −5.01)
+```
+
+These are the laptop/CPU numbers, within 0.2 kcal/mol of the M5
+Max OpenCL numbers for the same compounds. **Not a platform bug.**
+
+Two separate issues were identified:
+
+**1. Composition-level sign flip (affects every compound equally).**
+`compute_hydration_dg` at the tag computes:
+
+```python
+ddg = solv_r.dG_kcalmol - vac_r.dG_kcalmol
+result.dG_hydration_kcalmol = -ddg    # ← this minus is the bug
+```
+
+Per Hummer-Szabo, the hydration free energy is
+`ΔG_hyd = ΔG_solv_annihilate − ΔG_vac_annihilate`, i.e.
+`solv_r − vac_r` with NO leading minus. Dropping the `-` rescues
+methane (+1.81 ≈ expt +2.00, 0.15 kcal/mol residual at smoke
+sampling) but creates a sign flip in the opposite direction for
+ethanol (+13.19 vs expt −5.01) because the second bug kicks in.
+
+**2. Solvent-leg magnitude overshoot on polar solutes.** Ethanol's
+`solv_r = +15.55` is ≈3× what physics predicts (~+5 for a polar
+solute whose hydration ΔG is −5). The vac_r leg (+2.36) looks
+reasonable for an intramolecular-electrostatics annihilation.
+The overshoot is specific to the solvent leg and scales with
+dipole / polarity. Candidate root causes (not yet discriminated,
+investigation open):
+
+  - Intramolecular 1-4 electrostatics being double-counted by
+    the alchemical softcore + the preserved bonded terms.
+  - PME self-interaction term not being subtracted when the
+    entire ligand decouples (Rocklin-style correction is already
+    documented for charged ligands in binding; a neutral-ligand
+    version may be needed here too).
+  - Alchemification operating on whole-ligand intramolecular
+    nonbondeds so that at λ=0 the ligand is still generating a
+    spurious intramolecular correction term in the solvent leg.
+
+**Load-bearing takeaway.** The Milestone A tag was cut without
+*any* real-sampling end-to-end sign check — the existing
+`tests/fep/test_hydration_dg_smoke.py` asserts only `ok=True +
+finite + vacuum leg ≈ 0`, never that `ΔG_hyd > 0 for methane`.
+The "ok_case"/"fail_case" fixtures used to regression-test
+`fep-report` were hand-synthesised, and the hand-picked
+"fail_case" methane value of −1.85 happens to match exactly what
+the real pipeline produces — so the analyser thought the REAL
+pipeline output was the FAIL case.
+
+**No re-run until both bugs are fixed.** A second 6-hour GPU
+burn on the same buggy code would waste compute without
+changing the answer. Sign fix alone is insufficient (ethanol
+proves it); the polar-magnitude bug must be tracked down first.
+
+Reproducer: `python scripts/diagnose_hydration_sign.py` (5 min
+on laptop, no GPU). Investigation thread + commit handoff in
+the next Milestone A tag.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
