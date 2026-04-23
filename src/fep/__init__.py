@@ -486,13 +486,22 @@ def compute_hydration_dg(
         result.wall_seconds = time.time() - t0
         return result
 
-    # ΔG_hyd = −(ΔG_solv_decouple − ΔG_vac_decouple). A positive
-    # value means gas → water transfer is unfavourable (hydro-
-    # phobic). For methane the experimental value is +2.0
-    # kcal/mol.
+    # ΔG_hyd = ΔG_solv_ann − ΔG_vac_ann, per Hummer-Szabo (1996,
+    # J Chem Phys 105:2004). The prior version of this line had a
+    # spurious leading minus ("dG_hydration = -ddg") that inverted
+    # every hydration prediction; the first real sampled run on an
+    # M5 Max (milestone-a-pilot-1, 2026-04-23) reported methane at
+    # -1.85 kcal/mol vs expt +2.00 — exactly the sign flip this
+    # minus produces. See BENCHMARKS.md § "Milestone A post-mortem".
+    #
+    # Sampling convention: sample_alchemical_windows returns
+    # Delta_f[K-1, 0] = f[0] - f[K-1] = f_decoupled - f_coupled
+    # (annihilation free energy). For methane: vac ≈ 0 (no intra
+    # nonbondeds), solv ≈ +2 → ΔG_hyd = solv - vac ≈ +2 (matches
+    # FreeSolv expt +2.00).
     import math
     ddg = solv_r.dG_kcalmol - vac_r.dG_kcalmol
-    result.dG_hydration_kcalmol = -ddg
+    result.dG_hydration_kcalmol = ddg
     result.dG_vacuum_decouple_kcalmol = vac_r.dG_kcalmol
     result.dG_solvent_decouple_kcalmol = solv_r.dG_kcalmol
     result.uncertainty_kcalmol = math.sqrt(
