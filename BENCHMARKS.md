@@ -561,6 +561,51 @@ Next on-deck: softcore-parameter sweep (α ∈ {0.5, 1.0},
 β ∈ {0, 12}) + direct inspection of the alchemical exceptions
 on ethanol. All autonomous; results committing as they land.
 
+*Hypothesis C — softcore-parameter sweep on ethanol (same 7×1000
+sampling budget as padding scan).*
+
+| softcore α | softcore β | vac | solv | pred | residual |
+|---:|---:|---:|---:|---:|---:|
+| 0.5 (default) | 0.0 | +2.41 | +13.38 | +10.97 | +15.98 |
+| 0.3 | 0.0 | +2.55 | +18.66 | +16.12 | +21.13 |
+| 1.0 | 0.0 | +2.38 | +12.00 | +9.63 | +14.64 |
+| 0.5 | 12.0 | — | — | — | build failed: "Softcore electrostatics is not supported with exact treatment of Ewald electrostatics" |
+
+α=1.0 moves the overshoot by ~1.4 kcal/mol (+10.97 → +9.63) — a
+small monotonic effect, nowhere near enough to close the ~15
+kcal/mol gap. β=12 is incompatible with the default exact-PME
+treatment, so softcore-electrostatics smoothing is not an
+available knob without switching PME treatment entirely.
+
+**Hypothesis C verdict**: softcore parameters are not the root
+cause. The overshoot survives any reasonable (α, β) combination.
+
+*Alchemical-exception inspection on ethanol's solvent system.*
+Direct dump of forces after the AlchemicalFactory rebuild:
+
+  - NonbondedForce: ligand-ligand exceptions zeroed
+    (chargeProd=0, epsilon=0) — standard alchemical substitution.
+  - CustomNonbondedForce with lambda_sterics: intra + inter
+    steric softcore handled here.
+  - CustomBondForce (12 ligand-ligand bonds): intra 1-4 LJ
+    pairs kept ON at all λ (globals include softcore_*
+    parameters but notably *not* lambda_sterics).
+  - CustomBondForce (0 bonds): empty — the 1-4 electrostatics
+    are *not* explicitly handled as a separate Force.
+
+So the intramolecular 1-4 LJ pairs are invariant across λ
+(correctly excluded from alchemical scaling) but the
+intramolecular 1-4 electrostatics have no dedicated Force — they
+must be absorbed into the base NonbondedForce with its own
+lambda_electrostatics global or offset-parameter scaling. Haven't
+verified the exact mechanism here.
+
+*Next on-deck*: alchemical_pme_treatment sweep —
+'coulomb' (no Ewald reciprocal), 'direct-space' (decouple-only),
+vs. default 'exact'. If 'coulomb' closes the gap, the bug is in
+the q²-non-linearity handling of the exact-PME implementation on
+polar multi-atom ligands.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
