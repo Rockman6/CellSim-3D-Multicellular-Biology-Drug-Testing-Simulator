@@ -89,6 +89,19 @@ def test_methane_hydration_sign_is_positive():
         "bug has returned (see BENCHMARKS.md § 'Milestone A "
         "post-mortem'). Fix: check the composition formula in "
         "compute_hydration_dg.")
+    # Tightness gate (locked in after split-schedule fix b89dd51):
+    # methane should predict within 1.0 kcal/mol of FreeSolv +2.00
+    # at these smoke params (measured +2.05 at seed=1, residual
+    # 0.05). If this fails, the schedule change has regressed and
+    # water-penetration is back. Margin ±1 kcal/mol absorbs
+    # seed-to-seed Langevin noise at 7×500 = 3 500 steps/leg.
+    assert abs(r.dG_hydration_kcalmol - 2.00) < 1.0, (
+        f"ΔG_hyd(methane) = {r.dG_hydration_kcalmol:+.3f} vs "
+        "FreeSolv expt +2.00; residual > 1.0 kcal/mol at smoke "
+        "params is outside the expected seed-noise band. The "
+        "split-schedule fix (BENCHMARKS.md § 'root cause') may "
+        "have regressed — check src/fep/sampling.py's "
+        "_split_lambda_schedule and the (lam_e, lam_s) unpacks.")
 
 
 if __name__ == "__main__":
