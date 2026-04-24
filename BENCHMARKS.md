@@ -606,6 +606,38 @@ vs. default 'exact'. If 'coulomb' closes the gap, the bug is in
 the q²-non-linearity handling of the exact-PME implementation on
 polar multi-atom ligands.
 
+*Hypothesis D — PME treatment (2026-04-24 overnight).*
+
+| pme_treatment | annihilate | vac | solv | pred |
+|---:|---|---:|---:|---:|
+| exact (default) | elec=T | +2.60 | +13.55 | +10.95 |
+| coulomb | elec=T | — | — | MBAR overlap fail (translator fired) |
+| direct-space | decouple-only | +0.00 | +10.42 | +10.42 |
+
+All three treatments that sample cleanly give pred ≈ +10.4 to
++11.0 kcal/mol. Within sampling noise. **Hypothesis D rejected**:
+not the exact-PME q² non-linearity.
+
+(Side note: the coulomb-treatment failure is a clean test of the
+MBAR-error translator shipped in d9177f6 — it correctly surfaced
+"adjacent λ-windows don't overlap" with a --n-windows 21
+suggestion, not the raw pymbar "column sum W_nk = 0" jargon.
+That fix is working as designed.)
+
+After four hypotheses ruled out (padding, sampler, softcore,
+PME), the remaining live candidates are:
+  E: water-model / ligand-charge interaction (polar-specific)
+  F: Sage 2.1.0 + AM1-BCC charges themselves give the wrong
+     hydration value even with a correct FEP pipeline — needs a
+     cross-check against openff's own FreeSolv validation to
+     distinguish force-field error from pipeline error
+
+Next: run **methanol** (expt −5.11 kcal/mol, very close to
+ethanol's −5.01). If methanol overshoots by the same ~+15
+kcal/mol, the bug is systematic polar-FF. If it overshoots by a
+different amount, compound-specific — which suggests the
+parameter assignment pipeline itself differs per molecule.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
