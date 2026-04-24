@@ -669,6 +669,32 @@ This is what yank/perses use. Our code couples them linearly,
 which is the source of the water-penetration artifact. Fix is a
 sampling.py schedule change, not a FF or sampler rewrite.
 
+**Split-schedule validation (commit b89dd51), 2026-04-24:**
+
+| compound | old pred | split pred | expt | split residual |
+|---|---:|---:|---:|---:|
+| methane | −1.85 (M5 Max) | **+2.05** | **+2.00** | **+0.05** ✓ |
+| ethanol | +10.06 (post-sign-fix) | +8.49 | −5.01 | +13.50 |
+
+Hydrophobes: **fully rescued**. Methane 0.05 kcal/mol from expt
+at 11×1000 smoke sampling — a 3.9 kcal/mol fix vs the M5 Max
+run that triggered this investigation.
+
+Polars: **marginally improved** (~1.5 kcal/mol on ethanol), most
+of the overshoot survives. The split schedule closes the water-
+penetration channel but exposes a second polar-specific
+pathology — most likely slow H-bond network equilibration during
+stage B, where waters need to reorient around the partially-
+charged ligand as λ_elec sweeps 0 → 1 with full LJ already on.
+At 1000 production steps per window (1 ps), that reorganisation
+hasn't happened yet.
+
+Test queued autonomously: ethanol at 11×5000 and 11×10000 on the
+split schedule. If residual drops monotonically with sampling
+time, polar is "just slow convergence" — needs the production
+25 000-step budget on GPU. If residual stays flat at ~+13, a
+third bug exists that we haven't found.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
