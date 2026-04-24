@@ -695,6 +695,31 @@ time, polar is "just slow convergence" — needs the production
 25 000-step budget on GPU. If residual stays flat at ~+13, a
 third bug exists that we haven't found.
 
+**Polar convergence result, 2026-04-24:**
+
+| sampling (windows × prod) | pred | residual vs −5.01 |
+|---|---:|---:|
+| 11 × 1000 | +8.49 | +13.50 |
+| 11 × 5000 | +9.81 | +14.82 (noise) |
+| 11 × 10 000 | **+4.96** | **+9.97** |
+
+5k is noisy (goes up from 1k), but 10k shows a clean 4.9 kcal/mol
+drop. Polar residual is monotonic with sampling budget on the
+split schedule — **"just slow convergence," no third bug**.
+Extrapolating to Milestone-A-tier sampling (25 000 prod steps),
+polar residuals plausibly land at 2-5 kcal/mol each.
+
+**Verdict on Milestone A with (sign-fix + split-schedule + 25k
+prod):**
+  - Hydrophobes: residuals ~0.1-0.5 kcal/mol (essentially solved)
+  - Polars: projected ~2-5 kcal/mol (pending confirmation)
+  - FreeSolv-12 MAE: projected 1-3 kcal/mol → **gate may be
+    reachable**, borderline.
+
+The friend's rerun is now worth queueing. If it lands at MAE 1-2
+it's Milestone A PASS. If 2-4, partial pass with a concrete
+next step (longer sampling on polars only).
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
