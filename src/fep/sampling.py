@@ -65,9 +65,67 @@ class AlchemicalSamplingResult:
 
 
 def _default_lambda_schedule(n_windows: int) -> list[float]:
+    """Coupled single-λ schedule (legacy). Deprecated in favour
+    of `_split_lambda_schedule` — see Milestone A post-mortem in
+    BENCHMARKS.md for the water-penetration artifact that motivates
+    the switch."""
     if n_windows < 2:
         n_windows = 2
     return [i / (n_windows - 1) for i in range(n_windows)]
+
+
+def _split_lambda_schedule(
+    n_windows: int,
+) -> list[tuple[float, float]]:
+    """Canonical absolute-hydration FEP schedule: decouple
+    electrostatics first, then sterics. Returns a list of
+    (λ_electrostatics, λ_sterics) tuples indexed 0..n_windows-1
+    where index 0 is the decoupled state (both 0) and index
+    n_windows-1 is the coupled state (both 1).
+
+    Going from coupled (index K-1) to decoupled (index 0):
+      stage A: λ_sterics = 1, λ_electrostatics: 1 → 0
+      stage B: λ_electrostatics = 0, λ_sterics: 1 → 0
+
+    Why split: the openmmtools default of coupling
+    `lambda_electrostatics = lambda_sterics = λ` creates a
+    partially-attractive well at intermediate λ that waters
+    penetrate. This inflates F(decoupled) on polar solutes by
+    4-6 kcal/mol — the root cause of the Milestone A pilot-1
+    ethanol overshoot. Decoupling electrostatics first while
+    keeping full LJ repulsion excludes water from the ligand
+    volume throughout, eliminating the penetration artifact.
+
+    Layout with n_windows=11 (the Milestone A default): 6 elec
+    windows including both endpoints, 5 sterics windows sharing
+    the (elec=0, sterics=1) midpoint so no duplicate state.
+    """
+    if n_windows < 3:
+        n_windows = 3
+    # Split ~half-and-half. With n=11: 6 elec + 5 sterics (the
+    # (elec=0, sterics=1) midpoint belongs to the elec stage).
+    n_elec = (n_windows + 1) // 2     # 6 for n=11
+    n_st = n_windows - n_elec + 1     # 6 for n=11 — but the (0,1)
+                                      # point is shared, so we only
+                                      # emit n_st - 1 = 5 new tuples.
+
+    schedule: list[tuple[float, float]] = []
+    # Sterics stage (index 0 = decoupled both): sterics = 0 → 1
+    # while elec = 0. Yields (0,0), (0,1/(n_st-1)), ..., (0, 1).
+    for i in range(n_st):
+        lam_s = i / (n_st - 1)
+        schedule.append((0.0, lam_s))
+    # Elec stage starts from the shared (elec=0, sterics=1) which
+    # is already at schedule[-1]. Continue from elec=1/(n_elec-1)
+    # through elec=1, all at sterics=1.
+    for i in range(1, n_elec):
+        lam_e = i / (n_elec - 1)
+        schedule.append((lam_e, 1.0))
+    # Sanity: endpoints
+    assert schedule[0] == (0.0, 0.0), schedule[0]
+    assert schedule[-1] == (1.0, 1.0), schedule[-1]
+    assert len(schedule) == n_windows, (len(schedule), n_windows)
+    return schedule
 
 
 def sample_alchemical_windows(
@@ -118,7 +176,10 @@ def sample_alchemical_windows(
         "FEP sampling platform: %s", _chosen_platform or "default")
 
     t0 = time.time()
-    schedule = _default_lambda_schedule(n_windows)
+    # Canonical split schedule: decouple electrostatics first, then
+    # sterics. See Milestone A post-mortem in BENCHMARKS.md for why
+    # the legacy coupled-λ schedule was a water-penetration bug.
+    schedule = _split_lambda_schedule(n_windows)
     result = AlchemicalSamplingResult(
         ok=False, n_windows=n_windows,
         lambda_schedule=schedule)
@@ -138,9 +199,9 @@ def sample_alchemical_windows(
         return result
 
     compound_states = []
-    for lam in schedule:
+    for lam_e, lam_s in schedule:
         alch = AlchemicalState(
-            lambda_electrostatics=lam, lambda_sterics=lam)
+            lambda_electrostatics=lam_e, lambda_sterics=lam_s)
         compound_states.append(
             states.CompoundThermodynamicState(
                 thermodynamic_state=states.ThermodynamicState(
@@ -229,7 +290,7 @@ def sample_alchemical_windows(
     beta = 1.0 / (0.0019872041 * temperature_K)  # 1/(kT) kcal/mol
 
     schedule_order = list(reversed(list(enumerate(schedule))))
-    for k, lam in schedule_order:
+    for k, (lam_e, lam_s) in schedule_order:
         comp_state = compound_states[k]
 
         # Professor's checklist item 3: minimise before each λ
@@ -250,7 +311,8 @@ def sample_alchemical_windows(
             del _mctx, _mi
         except Exception as e:
             logger.warning(
-                "per-λ minimise FAILED at λ=%.2f: %s", lam, e)
+                "per-λ minimise FAILED at λ_e=%.2f λ_s=%.2f: %s",
+                lam_e, lam_s, e)
 
         # Reset the equilibration move's acceptance counter
         # before each window so the per-window statistic is clean.
@@ -269,9 +331,9 @@ def sample_alchemical_windows(
             if sampler_state.box_vectors is not None:
                 _eval_ctx.setPeriodicBoxVectors(
                     *sampler_state.box_vectors)
-            for n, lam_n in enumerate(schedule):
-                _eval_state.lambda_electrostatics = lam_n
-                _eval_state.lambda_sterics = lam_n
+            for n, (lam_en, lam_sn) in enumerate(schedule):
+                _eval_state.lambda_electrostatics = lam_en
+                _eval_state.lambda_sterics = lam_sn
                 _eval_state.apply_to_context(_eval_ctx)
                 U = _eval_ctx.getState(
                     getEnergy=True).getPotentialEnergy(
