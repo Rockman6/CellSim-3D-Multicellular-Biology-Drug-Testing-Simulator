@@ -638,6 +638,37 @@ kcal/mol, the bug is systematic polar-FF. If it overshoots by a
 different amount, compound-specific — which suggests the
 parameter assignment pipeline itself differs per molecule.
 
+**Pattern recognised (2026-04-24 late): uniform +4 to +6 kcal/mol
+bias on the solvent annihilation leg.**
+
+Per Hummer-Szabo, the PHYSICAL dG_ann_water = dG_ann_vac − ΔG_hyd.
+
+| compound | expected dG_ann_water | measured | bias |
+|---|---:|---:|---:|
+| methane | 0 − (+2.00) = **−2.0** | +1.8 (hand-rolled), +2.0 (amber14) | +3.8 to +4.0 |
+| ethanol | +2.5 − (−5.01) = **+7.5** | +13.4 | +5.9 |
+
+Both compounds show POSITIVE bias on solv_r, with magnitude
+scaling weakly with molecular size. For methane the bias flips
+the sign (+1.8 vs expected −2.0); for ethanol it inflates
+magnitude (+13.4 vs expected +7.5) without flipping sign.
+
+This is the textbook signature of **water penetration into the
+softcore region at intermediate λ**. With the openmmtools default
+`lambda_electrostatics = lambda_sterics = λ`, at λ = 0.5 the
+ligand has half-charge AND half-LJ simultaneously. Waters can sit
+inside the partially-attractive well at short distance, which
+inflates F(decoupled) by the cost of these overlap configurations.
+
+The canonical fix is **split-schedule alchemical decoupling**:
+
+  stage 1: λ_electrostatics: 1 → 0  while  λ_sterics = 1
+  stage 2: λ_sterics:        1 → 0  while  λ_electrostatics = 0
+
+This is what yank/perses use. Our code couples them linearly,
+which is the source of the water-penetration artifact. Fix is a
+sampling.py schedule change, not a FF or sampler rewrite.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
