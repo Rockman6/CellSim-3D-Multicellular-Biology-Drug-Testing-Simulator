@@ -196,10 +196,10 @@ jobs:
       - name: bridge — Campaign-1 → Campaign-2 rate-law emitter
         run: python -u tests/bridge/test_binding_to_hill_smoke.py
 
-      - name: fill_prof_email auto-fill regression (9/9)
+      - name: fill_prof_email auto-fill regression (10/10)
         run: python -u tests/fep/test_fill_prof_email_smoke.py
 
-      - name: csv_tldr one-line Slack summariser (9/9)
+      - name: csv_tldr one-line Slack summariser (10/10)
         run: python -u tests/fep/test_csv_tldr_smoke.py
 
       - name: fep sampled binding smoke (opt-in, ~10 min, manual)
