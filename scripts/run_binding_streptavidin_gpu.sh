@@ -43,9 +43,17 @@ conda activate cellsim
 # CSV path). New STAMP per launch but a stable CSV name lets a
 # Ctrl-C'd run resume by re-launching with the same date — see
 # --resume note in the bench section below.
-STAMP=$(date +%Y%m%d_%H%M%S)
-OUT_DIR="run/fep/streptavidin_${STAMP}"
+# Override via env: `OUT_DIR=run/fep/streptavidin_20260523_1234 bash <this>`
+# resumes a crashed run from where it left off via --resume on the
+# bench step below (compounds with non-empty dG_pred_kcalmol are kept).
+if [ -z "${OUT_DIR}" ]; then
+    STAMP=$(date +%Y%m%d_%H%M%S)
+    OUT_DIR="run/fep/streptavidin_${STAMP}"
+fi
 mkdir -p "${OUT_DIR}"
+if [ -f "${OUT_DIR}/streptavidin_results.csv" ]; then
+    echo "[run_binding] resuming from existing CSV in ${OUT_DIR}"
+fi
 CSV="${OUT_DIR}/streptavidin_results.csv"
 
 # Header block — mirror to env.log so `cellsim fep-report` extracts
