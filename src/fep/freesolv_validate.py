@@ -98,6 +98,73 @@ class FreeSolvResult:
         return asdict(self)
 
 
+_CSV_COLS = [
+    "name", "smiles", "dG_expt_kcalmol",
+    "dG_pred_kcalmol", "uncertainty_kcalmol",
+    "residual_kcalmol", "ghmc_accept_mean",
+    "ghmc_accept_min", "wall_seconds", "ok", "reason",
+]
+
+
+def _write_csv(csv_path: Path, entries: list) -> None:
+    """Atomic CSV write: write to a .tmp sibling, then rename. Avoids
+    leaving a half-written file if the process is killed mid-write."""
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = csv_path.with_suffix(csv_path.suffix + ".tmp")
+    with tmp.open("w", newline="", encoding="utf-8-sig") as fo:
+        w = csv.DictWriter(fo, fieldnames=_CSV_COLS,
+                           extrasaction="ignore")
+        w.writeheader()
+        for p in entries:
+            w.writerow({k: getattr(p, k, "") for k in _CSV_COLS})
+    tmp.replace(csv_path)
+
+
+def _load_resume_rows(csv_path: Path) -> tuple[list, set]:
+    """Load previously-completed FreeSolvPoint rows from a partial
+    CSV. Returns (rows, names_completed). Used by --resume so a
+    crashed multi-day CPU run picks up where it left off without
+    re-doing compounds with non-empty dG_pred_kcalmol."""
+    rows: list = []
+    names: set = set()
+    if not csv_path.exists():
+        return rows, names
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as fi:
+        reader = csv.DictReader(fi)
+        for r in reader:
+            pred = (r.get("dG_pred_kcalmol") or "").strip()
+            if not pred or pred == "None":
+                # Compound was attempted but didn't complete; re-run
+                # it fresh by not adding to names_completed.
+                continue
+            def _f(key):
+                v = (r.get(key) or "").strip()
+                if not v or v == "None":
+                    return None
+                try:
+                    return float(v)
+                except ValueError:
+                    return None
+            p = FreeSolvPoint(
+                name=r.get("name", "").strip(),
+                smiles=r.get("smiles", "").strip(),
+                dG_expt_kcalmol=float(
+                    r.get("dG_expt_kcalmol") or "nan"),
+                dG_pred_kcalmol=_f("dG_pred_kcalmol"),
+                uncertainty_kcalmol=_f("uncertainty_kcalmol"),
+                residual_kcalmol=_f("residual_kcalmol"),
+                wall_seconds=_f("wall_seconds"),
+                ok=((r.get("ok", "") or "").strip().lower()
+                    in ("true", "1", "yes")),
+                reason=r.get("reason", "").strip(),
+                ghmc_accept_mean=_f("ghmc_accept_mean"),
+                ghmc_accept_min=_f("ghmc_accept_min"),
+            )
+            rows.append(p)
+            names.add(p.name)
+    return rows, names
+
+
 def run_freesolv_validation(
     yaml_path: str | Path,
     *,
@@ -106,8 +173,22 @@ def run_freesolv_validation(
     n_equilibration_steps: int = 2500,
     sample_stride: int = 250,
     seed: int = 1,
+    out_csv: Optional[Path] = None,
+    resume: bool = False,
 ) -> FreeSolvResult:
-    """Run the FreeSolv subset and compute MAE + correlations."""
+    """Run the FreeSolv subset and compute MAE + correlations.
+
+    If `out_csv` is provided, the CSV is written **after every
+    compound completes** (not just at the end), so a 30+ hour CPU
+    run that dies mid-way leaves all completed compounds intact for
+    the next `--resume` invocation. The legacy main() also writes a
+    final summary CSV when out_csv is given.
+
+    If `resume=True` and `out_csv` exists, compounds with a non-
+    empty `dG_pred_kcalmol` in that file are kept and skipped in
+    the bench loop. Mid-compound crashes (no pred written) re-run
+    cleanly because only completed rows are loaded.
+    """
     import yaml as pyyaml
     import numpy as np
 
@@ -117,7 +198,18 @@ def run_freesolv_validation(
     result = FreeSolvResult(yaml_path=str(yaml_path))
     t0 = time.time()
 
+    completed_names: set = set()
+    if resume and out_csv:
+        prior_rows, completed_names = _load_resume_rows(out_csv)
+        result.entries.extend(prior_rows)
+        if completed_names:
+            print(f"[freesolv] --resume: {len(completed_names)} "
+                  f"compound(s) already in {out_csv}, skipping: "
+                  f"{sorted(completed_names)}", flush=True)
+
     for entry in data.get("entries", []):
+        if entry["name"] in completed_names:
+            continue
         p = FreeSolvPoint(
             name=entry["name"],
             smiles=entry["smiles"],
@@ -160,6 +252,16 @@ def run_freesolv_validation(
             p.reason = r.reason
             print(f"  FAIL: {r.reason}", flush=True)
         result.entries.append(p)
+        # Atomic incremental write — if a multi-day CPU run dies
+        # mid-loop (lid close / kernel panic / power), every
+        # completed compound survives in the CSV for --resume.
+        if out_csv:
+            try:
+                _write_csv(out_csv, result.entries)
+            except OSError as e:
+                logger.warning(
+                    "incremental CSV write failed: %s "
+                    "(continuing run)", e)
 
     result.n_total = len(result.entries)
     ok = [p for p in result.entries if p.ok]
@@ -197,7 +299,15 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--sample-stride", type=int, default=250)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--out-csv", type=Path, default=None,
-                    help="write per-compound results as CSV")
+                    help="write per-compound results as CSV "
+                         "(written incrementally after each "
+                         "compound, so a crashed run preserves "
+                         "completed compounds for --resume)")
+    ap.add_argument("--resume", action="store_true",
+                    help="if --out-csv exists, skip compounds "
+                         "with a non-empty dG_pred_kcalmol already "
+                         "in it. For restarting a crashed multi-day "
+                         "CPU run without losing completed work.")
     args = ap.parse_args(argv)
 
     r = run_freesolv_validation(
@@ -205,22 +315,17 @@ def main(argv: Optional[list] = None) -> int:
         n_windows=args.n_windows,
         n_production_steps=args.production_steps,
         n_equilibration_steps=args.equilibration_steps,
-        sample_stride=args.sample_stride, seed=args.seed)
+        sample_stride=args.sample_stride, seed=args.seed,
+        out_csv=args.out_csv, resume=args.resume)
     print()
     print(r.summary())
     if args.out_csv:
-        args.out_csv.parent.mkdir(parents=True, exist_ok=True)
-        cols = ["name", "smiles", "dG_expt_kcalmol",
-                "dG_pred_kcalmol", "uncertainty_kcalmol",
-                "residual_kcalmol", "ghmc_accept_mean",
-                "ghmc_accept_min", "wall_seconds", "ok", "reason"]
-        with args.out_csv.open(
-                "w", newline="", encoding="utf-8-sig") as fo:
-            w = csv.DictWriter(
-                fo, fieldnames=cols, extrasaction="ignore")
-            w.writeheader()
-            for p in r.entries:
-                w.writerow({k: getattr(p, k, "") for k in cols})
+        # Final write — same atomic helper. Idempotent with the
+        # per-compound incremental writes above; this ensures the
+        # last row reaches the file even if the loop body's writer
+        # didn't run for the last compound (e.g. all skipped via
+        # --resume).
+        _write_csv(args.out_csv, r.entries)
         print(f"\nwrote {args.out_csv}")
 
     if r.mae_kcalmol is not None and r.mae_kcalmol <= 1.5:
