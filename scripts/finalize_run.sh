@@ -36,21 +36,44 @@ if [ -z "${CSV_PATH}" ]; then
 fi
 
 # Auto-detect hardware from env.log so the prof email isn't lying
-# about M5 Max when the run was on CPU laptop.
-HW_DEFAULT="rented GPU"
-PLAT_DEFAULT="CUDA"
+# about M5 Max when the run was on CPU laptop. Detect rules:
+#
+# - HW string: derive a short friendly label from the `machine:` line
+#   ("Apple MacBook Pro" / "Apple Mac" / "Linux node"), NOT the full
+#   uname spew which truncates ugly in the email.
+# - Platform: scan the run.log for "FEP sampling platform: <NAME>"
+#   which is what the pipeline ACTUALLY selected. Fall back to the
+#   env.log "Available platforms" block (selecting the fastest-listed
+#   real backend), never the "Pipeline will prefer" preference line
+#   (which lists Metal / OpenCL even on builds that don't have them).
+HW_DEFAULT="unspecified host"
+PLAT_DEFAULT="unspecified"
 if [ -f "${RUN_DIR}/env.log" ]; then
-    if grep -q "MacBook Pro\|M-series\|MacBook" "${RUN_DIR}/env.log"; then
-        HW_DEFAULT="$(grep -m1 '^  machine:' "${RUN_DIR}/env.log" | sed 's|^  machine: *||' | head -1)"
-        HW_DEFAULT="${HW_DEFAULT:0:80}"   # truncate uname spew
+    MACHINE_LINE="$(grep -m1 '^  machine:' "${RUN_DIR}/env.log" || true)"
+    if echo "${MACHINE_LINE}" | grep -q "MacBook Pro"; then
+        HW_DEFAULT="Apple MacBook Pro"
+    elif echo "${MACHINE_LINE}" | grep -qi "Darwin.*arm64"; then
+        HW_DEFAULT="Apple Silicon Mac"
+    elif echo "${MACHINE_LINE}" | grep -qi "Linux"; then
+        HW_DEFAULT="Linux node"
     fi
-    if grep -q "Metal" "${RUN_DIR}/env.log"; then
-        PLAT_DEFAULT="Metal"
-    elif grep -q "OpenCL" "${RUN_DIR}/env.log"; then
-        PLAT_DEFAULT="OpenCL"
-    elif grep -q "CPU (speed" "${RUN_DIR}/env.log"; then
-        PLAT_DEFAULT="CPU"
+fi
+if [ -f "${RUN_DIR}/run.log" ] && grep -q "FEP sampling platform:" "${RUN_DIR}/run.log"; then
+    PLAT_DEFAULT="$(grep -m1 'FEP sampling platform:' "${RUN_DIR}/run.log" | sed -E 's|.*FEP sampling platform:[[:space:]]+([A-Za-z]+).*|\1|')"
+elif [ -f "${RUN_DIR}/env.log" ]; then
+    # Parse the "Available platforms" block, take the highest-speed
+    # non-Reference entry (Reference is OpenMM's "always present
+    # baseline" and is never selected by the pipeline unless it's
+    # the only option). Use sed instead of gawk-only match() so this
+    # works under macOS / BSD awk.
+    AVAIL=$(awk '/Available OpenMM platforms/,/Pipeline will prefer/' "${RUN_DIR}/env.log" \
+            | sed -nE 's/.*[[:space:]]+([A-Za-z]+) \(speed ([0-9.]+)\).*/\2 \1/p' \
+            | grep -vE " Reference$" \
+            | sort -nr | head -1 | awk '{print $2}')
+    if [ -z "${AVAIL}" ]; then
+        AVAIL="Reference"   # truly no other backend available
     fi
+    PLAT_DEFAULT="${AVAIL}"
 fi
 
 PROF_NAME="[Prof]"
