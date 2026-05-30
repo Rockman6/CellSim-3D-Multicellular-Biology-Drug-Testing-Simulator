@@ -47,7 +47,8 @@ run. Results below.
 
 == What ran ==
 
-- Hardware: {hardware_hint} (OpenMM {platform_hint} backend)
+- Hardware: {hardware_hint}
+- OpenMM platform: {platform_hint}
 - Force field: OpenFF Sage 2.1.0 (small molecules) + AM1-BCC partial
   charges + TIP3P water — no learned surrogate at any layer
 - MD: openmmtools.alchemy + GHMC integrator (Metropolised Langevin),
