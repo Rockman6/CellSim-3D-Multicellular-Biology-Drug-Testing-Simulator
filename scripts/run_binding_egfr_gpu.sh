@@ -48,7 +48,7 @@ conda activate cellsim
 # Override via env: `OUT_DIR=run/fep/egfr_20260523_1234 bash <this>`
 # resumes a crashed run via --resume on the bench step below
 # (compounds with non-empty dG_pred_kcalmol are kept).
-if [ -z "${OUT_DIR}" ]; then
+if [ -z "${OUT_DIR:-}" ]; then
     STAMP=$(date +%Y%m%d_%H%M%S)
     OUT_DIR="run/fep/egfr_${STAMP}"
 fi

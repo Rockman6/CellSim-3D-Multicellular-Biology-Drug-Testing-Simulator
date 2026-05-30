@@ -46,7 +46,7 @@ conda activate cellsim
 # Override via env: `OUT_DIR=run/fep/streptavidin_20260523_1234 bash <this>`
 # resumes a crashed run from where it left off via --resume on the
 # bench step below (compounds with non-empty dG_pred_kcalmol are kept).
-if [ -z "${OUT_DIR}" ]; then
+if [ -z "${OUT_DIR:-}" ]; then
     STAMP=$(date +%Y%m%d_%H%M%S)
     OUT_DIR="run/fep/streptavidin_${STAMP}"
 fi
