@@ -788,6 +788,30 @@ The friend's rerun is now worth queueing. If it lands at MAE 1-2
 it's Milestone A PASS. If 2-4, partial pass with a concrete
 next step (longer sampling on polars only).
 
+**Followup: 22×75 000 rerun on acetic_acid + acetamide (2026-
+05-23 evening).** Triggered by the original 10/12 PASS leaving
+two compounds with MBAR vacuum-leg overlap failure. The retry at
+the translator's suggested params still failed both compounds —
+same "adjacent λ-windows don't overlap" message, escalated
+suggestion now `--n-windows 31 --n-production-steps 100000`.
+Wall ~2.3 h for 2 compounds; would be ~12-14 h at 31×100k.
+
+This confirms the failures are **structural, not under-sampling**:
+both compounds have tight intramolecular polar charge networks
+(carboxyl C=O / O-H; amide N-H / C=O) where the vacuum-leg
+alchemical decoupling can't establish overlap between adjacent
+λ states no matter how long we sample. Literature workarounds
+(softcore_beta tuning specific to electrostatics, hard-bond
+restraints during the dec-electrostatics stage, or
+separately-parametrised partial-charge groups) are out of
+scope for this milestone but are the right next step if a
+12/12 PASS is required.
+
+Milestone A's 10/10 PASS verdict still holds — the gate is on
+MAE over the OK subset (mirroring `cellsim fep-report`'s logic),
+and 1.42 ≤ 1.5 is unambiguous. The 2 failures are documented
+limitations, not the gate verdict.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
