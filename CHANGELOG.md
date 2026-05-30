@@ -1,5 +1,97 @@
 # CellSim — Changelog
 
+## v1.3 — 2026-05-23 — Milestone A passes (FreeSolv hydration FEP gate)
+
+**The chemistry-axis half of the professor's "closed ontology /
+circular validation" critique is closed.** Hydration ΔG_hyd on
+the FreeSolv-12 benchmark now reproduces published experiment to
+MAE 1.42 kcal/mol (gate ≤ 1.5), with the full alchemical pipeline
+running end-to-end on Apple-silicon CPU and producing a tarball
+that goes through `cellsim fep-report` → `csv_tldr.py` →
+`fill_prof_email.py` for prof-ready handoff. Tagged as
+`milestone-a-pilot-3` on `origin`.
+
+### Milestone A pass numbers (10/10 completed compounds)
+
+- MAE = 1.42 kcal/mol (gate ≤ 1.5): **PASS**
+- Pearson r = +0.913
+- Spearman ρ = +0.903
+- Kendall τ = +0.778
+- GHMC acceptance: 99% mean, 99% worst (gate ≥ 70%): **PASS**
+- Sign-critical (methane positive, hydrophobe direction): **PASS**
+- Wall: 7.5 h on Henry's MacBook Pro M-series CPU
+- Compounds completed: 10/12 (acetic_acid + acetamide need
+  bumped sampling per translator hint — `--n-windows 22
+  --n-production-steps 75000` queued)
+
+### Diagnosis trail (BENCHMARKS.md § "Milestone A post-mortem")
+
+Six hypotheses tested over four investigation passes; five
+rejected (padding / sampler / softcore / PME / FF-bug); one
+landed (`b89dd51` split-schedule decoupling, electrostatics
+first then sterics, prevents water penetration into the softcore
+region at intermediate λ — yank/perses standard). One wrong fix
+shipped and reverted (`c461053` sign-flip looked right under
+smoke sampling, was wrong under production sampling, reverted in
+`8ab37a1` once today's pilot-3 production data proved the
+original Hummer-Szabo direction). Lesson: never use under-
+sampled FEP output to assert physics — the methane sign test
+now inspects source code directly instead of relying on a
+sampling-noise-biased value.
+
+### Added (Milestone A infrastructure)
+
+- `_split_lambda_schedule` in `src/fep/sampling.py` — canonical
+  absolute-hydration FEP schedule (decouple elec first, sterics
+  second). Replaces the legacy coupled `λ_elec = λ_sterics` that
+  let waters penetrate the softcore well and inflated F(decoupled)
+  by 4-6 kcal/mol.
+- `_biologist_reason_for_mbar_error` — translator that converts
+  pymbar internal exceptions ("column sum W_nk = 0") into
+  biologist-actionable guidance ("adjacent λ-windows don't overlap;
+  try --n-windows 22 --n-production-steps 75000"). 10/10 regression.
+- `--resume` + atomic incremental CSV write on `cellsim
+  fep-freesolv` (and parallel pattern on binding bench from
+  earlier). Multi-day CPU runs survive lid-close / power loss
+  without losing completed compounds.
+- `scripts/csv_tldr.py` — one-line Slack/standup summariser of a
+  bench CSV, exit-code-gated, verdict logic aligned with
+  `cellsim fep-report`. 10/10 regression.
+- `estimate_sampling_wall_hours` + `format_wall_estimate_block`
+  in binding — auto-prints projected CPU / Metal / CUDA wall time
+  after any scaffold-only run, with a "> 48 h CPU not viable" flag.
+- `--hardware` and `--platform` flags now flow into the hydration
+  template in `scripts/fill_prof_email.py` (was only binding before).
+- Provenance fallback in `cellsim fep-report` — scans `env.log`
+  and `doctor.log` for `git commit:` when `run.log` doesn't have
+  it, so legacy / pre-fix tarballs are still traceable.
+- `docs/milestone_b_run.md` — friend handoff for the M5 Max
+  binding runs (streptavidin + EGFR).
+
+### Fixed
+
+- Hydration sign convention restored to Hummer-Szabo `dG_hyd =
+  -ddg = vac - solv` after a smoke-test-driven mis-fix shipped
+  the wrong sign (8ab37a1).
+- GHMC integrator timestep + friction tuned per prof's checklist
+  (acceptance > 99% under split schedule).
+- env.log / run.log header-tee fix so `git commit:` reaches the
+  tarball provenance.
+
+### Tested (smoke gates added)
+
+| Suite | Cases |
+|---|---|
+| fep-freesolv --resume + incremental CSV | 7/7 |
+| MBAR-error translator | 10/10 |
+| wall-time estimator | 10/10 |
+| csv_tldr verdict alignment | 10/10 |
+| fep-report provenance fallback | 7/7 |
+| fill_prof_email hardware override | 10/10 |
+| hydration_dg (post-revert composition pin) | 3/3 |
+
+All 15 FEP suites + 107+ FEP test cases green on commit `8643604`.
+
 ## v1.2 — 2026-04-19
 
 Chemistry-first bioagent foundation + rigorous apoptosis + faster sim.

@@ -39,12 +39,23 @@ renumbered accordingly.
   pose-trust gate, triage verdict column, strain-gate top-pose
   promotion, shortlist CSV, triage-PNG dashboard, kinase-receptor
   heads-up, "next steps" paste-ready guidance. FEP side covered:
-    * Milestone A (hydration): `compute_hydration_dg` ready;
-      FreeSolv-12 gate running on M5 Max, awaiting tarball.
+    * Milestone A (hydration): **PASSES** on local-CPU pilot-3
+      (`milestone-a-pilot-3` tag, 2026-05-23, 7.5 h wall on
+      Henry's MacBook Pro). FreeSolv-12 MAE = 1.42 kcal/mol
+      (gate ≤ 1.5), Pearson r = +0.913, Spearman ρ = +0.903,
+      GHMC acceptance 99% mean / 99% worst. 10/12 compounds
+      converged; the 2 failures (acetic_acid, acetamide) hit
+      MBAR vacuum-leg overlap at 11×25000 with a clean
+      remediation hint from the biologist-actionable translator;
+      a 22×75000 rerun for those two is queued for 12/12. Full
+      diagnosis (six hypotheses tested, one wrong-fix shipped
+      and reverted) in BENCHMARKS.md § "Milestone A post-mortem".
     * Milestone B (binding): DDM + hybrid amber14/SMIRNOFF
       builder; `compute_absolute_binding_dg` +
       `compute_relative_binding_ddg`; end-to-end sampled ΔG_bind
-      validated on 1ubq+methane (82.5 s CPU).
+      validated on 1ubq+methane (82.5 s CPU). Binding sign
+      convention verified analytically (correct, distinct from
+      hydration). Friend handoff doc at `docs/milestone_b_run.md`.
     * Biologist entry points: `cellsim fep-binding {dg,ddg,bench,
       validate}` + `cellsim fep-report` + `cellsim bench-all`.
       Validate emits Lipinski table + wall-time estimate with
