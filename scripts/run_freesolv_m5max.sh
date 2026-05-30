@@ -34,10 +34,18 @@ fi
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate cellsim
 
-# Output dir, timestamped so repeat runs don't collide
-STAMP=$(date +%Y%m%d_%H%M%S)
-OUT_DIR="run/fep/${STAMP}"
+# Output dir, timestamped so repeat runs don't collide. Override
+# via env: `OUT_DIR=run/fep/20260523_100401 bash <this>` resumes
+# a crashed run from where it left off (any compound with a
+# non-empty dG_pred_kcalmol in freesolv_results.csv is skipped).
+if [ -z "${OUT_DIR}" ]; then
+    STAMP=$(date +%Y%m%d_%H%M%S)
+    OUT_DIR="run/fep/${STAMP}"
+fi
 mkdir -p "${OUT_DIR}"
+if [ -f "${OUT_DIR}/freesolv_results.csv" ]; then
+    echo "[run_freesolv] resuming from existing CSV in ${OUT_DIR}"
+fi
 
 # Header block — mirror to env.log so `cellsim fep-report` can
 # extract the `git commit:` line for provenance. Earlier versions
@@ -103,7 +111,8 @@ time ./scripts/cellsim fep-freesolv \
     --equilibration-steps 5000 \
     --sample-stride 250 \
     --out-csv "${OUT_DIR}/freesolv_results.csv" \
-    2>&1 | tee "${OUT_DIR}/run.log"
+    --resume \
+    2>&1 | tee -a "${OUT_DIR}/run.log"
 
 EXIT_CODE=${PIPESTATUS[0]}
 
