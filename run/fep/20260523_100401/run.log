@@ -1,0 +1,106 @@
+[freesolv] methane  C
+Warning on use of the timeseries module: If the inherent timescales of the system are long compared to those being analyzed, this statistical inefficiency may be an underestimate.  The estimate presumes the use of many statistically independent samples.  Tests should be performed to assess whether this condition is satisfied.   Be cautious in the interpretation of the data.
+
+****** PyMBAR will use 64-bit JAX! *******
+* JAX is currently set to 32-bit bitsize *
+* which is its default.                  *
+*                                        *
+* PyMBAR requires 64-bit mode and WILL   *
+* enable JAX's 64-bit mode when called.  *
+*                                        *
+* This MAY cause problems with other     *
+* Uses of JAX in the same code.          *
+******************************************
+
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+
+******* JAX 64-bit mode is now on! *******
+*     JAX is now set to 64-bit mode!     *
+*   This MAY cause problems with other   *
+*      uses of JAX in the same code.     *
+******************************************
+
+  pred = -1.78  expt = +2.00  resid = -3.78  GHMC mean=99% min=99%
+[freesolv] ethane  CC
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = -0.25  expt = +1.83  resid = -2.08  GHMC mean=99% min=99%
+[freesolv] propane  CCC
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = -0.37  expt = +1.95  resid = -2.32  GHMC mean=99% min=99%
+[freesolv] benzene  c1ccccc1
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = +2.81  expt = -0.87  resid = +3.68  GHMC mean=99% min=99%
+[freesolv] toluene  Cc1ccccc1
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = +4.63  expt = -0.90  resid = +5.53  GHMC mean=99% min=99%
+[freesolv] methanol  CO
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = +4.87  expt = -5.11  resid = +9.98  GHMC mean=99% min=99%
+[freesolv] ethanol  CCO
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = +6.16  expt = -5.01  resid = +11.17  GHMC mean=99% min=99%
+[freesolv] ammonia  N
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+  pred = +4.40  expt = -4.30  resid = +8.70  GHMC mean=99% min=99%
+[freesolv] methylamine  CN
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+Failed to reach a solution to within tolerance with hybr: trying next method
+  pred = +5.09  expt = -4.56  resid = +9.65  GHMC mean=99% min=99%
+[freesolv] pyridine  c1ccncc1
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+Failed to reach a solution to within tolerance with hybr: trying next method
+Failed to reach a solution to within tolerance with hybr: trying next method
+  pred = +7.78  expt = -4.70  resid = +12.48  GHMC mean=99% min=99%
+[freesolv] acetic_acid  CC(=O)O
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+Failed to reach a solution to within tolerance with hybr: trying next method
+WARNING: Did not converge to within specified tolerance.
+max_delta = 0.000000e+00, tol = 1.000000e-12, maximum_iterations = 10000, iterations completed = 9999
+Failed to reach a solution to within tolerance with adaptive: trying next method
+No solution found to within tolerance.
+The solution with the smallest gradient 2.449490e+02 norm is hybr
+Please exercise caution with this solution and consider alternative methods or a different tolerance.
+  FAIL: vacuum leg failed: adjacent λ-windows don't overlap — sampling was insufficient for MBAR to reweight between states. This is common for tight binders (|ΔG| > 10 kcal/mol) at smoke-tier parameters. → try --n-windows 22 --n-production-steps 75000 (Milestone-A-tier sampling; GPU recommended)
+[freesolv] acetamide  CC(=O)N
+/opt/homebrew/Caskroom/miniforge/base/envs/cellsim/lib/python3.11/site-packages/openff/interchange/components/interchange.py:1119: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  if isinstance(obj, functools._lru_cache_wrapper) and obj.__module__.startswith("openff.interchange"):
+Failed to reach a solution to within tolerance with hybr: trying next method
+WARNING: Did not converge to within specified tolerance.
+max_delta = 0.000000e+00, tol = 1.000000e-12, maximum_iterations = 10000, iterations completed = 9999
+Failed to reach a solution to within tolerance with adaptive: trying next method
+No solution found to within tolerance.
+The solution with the smallest gradient 2.449490e+02 norm is hybr
+Please exercise caution with this solution and consider alternative methods or a different tolerance.
+  FAIL: vacuum leg failed: adjacent λ-windows don't overlap — sampling was insufficient for MBAR to reweight between states. This is common for tight binders (|ΔG| > 10 kcal/mol) at smoke-tier parameters. → try --n-windows 22 --n-production-steps 75000 (Milestone-A-tier sampling; GPU recommended)
+
+[FreeSolv validation]  benchmarks/fep/freesolv_12.yaml
+  n = 12  ok = 10  wall = 27093.2 s
+  MAE = 6.94 kcal/mol  (Milestone A gate ≤ 1.5 → ✗ FAIL)
+  RMSE = 7.86 kcal/mol
+  Pearson r = -0.913
+  Spearman ρ = -0.903
+    methane             expt=+2.00  pred=-1.78  resid=-3.78  (4290.8 s)
+    ethane              expt=+1.83  pred=-0.25  resid=-2.08  (2772.2 s)
+    propane             expt=+1.95  pred=-0.37  resid=-2.32  (1862.1 s)
+    benzene             expt=-0.87  pred=+2.81  resid=+3.68  (2394.6 s)
+    toluene             expt=-0.90  pred=+4.63  resid=+5.53  (3786.8 s)
+    methanol            expt=-5.11  pred=+4.87  resid=+9.98  (2527.6 s)
+    ethanol             expt=-5.01  pred=+6.16  resid=+11.17  (2205.4 s)
+    ammonia             expt=-4.30  pred=+4.40  resid=+8.70  (2258.4 s)
+    methylamine         expt=-4.56  pred=+5.09  resid=+9.65  (1712.2 s)
+    pyridine            expt=-4.70  pred=+7.78  resid=+12.48  (1812.3 s)
+  ! acetic_acid        FAIL: vacuum leg failed: adjacent λ-windows don't overlap — sampling was insufficient for MBAR to reweight between states. This is common for tight binders (|ΔG| > 10 kcal/mol) at smoke-tier parameters. → try --n-windows 22 --n-production-steps 75000 (Milestone-A-tier sampling; GPU recommended)
+  ! acetamide          FAIL: vacuum leg failed: adjacent λ-windows don't overlap — sampling was insufficient for MBAR to reweight between states. This is common for tight binders (|ΔG| > 10 kcal/mol) at smoke-tier parameters. → try --n-windows 22 --n-production-steps 75000 (Milestone-A-tier sampling; GPU recommended)
+
+wrote run/fep/20260523_100401/freesolv_results.csv

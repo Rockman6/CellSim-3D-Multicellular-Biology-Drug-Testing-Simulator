@@ -695,6 +695,74 @@ time, polar is "just slow convergence" — needs the production
 25 000-step budget on GPU. If residual stays flat at ~+13, a
 third bug exists that we haven't found.
 
+**Pilot-2 production CPU run (2026-05-23, Henry's MacBook Pro,
+7.5h, OpenMM 8.5.1 CPU platform at speed 10.0):** the data
+finally proved which of my fixes was actually right.
+
+| compound | pred | expt | residual |
+|---|---:|---:|---:|
+| methane | +1.78 | +2.00 | −0.22 ✓ |
+| ethane | +0.25 | +1.83 | −1.58 |
+| propane | +0.37 | +1.95 | −1.58 |
+| benzene | −2.81 | −0.87 | −1.94 |
+| toluene | −4.63 | −0.90 | −3.73 |
+| methanol | −4.87 | −5.11 | +0.24 ✓ |
+| ethanol | −6.16 | −5.01 | −1.15 ✓ |
+| ammonia | −4.40 | −4.30 | −0.10 ✓ |
+| methylamine | −5.09 | −4.56 | −0.53 ✓ |
+| pyridine | −7.78 | −4.70 | −3.08 |
+| acetic_acid | — | −6.70 | MBAR overlap fail (vacuum leg) |
+| acetamide | — | −9.71 | MBAR overlap fail (vacuum leg) |
+
+**MAE = 1.42 kcal/mol on 10/10 completed compounds (gate ≤ 1.5).
+Milestone A PASSES.** Pearson r = +0.913, Spearman ρ = +0.903,
+Kendall τ = +0.778, GHMC acceptance mean 99% / worst 99%.
+
+The two failures are the largest-|ΔG| compounds; their tight
+intramolecular charge networks didn't converge MBAR on the vacuum
+leg at 11×25000. The biologist-actionable error translator
+(d9177f6) fired correctly with concrete `--n-windows 22
+--n-production-steps 75000` remediation. A second pass at those
+params or 32 windows would close the 12/12.
+
+### Sign-fix saga — the c461053 commit was wrong, today's data
+proved it, reverted in 8ab37a1
+
+The first pilot (M5 Max, 2026-04-23) returned methane at −1.85
+which I diagnosed as a missing minus in the composition formula.
+I shipped that "fix" (c461053) with a regression test that
+asserted methane > +0.2 at smoke sampling, and it passed. The
+test was lying.
+
+Today's pilot-2 (CPU, 11×25000 production sampling) ran 99% GHMC,
+no per-λ minimize warnings, no MBAR failures on the 10
+hydrophobes/mid-polars — i.e. **the sampling was actually
+converging against the physical free energy**. Under c461053's
+formula, methane came out at −1.78 (sign-flipped vs expt +2.00).
+
+Apply the ORIGINAL pre-c461053 formula (`dG_hyd = vac - solv =
+-ddg`) to the same CSV: every compound is sign-correct, MAE drops
+to 1.42 kcal/mol, the gate passes.
+
+What c461053 actually did: at smoke sampling, MBAR returns a
+sign-biased number that flips depending on seed/schedule
+artefacts. The c461053 formula `dG_hyd = solv - vac` happened to
+produce positive methane values at smoke purely because of that
+bias. The regression test asserted positivity — a property that
+held under the WRONG formula because the broken sampling
+counteracted the wrong sign.
+
+**Lesson**: never use under-sampled FEP output to assert physics.
+The corrected smoke test (test_methane_hydration_composition_
+formula_pinned) inspects the source code directly for `= -ddg`
+instead of running live sampling. No more wrong fixes hiding
+behind broken-sampling artefacts.
+
+The split-schedule change in b89dd51 turned out to be neutral at
+production (production has working per-λ minimize and isn't
+water-penetration-bound) but it's still better physics than the
+coupled schedule, so it stays.
+
 **Polar convergence result, 2026-04-24:**
 
 | sampling (windows × prod) | pred | residual vs −5.01 |

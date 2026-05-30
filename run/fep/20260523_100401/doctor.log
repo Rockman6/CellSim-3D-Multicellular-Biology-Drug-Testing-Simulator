@@ -1,0 +1,76 @@
+Warning on use of the timeseries module: If the inherent timescales of the system are long compared to those being analyzed, this statistical inefficiency may be an underestimate.  The estimate presumes the use of many statistically independent samples.  Tests should be performed to assess whether this condition is satisfied.   Be cautious in the interpretation of the data.
+
+****** PyMBAR will use 64-bit JAX! *******
+* JAX is currently set to 32-bit bitsize *
+* which is its default.                  *
+*                                        *
+* PyMBAR requires 64-bit mode and WILL   *
+* enable JAX's 64-bit mode when called.  *
+*                                        *
+* This MAY cause problems with other     *
+* Uses of JAX in the same code.          *
+******************************************
+
+Reaction field support is still experimental. For free energy calculations in explicit solvent, we suggest using PME for now.
+
+  cellsim doctor
+  ────────────────────────────────────────────────────────────
+
+  1. conda env
+  [92m✓[0m  CONDA_PREFIX set
+  [92m✓[0m  AMBERHOME set (needed for AM1-BCC charges)
+  [90m·  prefix: /opt/homebrew/Caskroom/miniforge/base/envs/cellsim[0m
+
+  2. Python packages
+  [92m✓[0m  rdkit              2025.09.5
+  [92m✓[0m  openmm             8.5.1
+  [92m✓[0m  openff.toolkit     0.18.0
+  [92m✓[0m  pdbfixer           ?
+  [92m✓[0m  vina               1.2.5
+  [92m✓[0m  meeko              0.7.1
+  [92m✓[0m  posebusters        0.6.5
+  [92m✓[0m  xtb-python         20.2
+  [92m✓[0m  SALib              ?
+  [92m✓[0m  pyscf              2.11.0
+  [92m✓[0m  numpy              1.26.4
+  [92m✓[0m  scipy              1.17.1
+
+  3. CLI binaries
+  [92m✓[0m  vina                           /opt/homebrew/Caskroom/miniforge/base/envs/cellsim/bin/vina
+  [92m✓[0m  xtb                            /opt/homebrew/Caskroom/miniforge/base/envs/cellsim/bin/xtb
+  [92m✓[0m  fpocket                        /opt/homebrew/Caskroom/miniforge/base/envs/cellsim/bin/fpocket
+  [92m✓[0m  antechamber                    /opt/homebrew/Caskroom/miniforge/base/envs/cellsim/bin/antechamber
+  [92m✓[0m  mk_prepare_receptor.py         /opt/homebrew/Caskroom/miniforge/base/envs/cellsim/bin/mk_prepare_receptor.py
+
+  4. Bundled benchmarks
+  [92m✓[0m  benchmarks/chembl/smoke_10.smi           (490 B)
+  [92m✓[0m  benchmarks/md/1ubq.pdb                   (78570 B)
+  [92m✓[0m  benchmarks/dock/1stp.pdb                 (117855 B)
+  [92m✓[0m  benchmarks/dock/1m17.pdb                 (252720 B)
+  [92m✓[0m  benchmarks/dock/3ptb.pdb                 (183384 B)
+  [92m✓[0m  benchmarks/dock/1tqn.pdb                 (369036 B)
+  [92m✓[0m  benchmarks/dock/1stp_batch_5.smi         (415 B)
+  [92m✓[0m  benchmarks/chembl/demo.sdf               (11113 B)
+  [92m✓[0m  benchmarks/dock/mini_bench.yaml          (2346 B)
+  [92m✓[0m  benchmarks/dock/streptavidin_calibration.yaml (1987 B)
+  [92m✓[0m  benchmarks/dock/trypsin_calibration.yaml (1960 B)
+  [92m✓[0m  benchmarks/dock/egfr_calibration.yaml    (3424 B)
+  [92m✓[0m  benchmarks/quantum/cyp3a4_som_validation.yaml (2011 B)
+  [92m✓[0m  benchmarks/fep/freesolv_12.yaml          (2185 B)
+
+  5. Core smoke calls
+  [92m✓[0m  RDKit parse + embed aspirin
+  [92m✓[0m  compound_hash stable under reorder (h=4184fd98)
+  [92m✓[0m  Cache put/get round-trip
+  [92m✓[0m  triage rules  → follow_up on a clean hit
+  [92m✓[0m  strain diagnostic module importable
+  [92m✓[0m  FEP scaffold (openmmtools 0.26.0) alchemy primitives
+
+  6. Benchmark YAML dry-run
+  [92m✓[0m  benchmarks/fep/binding_egfr.yaml  (6 entries pass)
+  [92m✓[0m  benchmarks/fep/binding_streptavidin.yaml  (4 entries pass)
+  [92m✓[0m  benchmarks/fep/freesolv_12.yaml  (12 entries pass)
+
+  [92m42/42 checks passed[0m
+  → ready to run: '[92mcellsim dock --smi benchmarks/dock/1stp_batch_5.smi --receptor benchmarks/dock/1stp.pdb[0m'
+
