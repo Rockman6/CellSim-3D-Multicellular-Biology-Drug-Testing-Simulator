@@ -246,7 +246,7 @@ def test_hydration_hardware_override_lands_in_body():
     assert "Henry's MacBook Pro M-series, 16 GB RAM" in out, (
         "hydration body must use --hardware override; got:\n"
         f"{out[:800]}")
-    assert "OpenMM CPU (Reference/CPU only; no Metal) backend" in out, (
+    assert "OpenMM platform: CPU (Reference/CPU only; no Metal)" in out, (
         "hydration body must use --platform override; got:\n"
         f"{out[:800]}")
     # The old M5 Max hardcoding must be gone for the hydration path.
