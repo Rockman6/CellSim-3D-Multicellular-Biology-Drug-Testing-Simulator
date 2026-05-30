@@ -223,6 +223,38 @@ def test_prof_name_override():
     assert "Hi [Prof]," not in out
 
 
+def test_hydration_hardware_override_lands_in_body():
+    """--hardware / --platform must reach the hydration body, not
+    just the binding one. Earlier the hydration template had M5 Max
+    hardcoded; pilot-3 CPU run on Henry's MacBook exposed the
+    hardcoding and pushed a parametrisation."""
+    with tempfile.TemporaryDirectory(
+            prefix="cellsim_fill_") as tmp:
+        tmp = Path(tmp)
+        _write_report_with_overrides(
+            tmp, kind="hydration", verdict="PASS",
+            rows_table=(
+                "| methane | `C` | +2.00 | +1.78 | 0.15 | -0.22 | "
+                "0.22 | ✓ | 4290 | |\n"
+                "| acetamide | `CC(=O)N` | -9.71 | -8.90 | 0.55 | "
+                "+0.81 | 0.81 | | 560 | |"))
+        rc, out = _run_fill(
+            tmp,
+            "--hardware", "Henry's MacBook Pro M-series, 16 GB RAM",
+            "--platform", "CPU (Reference/CPU only; no Metal)")
+    assert rc == 0, out
+    assert "Henry's MacBook Pro M-series, 16 GB RAM" in out, (
+        "hydration body must use --hardware override; got:\n"
+        f"{out[:800]}")
+    assert "OpenMM CPU (Reference/CPU only; no Metal) backend" in out, (
+        "hydration body must use --platform override; got:\n"
+        f"{out[:800]}")
+    # The old M5 Max hardcoding must be gone for the hydration path.
+    assert "Apple M5 Max" not in out, (
+        "hydration template still has M5 Max hardcoded; got:\n"
+        f"{out[:800]}")
+
+
 def test_fail_case_fixture_hydration():
     """End-to-end on the committed fail_case fixture — methane
     sign flipped, MAE 1.67. Email reflects both failures."""
@@ -262,6 +294,7 @@ if __name__ == "__main__":
         test_missing_numbers_returns_exit_2,
         test_no_report_md_returns_exit_1,
         test_prof_name_override,
+        test_hydration_hardware_override_lands_in_body,
         test_fail_case_fixture_hydration,
     ]
     fails = []

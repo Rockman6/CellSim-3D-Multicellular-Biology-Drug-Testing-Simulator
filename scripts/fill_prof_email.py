@@ -42,12 +42,12 @@ Subject: Milestone A — FreeSolv FEP results
 Hi {prof_name},
 
 Quick update on Milestone A. The CellSim Layer-1.3 alchemical FEP
-pipeline is now end-to-end on a Mac and the FreeSolv-12 hydration
-gate ran on a friend's M5 Max overnight. Results below.
+pipeline is now end-to-end and the FreeSolv-12 hydration gate has
+run. Results below.
 
 == What ran ==
 
-- Hardware: Apple M5 Max (40-core GPU), OpenMM Metal backend
+- Hardware: {hardware_hint} (OpenMM {platform_hint} backend)
 - Force field: OpenFF Sage 2.1.0 (small molecules) + AM1-BCC partial
   charges + TIP3P water — no learned surrogate at any layer
 - MD: openmmtools.alchemy + GHMC integrator (Metropolised Langevin),
@@ -399,6 +399,8 @@ def main(argv: list[str] | None = None) -> int:
         acetamide_sign = _grab_compound_sign(md, "acetamide") or "<missing>"
         filled = HYDRATION_TEMPLATE.format(
             prof_name=args.prof_name,
+            hardware_hint=args.hardware,
+            platform_hint=args.platform,
             overall_verdict=overall,
             n_ok=n_ok,
             n_total=n_total,
