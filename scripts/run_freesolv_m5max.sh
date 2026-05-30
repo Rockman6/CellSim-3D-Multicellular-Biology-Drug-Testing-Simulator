@@ -38,7 +38,7 @@ conda activate cellsim
 # via env: `OUT_DIR=run/fep/20260523_100401 bash <this>` resumes
 # a crashed run from where it left off (any compound with a
 # non-empty dG_pred_kcalmol in freesolv_results.csv is skipped).
-if [ -z "${OUT_DIR}" ]; then
+if [ -z "${OUT_DIR:-}" ]; then
     STAMP=$(date +%Y%m%d_%H%M%S)
     OUT_DIR="run/fep/${STAMP}"
 fi
