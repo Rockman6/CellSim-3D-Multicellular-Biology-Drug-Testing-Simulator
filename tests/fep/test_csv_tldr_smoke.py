@@ -123,9 +123,13 @@ def test_binding_non_binder_flagged():
     assert "non-binder" in out, out
 
 
-def test_inconclusive_when_some_rows_not_ok():
-    """Partial: one compound errored out mid-run — verdict must be
-    inconclusive (exit 2) not PASS."""
+def test_partial_run_passes_if_ok_subset_clears_gate():
+    """Partial: one compound errored out mid-run, but the one that
+    completed cleanly clears the gate. Verdict mirrors fep-report:
+    PASS on the ok subset with a partial-run footer. Earlier
+    behavior (exit 2 'inconclusive' on any partial) conflicted with
+    fep-report's PASS verdict on the same data — fixed in
+    commit d206b98."""
     with tempfile.TemporaryDirectory(prefix="tldr_") as tmp:
         p = _write_csv(Path(tmp), [
             {"name": "methane", "smiles": "C",
@@ -138,9 +142,32 @@ def test_inconclusive_when_some_rows_not_ok():
              "reason": "MBAR failed"},
         ])
         rc, out = _run(p)
+    assert rc == 0, out
+    assert "PASS" in out, out
+    assert "1/2" in out, out
+    # Partial-run footer must be visible so the biologist sees the gap
+    assert "partial: 1 failed" in out, out
+
+
+def test_inconclusive_only_when_zero_ok_rows():
+    """When NO compounds completed, verdict is 'inconclusive' and
+    exit code is 2 (no data to gate on)."""
+    with tempfile.TemporaryDirectory(prefix="tldr_") as tmp:
+        p = _write_csv(Path(tmp), [
+            {"name": "methane", "smiles": "C",
+             "dG_expt_kcalmol": "2.00",
+             "dG_pred_kcalmol": "",
+             "ok": "False",
+             "reason": "MBAR failed"},
+            {"name": "acetamide", "smiles": "CC(=O)N",
+             "dG_expt_kcalmol": "-9.71",
+             "dG_pred_kcalmol": "",
+             "ok": "False",
+             "reason": "MBAR failed"},
+        ])
+        rc, out = _run(p)
     assert rc == 2, out
     assert "inconclusive" in out, out
-    assert "1/2" in out
 
 
 def test_no_such_file_exits_3():
@@ -180,7 +207,8 @@ if __name__ == "__main__":
         test_binding_streptavidin_pass_label_correct,
         test_binding_egfr_label_selected,
         test_binding_non_binder_flagged,
-        test_inconclusive_when_some_rows_not_ok,
+        test_partial_run_passes_if_ok_subset_clears_gate,
+        test_inconclusive_only_when_zero_ok_rows,
         test_no_such_file_exits_3,
         test_gate_override_turns_fail_into_pass,
         test_output_is_single_line,

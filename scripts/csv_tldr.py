@@ -163,9 +163,15 @@ def summarise(rows: list[dict], gate: float | None = None) -> dict:
     mae_ok = mae <= gate_kcal
     complete = (n_ok == n_total)
 
-    if not complete:
-        verdict = "inconclusive"
-    elif mae_ok and (sign_ok is not False):
+    # Gate logic mirrors cellsim fep-report (commit f7b8fe4): compute
+    # MAE on the ok subset, PASS if MAE ≤ gate AND sign-critical
+    # holds, FAIL otherwise. Surface partial-run state in the
+    # `reason` field so the line still reads "PASS (10/12 ok)" rather
+    # than hiding the gap. Earlier csv_tldr returned 'inconclusive'
+    # whenever n_ok < n_total, which conflicted with fep-report's
+    # PASS on the same data and confused the biologist about which
+    # verdict to trust.
+    if mae_ok and (sign_ok is not False):
         verdict = "PASS"
     else:
         verdict = "FAIL"
@@ -196,8 +202,13 @@ def format_tldr(s: dict) -> str:
     tail = ""
     if s["reason"]:
         tail = f" ({s['reason']})"
+    # Partial-run footer when n_ok < n_total but verdict still PASS —
+    # mirrors fep-report's "PASS but X compounds incomplete" tone.
+    partial = ""
+    if n_ok < n_total and s["verdict"] == "PASS":
+        partial = f" (partial: {n_total - n_ok} failed)"
     return (f"{label}: {n_ok}/{n_total} ok, {mae_str}"
-            f"{corr} — {s['verdict']}{tail}")
+            f"{corr} — {s['verdict']}{tail}{partial}")
 
 
 def main(argv: list[str] | None = None) -> int:
