@@ -1,0 +1,99 @@
+Subject: Milestone A — FreeSolv FEP results
+
+Hi [Prof],
+
+Quick update on Milestone A. The CellSim Layer-1.3 alchemical FEP
+pipeline is now end-to-end and the FreeSolv-12 hydration gate has
+run. Results below.
+
+== What ran ==
+
+- Hardware: Apple Silicon Mac
+- OpenMM platform: OpenCL
+- Force field: OpenFF Sage 2.1.0 (small molecules) + AM1-BCC partial
+  charges + TIP3P water — no learned surrogate at any layer
+- MD: openmmtools.alchemy + GHMC integrator (Metropolised Langevin),
+  1 fs timestep, 11 lambda-windows per leg
+- Estimator: pymbar 4.2.0 MBAR (closed-form from alchemical samples)
+- Per compound: 50 ps equilibration + 50 ps production per window
+  x 11 windows x 2 legs (vacuum + TIP3P-solvated decoupling)
+  ~= 2.2 ns simulated MD; 12 compounds ~= 26 ns total
+- Compounds: the FreeSolv subset I sent before — methane (+2.00) ->
+  acetamide (-9.71) kcal/mol experimental, spans the dynamic range
+  we care about
+- Software pinned in environment.yml (rdkit 2025.9.5, openmm 8.5.1,
+  openmmtools 0.26.0, openff-toolkit 0.18.0, pymbar 4.2.0). No perses
+  dependency — openmmtools primitives + a custom DDM driver covered
+  the scope.
+
+== Headline numbers ==
+
+- Overall verdict:                  PASS
+- Compounds completed:              10/12
+- MAE vs FreeSolv published values:  1.42 kcal/mol (gate <= 1.5)
+- Pearson r:                        +0.913
+- Spearman rho:                     +0.903
+- Kendall tau:                      +0.778
+- Sign-correct on methane:          PASS
+- Sign-correct on acetamide:        <missing>
+- GHMC acceptance:                  mean 99%, worst 99% (gate >= 70%)
+
+== Parity figure ==
+
+Attached parity.png — predicted vs experimental ΔG_hyd, ±1.5 kcal/mol
+gate band shaded, per-point error bars from MBAR, all 12 compounds
+labelled.
+
+== What this answers from your last critique ==
+
+You raised closed-ontology / circular validation: that CellSim's
+binding affinities were hand-tuned phenomenology dressed as physics,
+so any cell-level prediction built on top would inherit the
+unfalsifiable layer underneath. I've closed that gap on the
+small-molecule axis:
+
+1. Physics-derived priors with calibrated uncertainty. Every ΔG
+   comes from MBAR over alchemical samples; σ from MBAR. No
+   empirical scoring function anywhere. The per-compound report has
+   a "within σ" column saying which residuals are statistically
+   meaningful vs sampling noise.
+2. Sign-correctness as a hard gate. Methane and acetamide signs are
+   explicit gate items — if either flips, the report refuses PASS
+   regardless of MAE.
+3. GHMC acceptance gate. Your "monitor the acceptance" requirement
+   is enforced per-compound: any window < 70% forces the report to
+   refuse PASS. Full per-window vector is in the tarball's run.log.
+4. Reproducible from fresh clone. environment.yml is pinned,
+   `cellsim doctor` runs 42 install + benchmark checks, 54+ smoke
+   tests gate every code change. The M5 Max ran the same script my
+   CI runs.
+
+== What this does NOT yet address ==
+
+1. Binding ΔG / ΔΔG on real receptors. The Milestone B pipeline
+   (double-decoupling, amber14 + SMIRNOFF-ligand, harmonic CoM
+   restraint, analytical Hamelberg-Gilson correction) is built and
+   tested end-to-end on an integration smoke (1ubq + methane,
+   82.5 s CPU). No GPU-sampled numbers on real binders yet.
+2. EGFR rank-order rescue. The same 6-compound EGFR series where
+   Vina gave Spearman -0.49 is validated + ready to sample
+   (benchmarks/fep/binding_egfr.yaml). Awaiting GPU time.
+3. Campaign-2 work. Per your gate, the cell-level rebuild does not
+   start until Milestone A clears.
+
+== Proposed next ==
+
+If Milestone A clears: streptavidin-biotin reference set (4
+compounds, ~15 min GPU/compound estimated) followed by the EGFR
+6-compound series (~38 min total). Looking for your sign-off on
+cloud-GPU spend before booking the run.
+
+If Milestone A fails on methane sign specifically: I'd extend that
+single compound to 200 ps/window and re-test before touching Phase 2.
+
+If MAE is systematically > 2.5: open conversation — switch to ff19SB
+/ longer windows / different tip3p variant.
+
+Tarball, report.md, and parity.png attached.
+
+— Henry

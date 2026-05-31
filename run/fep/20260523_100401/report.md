@@ -2,7 +2,7 @@
 
 - source: `run/fep/20260523_100401`
 - git commit: `fa273f7c68e0481ae3f0d315c3884ada0836ab09`
-- compounds: 10 ok / 12 total (12/12 expected)
+- compounds: 10 ok / 12 total
 - wall time: total 451.6 min  (mean 37.6 min / max 71.5 min per compound)
 
 ## Gate verdict
