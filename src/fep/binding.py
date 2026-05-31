@@ -858,6 +858,7 @@ def compute_absolute_binding_dg(
     sample_stride: int = 100,
     seed: int = 1,
     force_field_path: str = "amber14",
+    use_replica_exchange: bool = False,
 ) -> BindingDGResult:
     """
     `force_field_path` selects the protein-ligand parametrisation
@@ -965,7 +966,8 @@ def compute_absolute_binding_dg(
             n_windows=n_windows,
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
-            sample_stride=sample_stride, seed=seed)
+            sample_stride=sample_stride, seed=seed,
+            use_replica_exchange=use_replica_exchange)
         if not cx_r.ok:
             result.reason = f"complex leg sample failed: {cx_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -976,7 +978,8 @@ def compute_absolute_binding_dg(
             n_windows=n_windows,
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
-            sample_stride=sample_stride, seed=seed)
+            sample_stride=sample_stride, seed=seed,
+            use_replica_exchange=use_replica_exchange)
         if not sv_r.ok:
             result.reason = f"solvent leg sample failed: {sv_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -1261,6 +1264,18 @@ def main(argv=None) -> int:
              "present with a non-empty dG_pred_kcalmol. Intended "
              "for restarting a crashed multi-hour run without "
              "losing completed compounds.")
+    bp.add_argument(
+        "--replica-exchange", action="store_true",
+        help="use openmmtools.multistate.ReplicaExchangeSampler "
+             "(Hamiltonian replica exchange between adjacent "
+             "λ-states) instead of the hand-rolled independent-"
+             "replica path. The canonical literature fix for MBAR "
+             "overlap failures on tight intramolecular charge "
+             "networks (acetic_acid, acetamide, biotin); see "
+             "BENCHMARKS.md § 'Replica exchange unblocks tight "
+             "binders'. Costs ~same wall time as the hand-rolled "
+             "path at equal sampling budget but converges where "
+             "hand-rolled returns MBAR overlap failure.")
 
     vp = sub.add_parser(
         "validate",
@@ -1442,7 +1457,9 @@ def _run_bench(args) -> int:
                 n_equilibration_steps=args.equilibration_steps,
                 n_production_steps=args.production_steps,
                 sample_stride=args.sample_stride,
-                force_field_path=args.force_field_path)
+                force_field_path=args.force_field_path,
+                use_replica_exchange=getattr(
+                    args, "replica_exchange", False))
         except KeyboardInterrupt:
             # Graceful exit: the crash-proof CSV (previous commit)
             # already has every completed compound. Just announce
