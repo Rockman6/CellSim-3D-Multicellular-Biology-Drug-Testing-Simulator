@@ -11,6 +11,16 @@ of hydration. Code is on tag `milestone-a-pilot-3` and forward
   by a methane-in-weak-pocket cycle check). Hydration's c461053
   sign bug was specific to the hydration cycle and never touched
   `compute_absolute_binding_dg`.
+- **Replica exchange unblocks tight binders (2026-05-31).** The
+  hand-rolled sampler hit MBAR-overlap-failure on biotin at the
+  default 11×25000 — same structural issue that killed acetic_acid
+  + acetamide in Milestone A. The fix:
+  `openmmtools.multistate.ReplicaExchangeSampler` (Hamiltonian
+  replica exchange between adjacent λ-states; canonical literature
+  solution). Validated on acetic_acid (converged where hand-rolled
+  failed). Both binding scripts now pass `--replica-exchange` by
+  default. See `BENCHMARKS.md § "Replica exchange unblocks tight
+  binders"`.
 - `--resume` + atomic CSV writes are in both binding bench paths
   (streptavidin + EGFR). Same crash recovery as freesolv.
 - `OUT_DIR` env override now consistent across all three run
