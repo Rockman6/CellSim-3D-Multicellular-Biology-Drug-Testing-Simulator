@@ -166,6 +166,9 @@ jobs:
       - name: fep wall-time estimator (GPU-cost preview anchors stay honest)
         run: python -u tests/fep/test_wall_estimator_smoke.py
 
+      - name: fep replica-exchange opt-in path (5/5)
+        run: python -u tests/fep/test_replica_exchange_smoke.py
+
       - name: fep end-to-end smoke (Layer 1.3, methane hydration ΔG pipeline)
         run: python -u tests/fep/test_hydration_dg_smoke.py
 
