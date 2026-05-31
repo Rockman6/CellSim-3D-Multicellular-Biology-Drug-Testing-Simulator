@@ -135,6 +135,7 @@ time ./scripts/cellsim fep-binding bench \
     --force-field-path amber14 \
     --out-csv "${CSV}" \
     --resume \
+    --replica-exchange \
     2>&1 | tee -a "${OUT_DIR}/run.log"
 
 EXIT_CODE=${PIPESTATUS[0]}
