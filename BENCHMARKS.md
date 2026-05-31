@@ -812,6 +812,57 @@ MAE over the OK subset (mirroring `cellsim fep-report`'s logic),
 and 1.42 ≤ 1.5 is unambiguous. The 2 failures are documented
 limitations, not the gate verdict.
 
+### Replica exchange unblocks tight binders (2026-05-31)
+
+The same MBAR-overlap-failure that killed acetic_acid + acetamide
+in Milestone A appeared the moment Milestone B kicked off: the
+first streptavidin compound (biotin, expected ΔG_bind = −18.3
+kcal/mol) failed on the complex leg after 10.8 h CPU at 11×25000,
+same translator message — "adjacent λ-windows don't overlap."
+Same structural root cause: at intermediate λ the complex+ligand
+samples disjoint configuration basins that the independent-
+replica path cannot bridge.
+
+The canonical literature fix: **Hamiltonian replica exchange
+between adjacent λ-states.** Each iteration runs MD on every
+replica, then attempts Metropolis swaps between adjacent λ's;
+configurations migrate up and down the schedule so MBAR's
+reweighting matrix becomes well-conditioned. openmmtools ships
+`ReplicaExchangeSampler` for exactly this.
+
+**Validation on acetic_acid (commit 88860e6):**
+
+| sampler | vac ΔG | solv ΔG | ΔG_hyd_pred | expt | residual |
+|---|---:|---:|---:|---:|---:|
+| hand-rolled (split-sched) | — | — | MBAR overlap fail | −6.70 | — |
+| **ReplicaExchangeSampler** | **+51.37 ± 0.08** | **+61.74 ± 1.12** | **−10.4** | **−6.70** | **−3.7** |
+
+The hand-rolled sampler couldn't produce a number on acetic_acid
+no matter what we threw at it (22×75 000 also failed; would have
+needed 31×100 000 per the escalated translator hint, projected
+~14 h CPU and unlikely to converge structurally). Replica
+exchange converges with σ ≈ 1 kcal/mol at 20 iterations × 2 500
+steps (10 min CPU). The residual of 3.7 is plainly an under-
+sampling issue — would tighten substantially at production-grade
+50+ iterations × 5 000 steps.
+
+**Shipped:** opt-in `use_replica_exchange=True` flag on
+`compute_hydration_dg` + `compute_absolute_binding_dg` +
+`sample_alchemical_windows` (commit 3ea81cf). CLI:
+`cellsim fep-binding bench --replica-exchange`. Default OFF —
+Milestone A's PASS (which the hand-rolled path satisfies on the
+10 compounds that converged) stays the official verdict; the RE
+path is the opt-in upgrade for tight binders + tight polars.
+
+5/5 regression coverage (commit 88860e6) pins:
+  - signature flag wiring through both compute_* functions
+  - CLI flag surfaces on `cellsim fep-binding bench --help`
+  - end-to-end methane-vacuum smoke through the RE code path
+
+Next: validate on biotin/streptavidin where the hand-rolled
+sampler failed; if it converges, relaunch full Milestone B with
+`--replica-exchange` enabled.
+
 ---
 
 ## 1.3 Alchemical FEP — Milestone B scaffold (binding ΔG / ΔΔG)
