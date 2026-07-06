@@ -915,6 +915,13 @@ def compute_absolute_binding_dg(
         restraint_r0_nm=restraint_r0_nm,
     )
 
+    if n_windows < 3:
+        result.reason = (
+            f"n_windows must be >= 3 (need decoupled + midpoint + "
+            f"coupled states); got {n_windows}")
+        result.wall_seconds = time.time() - t0
+        return result
+
     # Complex leg.
     if force_field_path == "amber14":
         _builder = _build_complex_alchemical_system_amber14
