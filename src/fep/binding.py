@@ -451,48 +451,100 @@ def _add_harmonic_com_restraint(system, ligand_indices,
     return force
 
 
+def _restraint_r0_from_geometry(prot_positions_nm, anchor_indices,
+                                placement_center_nm):
+    """Rest length r0 for the CoM restraint = distance between the
+    ligand placement target (binding-site centre) and the anchor
+    (Cα-shell) centroid.
+
+    The restraint pulls the ligand CoM toward the anchor-group CoM, but
+    the ligand is *placed* at the binding-site centre — a different
+    point. With r0 = 0 the restraint minimum sits at the anchor
+    centroid, so the placed ligand starts ~0.5 nm up the harmonic wall
+    (≈125 kcal/mol at the default k) and gets yanked out of the pose
+    (BUG_AUDIT.md #7). Setting r0 to the placement→anchor distance puts
+    the restraint minimum at the placed pose, so the ligand stays where
+    it was docked and the restraint only resists drift.
+    """
+    import numpy as np
+
+    anchor_centroid = np.asarray(
+        prot_positions_nm)[anchor_indices].mean(axis=0)
+    return float(np.linalg.norm(
+        np.asarray(placement_center_nm, dtype=float) - anchor_centroid))
+
+
+def _harmonic_restraint_volume_nm3(
+        k_kJ_per_nm2, r0_nm=0.0, temperature_K=298.15):
+    """Configurational volume (nm³) accessible to a ligand CoM under a
+    radial harmonic restraint U(r) = ½·k·(r − r0)², where r is the
+    distance between the ligand CoM and the anchor CoM:
+
+        V_harm = ∫₀^∞ 4π r² · exp(−β·½·k·(r − r0)²) dr
+
+    Closed form (a ≡ βk/2):
+
+        V_harm = 4π [ (r0/2a)·e^(−a·r0²)
+                      + (√π / 2√a)·(1 + erf(r0·√a))·(r0² + 1/2a) ]
+
+    At r0 = 0 this reduces exactly to the isotropic-Gaussian volume
+    (2π·kT/k)^(3/2). For r0 > 0 the accessible region is a spherical
+    shell of radius r0 and the volume is larger — the r0 = 0 Gaussian
+    formula (used previously) undercounts it, biasing the standard-state
+    correction (BUG_AUDIT.md #9/#10). Verified against numerical
+    integration to machine precision for r0 ∈ [0, 0.8] nm.
+    """
+    import math
+
+    kT_kJ = 0.0083144626 * temperature_K
+    a = k_kJ_per_nm2 / (2.0 * kT_kJ)          # nm^-2
+    sqrt_a = math.sqrt(a)
+    term_exp = (r0_nm / (2.0 * a)) * math.exp(-a * r0_nm * r0_nm)
+    term_erf = (
+        (math.sqrt(math.pi) / (2.0 * sqrt_a))
+        * (1.0 + math.erf(r0_nm * sqrt_a))
+        * (r0_nm * r0_nm + 1.0 / (2.0 * a)))
+    return 4.0 * math.pi * (term_exp + term_erf)
+
+
 def _harmonic_restraint_free_energy_kcalmol(
-        k_kJ_per_nm2, temperature_K=298.15):
+        k_kJ_per_nm2, r0_nm=0.0, temperature_K=298.15):
     """Standard-state / restraint correction to ADD to ΔG_bind, in
-    kcal/mol.
+    kcal/mol, for a radial harmonic CoM restraint with rest length r0.
 
     In the double-decoupling cycle the ligand is decoupled while a
     harmonic CoM restraint confines it near the site. To connect the
     'decoupled + restrained' state to the 1 M standard state we account
     for the work of confining a *non-interacting* ligand from the
-    standard-state volume V_std into the restraint volume V_harm:
+    standard-state volume V_std into the restraint volume V_harm(r0):
 
-        ΔG_corr  =  +kT · ln[ V_std / V_harm ]        (POSITIVE)
+        ΔG_corr  =  +kT · ln[ V_std / V_harm(r0) ]        (POSITIVE)
 
-    with V_harm = (2π·kT/k)^(3/2) (the isotropic-Gaussian volume of a
-    harmonic well centred at r0 = 0) and V_std = 1.66 nm³ (volume per
-    molecule at 1 M). The term is positive — localising a ligand from
-    dilute solution into the small site volume costs configurational
-    entropy, which correctly penalises binding.
+    with V_harm from `_harmonic_restraint_volume_nm3` and V_std =
+    1.66 nm³ (volume per molecule at 1 M). The term is positive —
+    localising a ligand from dilute solution into the site volume costs
+    configurational entropy, which correctly penalises binding.
 
-    Sign convention vs openmmtools: this returns the NEGATIVE of
-    ``openmmtools.forces.HarmonicRestraintForce.compute_standard_state_
-    correction`` (which reports −kT·ln(V_std/V_harm), the free energy
-    of *releasing* the restraint out to standard state). The DDM
+    Sign convention vs openmmtools: at r0 = 0 this returns the NEGATIVE
+    of ``openmmtools.forces.HarmonicRestraintForce.compute_standard_
+    state_correction`` (which reports −kT·ln(V_std/V_harm), the free
+    energy of *releasing* the restraint out to standard state). The DDM
     composition in ``compute_absolute_binding_dg`` adds the confinement
     work, so the correct additive term is −(openmmtools SSC). See
     BUG_AUDIT.md #1/#3: the previous code returned the release value
-    (negative) and added it, biasing every absolute ΔG_bind by
-    ≈ +2·5.27 ≈ 10.5 kcal/mol toward over-binding.
+    (negative) and added it, biasing every absolute ΔG_bind ≈ +10.5
+    kcal/mol toward over-binding.
 
-    LIMITATION (r0 = 0 only): V_harm below is the Gaussian volume of a
-    well centred at the origin. For a restraint with r0 > 0 the radial
-    partition function differs (BUG_AUDIT.md #9/#10); the r0-aware form
-    is not yet applied here. Exact for the default r0 = 0 restraint the
-    pipeline currently uses.
+    r0-aware (BUG_AUDIT.md #9/#10): larger r0 → larger accessible shell
+    → smaller positive correction. The restraint the builders install
+    uses r0 = ‖placement − anchor centroid‖ (BUG_AUDIT.md #7), so this
+    must be called with that same r0, not 0.
     """
     import math
 
-    # kT in kJ/mol at T
     kT_kJ = 0.0083144626 * temperature_K
-    # Isotropic-Gaussian volume of the harmonic well in nm³ (r0 = 0):
-    # (2π·kT/k)^(3/2)
-    v_harm_nm3 = (2.0 * math.pi * kT_kJ / k_kJ_per_nm2) ** 1.5
+    v_harm_nm3 = _harmonic_restraint_volume_nm3(
+        k_kJ_per_nm2, r0_nm=r0_nm, temperature_K=temperature_K)
     # Standard-state volume: 1 M = 1 molecule per 1660.54 Å³ = 1.66054 nm³
     v_std_nm3 = 1.66054
     # +kT ln(V_std / V_harm): confinement work to ADD to ΔG_bind
@@ -656,6 +708,13 @@ def _build_complex_alchemical_system(
     anchor_indices = _find_ca_indices_near(
         prot_positions_nm, binding_site_center_nm,
         anchor_radius_nm, ca_candidate_indices)
+    # r0 = placement→anchor-centroid distance so the restraint minimum
+    # coincides with the placed pose (BUG_AUDIT.md #7). Explicit
+    # positive r0 overrides.
+    effective_r0_nm = (
+        restraint_r0_nm if (restraint_r0_nm and restraint_r0_nm > 0)
+        else _restraint_r0_from_geometry(
+            prot_positions_nm, anchor_indices, binding_site_center_nm))
 
     # 8) Make the alchemical region cover the ligand.
     region = alchemy.AlchemicalRegion(
@@ -674,7 +733,7 @@ def _build_complex_alchemical_system(
     _add_harmonic_com_restraint(
         alch_system, ligand_indices, anchor_indices,
         k_kJ_per_nm2=restraint_k_kJ_per_nm2,
-        r0_nm=restraint_r0_nm)
+        r0_nm=effective_r0_nm)
 
     # Positions for the alchemical system must carry OpenMM units.
     positions = complex_positions_nm * ommunit.nanometer
@@ -686,7 +745,7 @@ def _build_complex_alchemical_system(
         "ligand_indices": ligand_indices,
         "anchor_indices": anchor_indices,
         "restraint_k_kJ_per_nm2": restraint_k_kJ_per_nm2,
-        "restraint_r0_nm": restraint_r0_nm,
+        "restraint_r0_nm": effective_r0_nm,
         "n_ligand_atoms": n_ligand_atoms,
         "n_protein_atoms": n_protein_atoms,
         "n_total_atoms": complex_system.getNumParticles(),
@@ -830,6 +889,13 @@ def _build_complex_alchemical_system_amber14(
     anchor_indices = _find_ca_indices_near(
         prot_positions_nm, binding_site_center_nm,
         anchor_radius_nm, ca_candidate_indices)
+    # r0 = distance between the placed pose and the anchor centroid, so
+    # the restraint minimum coincides with the pose (BUG_AUDIT.md #7).
+    # An explicitly-passed positive r0 overrides the geometry pick.
+    effective_r0_nm = (
+        restraint_r0_nm if (restraint_r0_nm and restraint_r0_nm > 0)
+        else _restraint_r0_from_geometry(
+            prot_positions_nm, anchor_indices, binding_site_center_nm))
 
     # 10) Alchemical factory + restraint (same as sibling).
     region = alchemy.AlchemicalRegion(
@@ -842,7 +908,7 @@ def _build_complex_alchemical_system_amber14(
     _add_harmonic_com_restraint(
         alch_system, ligand_indices, anchor_indices,
         k_kJ_per_nm2=restraint_k_kJ_per_nm2,
-        r0_nm=restraint_r0_nm)
+        r0_nm=effective_r0_nm)
 
     positions = complex_positions_nm * ommunit.nanometer
 
@@ -853,7 +919,7 @@ def _build_complex_alchemical_system_amber14(
         "ligand_indices": ligand_indices,
         "anchor_indices": anchor_indices,
         "restraint_k_kJ_per_nm2": restraint_k_kJ_per_nm2,
-        "restraint_r0_nm": restraint_r0_nm,
+        "restraint_r0_nm": effective_r0_nm,
         "n_ligand_atoms": n_ligand_atoms,
         "n_protein_atoms": n_protein_atoms,
         "n_total_atoms": complex_system.getNumParticles(),
@@ -1044,6 +1110,10 @@ def compute_absolute_binding_dg(
     result.n_ligand_atoms = cx["n_ligand_atoms"]
     result.n_protein_atoms = cx["n_protein_atoms"]
     result.n_total_atoms_complex = cx["n_total_atoms"]
+    # The builder derives r0 from geometry (placement→anchor distance,
+    # BUG_AUDIT.md #7); record the actual value so the standard-state
+    # correction below uses the SAME r0 the restraint was built with.
+    result.restraint_r0_nm = cx["restraint_r0_nm"]
 
     # Solvent leg. For DDM the solvent leg MUST use the same water
     # model + nonbonded cutoff as the complex leg, or the bulk-water
@@ -1131,7 +1201,7 @@ def compute_absolute_binding_dg(
     import math
 
     dG_R_plus_std = _harmonic_restraint_free_energy_kcalmol(
-        restraint_k_kJ_per_nm2)
+        restraint_k_kJ_per_nm2, r0_nm=cx["restraint_r0_nm"])
 
     dG_bind = -(cx_r.dG_kcalmol - sv_r.dG_kcalmol) + dG_R_plus_std
     unc = math.sqrt(
