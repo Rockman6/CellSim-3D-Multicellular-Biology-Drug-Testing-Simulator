@@ -148,11 +148,17 @@ class BindingDGResult:
                     f"prot_atoms={self.n_protein_atoms}  "
                     f"complex={self.n_total_atoms_complex}  "
                     f"wall={self.wall_seconds:.1f}s")
+        provisional = (
+            "  [PROVISIONAL: restraint-on-real leg (#4) omitted; "
+            "absolute value only, ΔΔG unaffected]"
+            if (self.dG_bind_kcalmol is not None
+                and not self.restraint_on_real_included)
+            else "")
         return (f"[OK]   ΔG_bind {self.smiles} / "
                 f"{self.receptor}  "
                 f"{self.dG_bind_kcalmol:+.2f} ± "
                 f"{self.uncertainty_kcalmol:.2f} kcal/mol  "
-                f"wall={self.wall_seconds:.1f}s")
+                f"wall={self.wall_seconds:.1f}s{provisional}")
 
 
 @dataclass
@@ -1251,12 +1257,10 @@ def compute_absolute_binding_dg(
     result.dG_standard_state_kcalmol = 0.0   # folded in above
     result.dG_restraint_on_real_kcalmol = dG_restraint_on_real
     result.restraint_on_real_included = dG_restraint_on_real is not None
-    if not result.restraint_on_real_included:
-        result.reason = (
-            "absolute ΔG_bind PROVISIONAL: restraint-on-real leg "
-            "(BUG_AUDIT #4) not included (assumed 0); ΔΔG is "
-            "unaffected. Pass include_restraint_on_real_leg=True for a "
-            "closed cycle.")
+    # Provisional status is carried by the `restraint_on_real_included`
+    # flag (machine-readable) and surfaced in summary() (human-readable)
+    # — NOT via `reason`, which is the failure channel and is invisible
+    # on an ok=True result.
     result.uncertainty_kcalmol = unc
     result.ghmc_acceptance_complex = list(cx_r.ghmc_acceptance)
     result.ghmc_acceptance_solvent = list(sv_r.ghmc_acceptance)

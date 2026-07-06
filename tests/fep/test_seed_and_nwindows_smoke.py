@@ -2,10 +2,13 @@
 
 Two BUG_AUDIT.md regressions, both testable without running MD:
 
-- #2: the `seed` parameter was plumbed through `sample_alchemical_
-  windows` but never reached any integrator, so OpenMM used
-  system-clock entropy and no two runs were reproducible. We verify
-  the seed now lands on the GHMC integrator.
+- #2: the `seed` parameter never reached any integrator. `_seed_ghmc_
+  move` now sets it on the integrator the GHMCMove builds. This is a
+  PREREQUISITE, not full reproducibility: openmmtools' ContextCache
+  steps a separately-managed integrator, so `sample_alchemical_windows`
+  is still not bitwise-reproducible run-to-run (confirmed on Reference
+  and OpenCL; see `_seed_ghmc_move`). These tests assert only that the
+  seed lands on the built integrator — the honest, verifiable claim.
 - #8: `n_windows < 3` silently clamped inside `_split_lambda_schedule`
   while the caller kept the original `n_windows`, desyncing the u_kn
   matrix and crashing with an out-of-bounds write. We verify the

@@ -133,8 +133,12 @@ def test_default_leaves_restraint_on_real_provisional():
     assert r.ok
     assert r.restraint_on_real_included is False
     assert r.dG_restraint_on_real_kcalmol is None
-    assert "PROVISIONAL" in (r.reason or "")
-    print(f"[PASS] default provisional: {r.reason[:80]}")
+    # Provisional status surfaces in summary() (visible) via the flag,
+    # NOT in the failure-only `reason` field (invisible on ok=True).
+    assert "PROVISIONAL" in r.summary()
+    assert not r.reason, (
+        "provisional note must not overload the failure `reason` field")
+    print(f"[PASS] provisional surfaced in summary: ...{r.summary()[-70:]}")
 
 
 if __name__ == "__main__":
