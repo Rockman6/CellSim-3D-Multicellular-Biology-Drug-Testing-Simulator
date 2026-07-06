@@ -136,17 +136,26 @@ def _split_lambda_schedule(
 
 
 def _seed_ghmc_move(move, seed: int):
-    """Force a GHMCMove's lazily-built integrator to use a fixed RNG
-    seed so runs are reproducible.
+    """Seed a GHMCMove's lazily-built integrator — a NECESSARY but NOT
+    SUFFICIENT step toward reproducibility (BUG_AUDIT.md #2).
 
-    openmmtools' GHMCMove creates its GHMCIntegrator in
-    `_get_integrator(thermodynamic_state)` and never seeds it, so the
-    `seed` parameter plumbed through `sample_alchemical_windows` was
-    dead — OpenMM fell back to system-clock entropy and no two runs
-    (even at seed=1) were identical (BUG_AUDIT.md #2). We wrap
-    `_get_integrator` to call `setRandomNumberSeed` on the integrator
-    it returns. OpenMM treats seed 0 as "nondeterministic", so we map
-    to a positive 31-bit value and avoid 0.
+    openmmtools' GHMCMove builds its GHMCIntegrator in
+    `_get_integrator(...)` and never seeds it; we wrap that to call
+    `setRandomNumberSeed`. OpenMM treats seed 0 as "nondeterministic",
+    so we map to a positive 31-bit value and avoid 0.
+
+    KNOWN LIMITATION (re-audited 2026-07 during review of the #2 fix):
+    this does NOT by itself make `sample_alchemical_windows`
+    reproducible. `GHMCMove.apply()` propagates the integrator RETURNED
+    by the ContextCache's `get_context`, a separately-managed instance
+    — not the one we seed here. Verified empirically: seed=1 twice
+    still yields different ΔG on BOTH the Reference (deterministic) and
+    OpenCL platforms, so it is the cache indirection, not platform
+    threading. True run-to-run reproducibility needs the sampler to own
+    its Contexts and seed the stepped integrator directly (the pattern
+    `sample_restraint_coupling_dg` already uses). Until that refactor
+    lands, treat FEP output as a distribution: report mean ± SD over
+    seeds (Monte-Carlo UQ), never a single "reproducible" value.
     """
     if getattr(move, "_cellsim_seeded", False):
         move._cellsim_seed = int(seed)
@@ -303,9 +312,10 @@ def sample_alchemical_windows(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
-    # Plumb the seed into the GHMC integrators so runs are actually
-    # reproducible (BUG_AUDIT.md #2). Offset the production stream so
-    # it doesn't mirror equilibration.
+    # Seed the GHMC integrators (BUG_AUDIT.md #2). NOTE: prerequisite
+    # only — NOT sufficient for run-to-run reproducibility, because
+    # openmmtools' ContextCache steps a separate integrator (see
+    # _seed_ghmc_move). Offset the production stream from equilibration.
     _seed_ghmc_move(equil_move, seed)
     _seed_ghmc_move(prod_move, seed + 1)
 
@@ -672,9 +682,9 @@ def _sample_via_replica_exchange(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
-    # Seed the MD integrator for reproducibility (BUG_AUDIT.md #2).
-    # ReplicaExchangeSampler manages its own replica-mixing RNG; this
-    # pins the per-replica dynamics stream.
+    # Seed the MD integrator (BUG_AUDIT.md #2) — prerequisite only; see
+    # _seed_ghmc_move for why the ContextCache indirection means this
+    # does not by itself guarantee reproducible replica-exchange runs.
     _seed_ghmc_move(move, seed)
 
     import shutil
