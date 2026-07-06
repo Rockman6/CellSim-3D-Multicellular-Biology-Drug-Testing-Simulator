@@ -437,6 +437,153 @@ def sample_alchemical_windows(
     return result
 
 
+def sample_restraint_coupling_dg(
+    alch_system,
+    positions,
+    *,
+    n_windows: int = 6,
+    n_equilibration_steps: int = 500,
+    n_production_steps: int = 2000,
+    timestep_fs: float = 1.0,
+    temperature_K: float = 298.15,
+    friction_ps: float = 20.0,
+    seed: int = 1,
+    sample_stride: int = 100,
+) -> AlchemicalSamplingResult:
+    """ΔG to switch the CoM restraint ON at the fully-coupled bound
+    endpoint (BUG_AUDIT.md #4).
+
+    The double-decoupling cycle keeps the restraint on at every λ of the
+    complex leg, so the "coupled restrained" endpoint is NOT the
+    physical (unrestrained) bound state. The work to go between them —
+    ΔG_restraint_on_real = G(coupled, restrained) − G(coupled,
+    unrestrained) — is a real leg that the composition previously set to
+    zero. This function samples it by scaling the `lambda_restraint`
+    global from 1 (on) to 0 (off) with lambda_sterics = lambda_
+    electrostatics = 1 fixed.
+
+    Sign: state 0 = restraint ON (λ_r=1), state K-1 = OFF (λ_r=0), so
+    MBAR's Delta_f[K-1,0] = G(on) − G(off) = ΔG_restraint_on_real
+    (returned as `dG_kcalmol`), which `compute_absolute_binding_dg`
+    SUBTRACTS. A well-aligned restraint (r0 at the pose, BUG_AUDIT.md
+    #7) on a tightly-bound ligand gives a small positive value
+    (~1-3 kcal/mol); a loose or misaligned one gives more.
+
+    Requires a system carrying the `lambda_restraint` global (i.e. the
+    complex leg). Returns a not-ok result if the parameter is absent.
+
+    NOTE: opt-in and validated to RUN end-to-end; the production
+    magnitude / k-invariance must be confirmed on a GPU Milestone-B run
+    before absolute ΔG_bind is trusted (this is the term that closes the
+    k-invariance check in BUG_AUDIT.md #4's verification).
+    """
+    import numpy as np
+    from openmm import (
+        unit as ommunit,
+        Context as _Context,
+        LocalEnergyMinimizer as _Min,
+        Platform,
+    )
+    from openmmtools.integrators import GHMCIntegrator
+
+    if n_windows < 3:
+        raise ValueError(f"n_windows must be >= 3; got {n_windows}")
+
+    t0 = time.time()
+    # State k: lambda_restraint = 1 − k/(K−1). State 0 = fully ON,
+    # state K-1 = fully OFF.
+    lambdas = [1.0 - k / (n_windows - 1) for k in range(n_windows)]
+    result = AlchemicalSamplingResult(
+        ok=False, n_windows=n_windows,
+        lambda_schedule=[(lr,) for lr in lambdas])
+
+    _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+    platform = None
+    for _name in _preferred:
+        try:
+            platform = Platform.getPlatformByName(_name)
+            break
+        except Exception:
+            continue
+
+    integrator = GHMCIntegrator(
+        temperature=temperature_K * ommunit.kelvin,
+        collision_rate=friction_ps / ommunit.picosecond,
+        timestep=timestep_fs * ommunit.femtosecond)
+    try:
+        integrator.setRandomNumberSeed((int(seed) & 0x7FFFFFFF) or 1)
+    except Exception:
+        pass
+
+    ctx = (_Context(alch_system, integrator, platform)
+           if platform is not None
+           else _Context(alch_system, integrator))
+    try:
+        # Confirm the restraint global exists before doing any work.
+        state_params = ctx.getParameters()
+        if "lambda_restraint" not in state_params:
+            result.reason = (
+                "system has no 'lambda_restraint' global — "
+                "restraint-coupling leg only applies to the complex "
+                "leg built with a CoM restraint")
+            result.wall_seconds = time.time() - t0
+            return result
+
+        ctx.setPositions(positions)
+        if alch_system.usesPeriodicBoundaryConditions():
+            ctx.setPeriodicBoxVectors(
+                *alch_system.getDefaultPeriodicBoxVectors())
+        # Full coupling throughout; restraint fully ON for the initial
+        # minimise (state 0).
+        for name, val in (("lambda_sterics", 1.0),
+                          ("lambda_electrostatics", 1.0),
+                          ("lambda_restraint", 1.0)):
+            if name in state_params:
+                ctx.setParameter(name, val)
+        _Min.minimize(ctx, tolerance=1.0, maxIterations=2000)
+        ctx.applyConstraints(1e-6)
+
+        n_samples_per = max(1, n_production_steps // sample_stride)
+        u_kn = np.zeros((n_windows, n_windows * n_samples_per))
+        N_k = np.array([n_samples_per] * n_windows)
+        beta = 1.0 / (0.0019872041 * temperature_K)  # 1/kT, kcal/mol
+
+        for k, lam_r in enumerate(lambdas):
+            ctx.setParameter("lambda_restraint", lam_r)
+            integrator.step(n_equilibration_steps)
+            for s in range(n_samples_per):
+                integrator.step(sample_stride)
+                col = k * n_samples_per + s
+                for n, lr in enumerate(lambdas):
+                    ctx.setParameter("lambda_restraint", lr)
+                    U = ctx.getState(
+                        getEnergy=True).getPotentialEnergy(
+                        ).value_in_unit(
+                        ommunit.kilocalorie_per_mole)
+                    u_kn[n, col] = beta * U
+                ctx.setParameter("lambda_restraint", lam_r)
+    finally:
+        del ctx, integrator
+
+    try:
+        dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
+    except Exception as e:
+        result.reason = _biologist_reason_for_mbar_error(
+            e, n_windows=n_windows,
+            n_production_steps=n_production_steps)
+        result.wall_seconds = time.time() - t0
+        return result
+
+    kT = 0.0019872041 * temperature_K
+    result.ok = True
+    result.n_samples_per_window = n_samples_per
+    # Delta_f[K-1,0] = G(state0=on) − G(state K-1=off) = ΔG_restraint_on_real
+    result.dG_kcalmol = dG_kT * kT
+    result.dG_uncertainty_kcalmol = ddG_kT * kT
+    result.wall_seconds = time.time() - t0
+    return result
+
+
 def _sample_via_replica_exchange(
     alch_system, positions,
     *,
