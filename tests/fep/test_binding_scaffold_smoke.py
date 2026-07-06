@@ -33,8 +33,59 @@ from src.fep.binding import (  # noqa: E402
     _harmonic_restraint_free_energy_kcalmol,
     _build_complex_alchemical_system,
     _build_complex_alchemical_system_amber14,
+    _build_solvent_alchemical_system_amber14,
     _prepare_protein_topology,
 )
+
+
+def _nonbonded_cutoff_nm(system):
+    """Cutoff (nm) of the system's NonbondedForce, or None."""
+    from openmm import NonbondedForce, unit
+    for f in system.getForces():
+        if isinstance(f, NonbondedForce):
+            return f.getCutoffDistance().value_in_unit(unit.nanometer)
+    return None
+
+
+def test_amber14_solvent_leg_matches_complex_leg_nonbonded():
+    """DDM cancellation requires the solvent leg and the complex leg
+    to decouple the ligand from the SAME water model at the SAME
+    cutoff. Before BUG_AUDIT.md #5 the solvent leg ran through the
+    pure-SMIRNOFF builder (tip3p.offxml, 0.9 nm switched cutoff) while
+    the amber14 complex leg used amber14/tip3pfb at 1.0 nm PME. Pin the
+    cutoffs equal so that mismatch can't silently return."""
+    # padding_nm=0.8 deliberately: the builder must floor the solvent
+    # box so the 1.0 nm cutoff stays ≤ half the box. A small ligand at
+    # tight padding otherwise trips OpenMM's "cutoff > half box" at
+    # sampler minimisation (caught end-to-end, not by scaffold build).
+    solv_alch, top, _pos, n_lig = (
+        _build_solvent_alchemical_system_amber14("C", padding_nm=0.8))
+    assert n_lig == 5, f"methane should have 5 atoms; got {n_lig}"
+    assert solv_alch.getNumParticles() > 100, (
+        "solvent leg should be a solvated box, not bare methane")
+    solv_cut = _nonbonded_cutoff_nm(solv_alch)
+    assert solv_cut is not None and abs(solv_cut - 1.0) < 1e-6, (
+        f"solvent-leg cutoff {solv_cut} nm != 1.0 nm")
+    # Every box vector must exceed 2×cutoff or PME rejects the system.
+    import numpy as np
+    from openmm import unit as _u
+    box = np.asarray(
+        solv_alch.getDefaultPeriodicBoxVectors().value_in_unit(
+            _u.nanometer) if hasattr(
+            solv_alch.getDefaultPeriodicBoxVectors(), "value_in_unit")
+        else [[v.x, v.y, v.z] for v in
+              solv_alch.getDefaultPeriodicBoxVectors()])
+    min_span = min(box[i][i] for i in range(3))
+    assert min_span > 2.0 * solv_cut, (
+        f"solvent box min span {min_span:.2f} nm <= 2×cutoff "
+        f"{2*solv_cut:.2f} nm — PME will reject this at sampling time")
+
+    pdb = REPO_ROOT / "benchmarks/md/1ubq.pdb"
+    cx = _build_complex_alchemical_system_amber14("C", pdb, padding_nm=0.8)
+    cx_cut = _nonbonded_cutoff_nm(cx["alch_system"])
+    assert cx_cut is not None and abs(solv_cut - cx_cut) < 1e-6, (
+        f"leg cutoff mismatch: solvent {solv_cut} vs complex "
+        f"{cx_cut} nm — DDM water contribution won't cancel")
 
 
 def test_harmonic_restraint_correction_matches_closed_form():
@@ -232,6 +283,8 @@ if __name__ == "__main__":
          test_correction_scales_monotonically_with_k),
         ("restraint correction vs openmmtools SSC",
          test_restraint_correction_matches_openmmtools_ssc),
+        ("amber14 solvent leg nonbonded matches complex leg",
+         test_amber14_solvent_leg_matches_complex_leg_nonbonded),
         ("complex builder on 1ubq + methane",
          test_complex_alchemical_builder_on_ubiquitin),
         ("amber14 builder on 1stp (Phase-2 regression guard)",

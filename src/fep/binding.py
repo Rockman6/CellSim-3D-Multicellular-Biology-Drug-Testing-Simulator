@@ -861,6 +861,99 @@ def _build_complex_alchemical_system_amber14(
     }
 
 
+def _build_solvent_alchemical_system_amber14(
+    smiles: str,
+    *,
+    padding_nm: float = 1.2,
+    softcore_alpha: float = 0.5,
+):
+    """Solvent-leg alchemical system built with the SAME force-field
+    stack as the amber14 complex leg: amber14/tip3pfb water at a 1.0 nm
+    PME cutoff with HBond constraints + rigid water, ligand via
+    SMIRNOFFTemplateGenerator (OpenFF Sage 2.1.0 + AM1-BCC).
+
+    Mirrors `_build_complex_alchemical_system_amber14` minus the
+    protein. The double-decoupling ΔG_bind subtracts the solvent leg
+    from the complex leg; unless BOTH legs decouple the ligand from an
+    identical water model at an identical cutoff, the bulk-water
+    contribution does NOT cancel and leaves a systematic 1-3 kcal/mol
+    offset on every absolute ΔG_bind (BUG_AUDIT.md #5). The previous
+    code routed the solvent leg through the pure-SMIRNOFF
+    `_build_alchemical_legs` (tip3p.offxml at Sage's 0.9 nm switched
+    cutoff), mismatching the complex leg on both water model and
+    cutoff.
+
+    Returns (solv_alch, solv_top_omm, solv_positions, n_ligand_atoms).
+    """
+    import numpy as np
+    from openff.toolkit.topology import Molecule
+    from openff.units import unit as offunit
+    from openmm import app as _app
+    from openmm import unit as ommunit
+    from openmmforcefields.generators import (
+        SMIRNOFFTemplateGenerator,
+    )
+    from openmmtools import alchemy
+
+    # Ligand: identical build to the complex leg (Sage + AM1-BCC,
+    # allow_undefined_stereo so C=N inputs don't diverge between legs).
+    lig = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
+    lig.generate_conformers(n_conformers=1)
+    lig.assign_partial_charges("am1bcc")
+    n_ligand_atoms = lig.n_atoms
+
+    gen = SMIRNOFFTemplateGenerator(
+        molecules=[lig], forcefield=_LIGAND_FF)
+    ff = _app.ForceField("amber14-all.xml", "amber14/tip3pfb.xml")
+    ff.registerTemplateGenerator(gen.generator)
+
+    lig_top_omm = lig.to_topology().to_openmm()
+    lig_pos_nm = np.asarray(
+        lig.conformers[0].m_as(offunit.nanometer), dtype=float)
+    modeller = _app.Modeller(
+        lig_top_omm, lig_pos_nm * ommunit.nanometer)
+    modeller.topology.setPeriodicBoxVectors(None)
+    # The 1.0 nm PME cutoff (matched to the complex leg) needs every
+    # box vector > 2.0 nm. A small ligand at tight padding — e.g.
+    # methane at 0.8 nm gives a ~1.9 nm box — violates that and OpenMM
+    # raises "cutoff cannot be greater than half the box". The complex
+    # leg never hits this because the protein makes the box large; the
+    # solvent-leg box is ligand+padding only. Floor the solvent padding
+    # at 1.2 nm (box ≥ 2.4 nm). Box size does not affect a neutral
+    # ligand's decoupling ΔG, so the DDM cancellation with the complex
+    # leg is unaffected — only the water model + cutoff must match
+    # (BUG_AUDIT.md #5).
+    solvent_padding_nm = max(padding_nm, 1.2)
+    modeller.addSolvent(
+        ff, padding=solvent_padding_nm * ommunit.nanometer,
+        model="tip3p",
+        ionicStrength=0.0 * ommunit.molar)
+
+    solv_system = ff.createSystem(
+        modeller.topology,
+        nonbondedMethod=_app.PME,
+        nonbondedCutoff=1.0 * ommunit.nanometer,
+        constraints=_app.HBonds,
+        rigidWater=True)
+
+    # Modeller was seeded from the ligand, so ligand atoms are the
+    # first n_ligand_atoms; waters follow.
+    ligand_indices = list(range(n_ligand_atoms))
+    region = alchemy.AlchemicalRegion(
+        alchemical_atoms=ligand_indices,
+        softcore_alpha=softcore_alpha)
+    factory = alchemy.AbsoluteAlchemicalFactory()
+    solv_alch = factory.create_alchemical_system(
+        reference_system=solv_system,
+        alchemical_regions=region)
+
+    solv_positions_nm = np.asarray(
+        modeller.positions.value_in_unit(ommunit.nanometer),
+        dtype=float)
+    solv_positions = solv_positions_nm * ommunit.nanometer
+    return solv_alch, modeller.topology, solv_positions, n_ligand_atoms
+
+
 def compute_absolute_binding_dg(
     smiles: str,
     receptor_pdb: str | Path,
@@ -952,17 +1045,28 @@ def compute_absolute_binding_dg(
     result.n_protein_atoms = cx["n_protein_atoms"]
     result.n_total_atoms_complex = cx["n_total_atoms"]
 
-    # Solvent leg — reuse the validated hydration builder. ΔG for
-    # decoupling in pure water is the same quantity as the solvent
-    # half of ΔG_hyd, so `_build_alchemical_legs` is the exact right
-    # primitive.
+    # Solvent leg. For DDM the solvent leg MUST use the same water
+    # model + nonbonded cutoff as the complex leg, or the bulk-water
+    # decoupling contribution won't cancel in the subtraction
+    # (BUG_AUDIT.md #5). So route by force_field_path:
+    #   amber14  → _build_solvent_alchemical_system_amber14 (tip3pfb,
+    #              1.0 nm PME) — mirrors the amber14 complex leg.
+    #   smirnoff → _build_alchemical_legs (tip3p.offxml, Sage cutoff)
+    #              — matches the pure-SMIRNOFF complex leg and the
+    #              validated hydration solvent leg.
     try:
-        from src.fep import _build_alchemical_legs
+        if force_field_path == "amber14":
+            (solv_alch, solv_top, solv_pos, _n) = (
+                _build_solvent_alchemical_system_amber14(
+                    smiles, padding_nm=padding_nm,
+                    softcore_alpha=softcore_alpha))
+        else:
+            from src.fep import _build_alchemical_legs
 
-        (_vac_alch, solv_alch,
-         _vac_top, solv_top,
-         _vac_pos, solv_pos, _n) = _build_alchemical_legs(
-            smiles, softcore_alpha=softcore_alpha)
+            (_vac_alch, solv_alch,
+             _vac_top, solv_top,
+             _vac_pos, solv_pos, _n) = _build_alchemical_legs(
+                smiles, softcore_alpha=softcore_alpha)
     except Exception as e:
         # Complex leg is still valid → report partial progress
         # rather than claiming total failure. Matches the pattern
