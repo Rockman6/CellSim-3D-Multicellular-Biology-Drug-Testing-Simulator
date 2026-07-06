@@ -216,7 +216,12 @@ def ligand_hydration_fep(
         return result
 
     try:
-        mol = Molecule.from_smiles(smiles)
+        # allow_undefined_stereo=True to match the binding builders
+        # (BUG_AUDIT.md #6): without it a SMILES with ambiguous stereo
+        # (e.g. an exocyclic C=N) raises UndefinedStereochemistryError
+        # here while the binding complex leg builds fine — an
+        # asymmetric failure across legs.
+        mol = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
         mol.generate_conformers(n_conformers=1)
         # AM1-BCC charges — same method src.chem.parametrize
         # uses for docking. Cached internally by the toolkit.
@@ -371,7 +376,13 @@ def _build_alchemical_legs(smiles: str, *,
     from openmm import unit as ommunit
     from openmmtools import alchemy
 
-    mol = Molecule.from_smiles(smiles)
+    # allow_undefined_stereo=True so the solvent leg matches the
+    # binding complex builders and never raises UndefinedStereo-
+    # chemistryError on an ambiguous-stereo ligand that the complex
+    # leg accepts (BUG_AUDIT.md #6). RDKit assigns stereo
+    # deterministically for a fixed SMILES, so both legs get the same
+    # molecule.
+    mol = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
     mol.generate_conformers(n_conformers=1)
     mol.assign_partial_charges("am1bcc")
     top = mol.to_topology()
