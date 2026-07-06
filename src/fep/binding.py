@@ -115,6 +115,12 @@ class BindingDGResult:
     dG_dec_solvent_kcalmol: Optional[float] = None
     dG_restraint_correction_kcalmol: Optional[float] = None
     dG_standard_state_kcalmol: Optional[float] = None
+    # ΔG to switch the CoM restraint ON at the fully-coupled bound
+    # endpoint (BUG_AUDIT.md #4). When None the DDM cycle assumes it is
+    # ≈ 0 (see restraint_on_real_included); absolute ΔG_bind is then
+    # provisional. ΔΔG cancels this term.
+    dG_restraint_on_real_kcalmol: Optional[float] = None
+    restraint_on_real_included: bool = False
     uncertainty_kcalmol: Optional[float] = None
     restraint_k_kJ_per_nm2: Optional[float] = None
     restraint_r0_nm: Optional[float] = None
@@ -1038,6 +1044,7 @@ def compute_absolute_binding_dg(
     seed: int = 1,
     force_field_path: str = "amber14",
     use_replica_exchange: bool = False,
+    include_restraint_on_real_leg: bool = False,
 ) -> BindingDGResult:
     """
     `force_field_path` selects the protein-ligand parametrisation
@@ -1185,28 +1192,55 @@ def compute_absolute_binding_dg(
             result.reason = f"solvent leg sample failed: {sv_r.reason}"
             result.wall_seconds = time.time() - t0
             return result
+
+        # Optional restraint-on-real-bound leg (BUG_AUDIT.md #4): the
+        # work to switch the CoM restraint ON at the fully-coupled
+        # bound endpoint. Opt-in — its production magnitude needs a GPU
+        # Milestone-B run to validate (k-invariance check); default off
+        # leaves it as an explicit ≈0 approximation rather than a
+        # silent one.
+        rr_r = None
+        if include_restraint_on_real_leg:
+            from src.fep.sampling import sample_restraint_coupling_dg
+            rr_r = sample_restraint_coupling_dg(
+                cx["alch_system"], cx["positions"],
+                n_windows=max(3, n_windows // 2),
+                n_equilibration_steps=n_equilibration_steps,
+                n_production_steps=n_production_steps,
+                sample_stride=sample_stride, seed=seed)
+            if not rr_r.ok:
+                result.reason = (
+                    f"restraint-coupling leg failed: {rr_r.reason}")
+                result.wall_seconds = time.time() - t0
+                return result
     except Exception as e:
         result.reason = f"binding sampling failed: {str(e)[:200]}"
         result.wall_seconds = time.time() - t0
         return result
 
-    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent) + ΔG_R+std
-    # where ΔG_R+std = +kT·ln(V_std/V_harm) > 0 is the analytical
-    # confinement / standard-state correction (see
-    # _harmonic_restraint_free_energy_kcalmol; sign fixed per
-    # BUG_AUDIT.md #1/#3). NOTE: the restraint-on-real-bound leg
-    # (BUG_AUDIT.md #4) is still assumed ≈ 0 here — added in a
-    # follow-up commit; absolute ΔG_bind is only trustworthy once
-    # that leg lands.
+    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent)
+    #                    + ΔG_R+std − ΔG_restraint_on_real
+    # ΔG_R+std = +kT·ln(V_std/V_harm(r0)) > 0 is the analytical
+    # confinement / standard-state correction (sign per BUG_AUDIT #1/#3,
+    # r0-aware per #7/#9/#10). ΔG_restraint_on_real is the sampled cost
+    # of imposing the restraint on the real bound ligand (#4); when the
+    # leg is not run it is taken as 0 and `restraint_on_real_included`
+    # is False so downstream knows the absolute value is provisional.
+    # ΔΔG(A→B) cancels both corrections.
     import math
 
     dG_R_plus_std = _harmonic_restraint_free_energy_kcalmol(
         restraint_k_kJ_per_nm2, r0_nm=cx["restraint_r0_nm"])
 
-    dG_bind = -(cx_r.dG_kcalmol - sv_r.dG_kcalmol) + dG_R_plus_std
+    dG_restraint_on_real = rr_r.dG_kcalmol if rr_r is not None else None
+    dG_bind = (-(cx_r.dG_kcalmol - sv_r.dG_kcalmol)
+               + dG_R_plus_std
+               - (dG_restraint_on_real or 0.0))
     unc = math.sqrt(
         (cx_r.dG_uncertainty_kcalmol or 0.0) ** 2
-        + (sv_r.dG_uncertainty_kcalmol or 0.0) ** 2)
+        + (sv_r.dG_uncertainty_kcalmol or 0.0) ** 2
+        + ((rr_r.dG_uncertainty_kcalmol or 0.0) ** 2
+           if rr_r is not None else 0.0))
 
     result.ok = True
     result.phase = "sampled"
@@ -1215,6 +1249,14 @@ def compute_absolute_binding_dg(
     result.dG_dec_solvent_kcalmol = sv_r.dG_kcalmol
     result.dG_restraint_correction_kcalmol = dG_R_plus_std
     result.dG_standard_state_kcalmol = 0.0   # folded in above
+    result.dG_restraint_on_real_kcalmol = dG_restraint_on_real
+    result.restraint_on_real_included = dG_restraint_on_real is not None
+    if not result.restraint_on_real_included:
+        result.reason = (
+            "absolute ΔG_bind PROVISIONAL: restraint-on-real leg "
+            "(BUG_AUDIT #4) not included (assumed 0); ΔΔG is "
+            "unaffected. Pass include_restraint_on_real_leg=True for a "
+            "closed cycle.")
     result.uncertainty_kcalmol = unc
     result.ghmc_acceptance_complex = list(cx_r.ghmc_acceptance)
     result.ghmc_acceptance_solvent = list(sv_r.ghmc_acceptance)
@@ -1381,6 +1423,12 @@ def main(argv=None) -> int:
                           "(default 4184 ≈ 10 kcal/mol/Å²)")
     dgp.add_argument("--sample", action="store_true",
                      help="run MD (slow on CPU; intended for GPU)")
+    dgp.add_argument(
+        "--restraint-on-real-leg", action="store_true",
+        help="also sample the restraint-on-real-bound leg (BUG_AUDIT "
+             "#4) so absolute ΔG_bind is a closed cycle. Adds ~50%% "
+             "wall time; needed for trustworthy absolute affinity "
+             "(ΔΔG does not need it).")
     dgp.add_argument("--force-field-path", default="amber14",
                      choices=["amber14", "smirnoff"],
                      help="amber14 (default; fast, AMBER14 protein "
@@ -1471,6 +1519,12 @@ def main(argv=None) -> int:
              "for restarting a crashed multi-hour run without "
              "losing completed compounds.")
     bp.add_argument(
+        "--restraint-on-real-leg", action="store_true",
+        help="also sample the restraint-on-real-bound leg (BUG_AUDIT "
+             "#4) for a closed absolute-ΔG cycle. Adds ~50%% wall "
+             "time; required for trustworthy absolute affinity, not "
+             "for ΔΔG ranking. Enable for the Milestone-B absolute gate.")
+    bp.add_argument(
         "--replica-exchange", action="store_true",
         help="use openmmtools.multistate.ReplicaExchangeSampler "
              "(Hamiltonian replica exchange between adjacent "
@@ -1506,7 +1560,9 @@ def main(argv=None) -> int:
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
             sample=args.sample,
-            force_field_path=args.force_field_path)
+            force_field_path=args.force_field_path,
+            include_restraint_on_real_leg=getattr(
+                args, "restraint_on_real_leg", False))
     elif args.cmd == "ddg":
         r = compute_relative_binding_ddg(
             args.smiles_a, args.smiles_b, args.receptor_pdb,
@@ -1665,7 +1721,9 @@ def _run_bench(args) -> int:
                 sample_stride=args.sample_stride,
                 force_field_path=args.force_field_path,
                 use_replica_exchange=getattr(
-                    args, "replica_exchange", False))
+                    args, "replica_exchange", False),
+                include_restraint_on_real_leg=getattr(
+                    args, "restraint_on_real_leg", False))
         except KeyboardInterrupt:
             # Graceful exit: the crash-proof CSV (previous commit)
             # already has every completed compound. Just announce

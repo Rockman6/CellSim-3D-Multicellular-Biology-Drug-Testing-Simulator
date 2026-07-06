@@ -231,6 +231,25 @@ def test_placed_pose_sits_near_restraint_minimum():
         "geometry-derived r0 should never cost more than r0=0")
 
 
+def test_restraint_on_real_leg_defaults_provisional():
+    """BUG_AUDIT.md #4: the restraint-on-real leg must be an EXPLICIT
+    (not silent) approximation. A fresh result carries the field as
+    None with restraint_on_real_included=False so downstream can tell
+    the absolute ΔG_bind is provisional."""
+    from src.fep.binding import BindingDGResult
+    r = BindingDGResult(smiles="C", receptor="x.pdb", ok=True)
+    assert r.dG_restraint_on_real_kcalmol is None
+    assert r.restraint_on_real_included is False
+
+
+def test_compute_absolute_binding_dg_exposes_restraint_leg_flag():
+    import inspect
+    from src.fep.binding import compute_absolute_binding_dg
+    sig = inspect.signature(compute_absolute_binding_dg)
+    p = sig.parameters.get("include_restraint_on_real_leg")
+    assert p is not None and p.default is False
+
+
 def test_complex_alchemical_builder_on_ubiquitin():
     """Scaffold build ubiquitin + methane complex — verifies the
     PDBFixer → Topology.from_pdb → Interchange → alchemical factory
