@@ -453,31 +453,51 @@ def _add_harmonic_com_restraint(system, ligand_indices,
 
 def _harmonic_restraint_free_energy_kcalmol(
         k_kJ_per_nm2, temperature_K=298.15):
-    """Analytical free-energy of a 3D isotropic harmonic restraint
-    relative to the 1 M standard state.
+    """Standard-state / restraint correction to ADD to ΔG_bind, in
+    kcal/mol.
 
-    For a harmonic well U = (k/2) r² (we use r0 > 0 but the Gaussian
-    integral is centred on r0; the factor below is independent of r0):
+    In the double-decoupling cycle the ligand is decoupled while a
+    harmonic CoM restraint confines it near the site. To connect the
+    'decoupled + restrained' state to the 1 M standard state we account
+    for the work of confining a *non-interacting* ligand from the
+    standard-state volume V_std into the restraint volume V_harm:
 
-        ΔG_R→std  =  −kT · ln[ V_std / V_harmonic ]
+        ΔG_corr  =  +kT · ln[ V_std / V_harm ]        (POSITIVE)
 
-    with V_harmonic = (2π·kT/k)^(3/2) and V_std = 1660 Å³ (the volume
-    per molecule at 1 M standard state).
+    with V_harm = (2π·kT/k)^(3/2) (the isotropic-Gaussian volume of a
+    harmonic well centred at r0 = 0) and V_std = 1.66 nm³ (volume per
+    molecule at 1 M). The term is positive — localising a ligand from
+    dilute solution into the small site volume costs configurational
+    entropy, which correctly penalises binding.
 
-    Returns the correction added to ΔG_bind to go from 'restrained
-    decoupled' to '1 M standard state' — this is the classic
-    Hamelberg–Gilson / Boresch-style correction for CoM restraints.
+    Sign convention vs openmmtools: this returns the NEGATIVE of
+    ``openmmtools.forces.HarmonicRestraintForce.compute_standard_state_
+    correction`` (which reports −kT·ln(V_std/V_harm), the free energy
+    of *releasing* the restraint out to standard state). The DDM
+    composition in ``compute_absolute_binding_dg`` adds the confinement
+    work, so the correct additive term is −(openmmtools SSC). See
+    BUG_AUDIT.md #1/#3: the previous code returned the release value
+    (negative) and added it, biasing every absolute ΔG_bind by
+    ≈ +2·5.27 ≈ 10.5 kcal/mol toward over-binding.
+
+    LIMITATION (r0 = 0 only): V_harm below is the Gaussian volume of a
+    well centred at the origin. For a restraint with r0 > 0 the radial
+    partition function differs (BUG_AUDIT.md #9/#10); the r0-aware form
+    is not yet applied here. Exact for the default r0 = 0 restraint the
+    pipeline currently uses.
     """
     import math
 
     # kT in kJ/mol at T
     kT_kJ = 0.0083144626 * temperature_K
-    # Gaussian volume in nm^3: (2π·kT/k)^(3/2)
+    # Isotropic-Gaussian volume of the harmonic well in nm³ (r0 = 0):
+    # (2π·kT/k)^(3/2)
     v_harm_nm3 = (2.0 * math.pi * kT_kJ / k_kJ_per_nm2) ** 1.5
     # Standard-state volume: 1 M = 1 molecule per 1660.54 Å³ = 1.66054 nm³
     v_std_nm3 = 1.66054
-    # ΔG = -kT ln(V_std / V_harm) → convert kJ → kcal (÷ 4.184)
-    dG_kJ = -kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
+    # +kT ln(V_std / V_harm): confinement work to ADD to ΔG_bind
+    # (kJ → kcal via ÷ 4.184).
+    dG_kJ = kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
     return dG_kJ / 4.184
 
 
@@ -989,9 +1009,14 @@ def compute_absolute_binding_dg(
         result.wall_seconds = time.time() - t0
         return result
 
-    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent) + ΔG_R + ΔG_std
-    # ΔG_R (harmonic restraint → 1 M standard state) is analytical;
-    # ΔG_std is folded into the same correction formula.
+    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent) + ΔG_R+std
+    # where ΔG_R+std = +kT·ln(V_std/V_harm) > 0 is the analytical
+    # confinement / standard-state correction (see
+    # _harmonic_restraint_free_energy_kcalmol; sign fixed per
+    # BUG_AUDIT.md #1/#3). NOTE: the restraint-on-real-bound leg
+    # (BUG_AUDIT.md #4) is still assumed ≈ 0 here — added in a
+    # follow-up commit; absolute ΔG_bind is only trustworthy once
+    # that leg lands.
     import math
 
     dG_R_plus_std = _harmonic_restraint_free_energy_kcalmol(
