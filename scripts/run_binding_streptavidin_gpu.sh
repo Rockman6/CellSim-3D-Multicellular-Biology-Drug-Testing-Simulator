@@ -118,10 +118,14 @@ echo ""
 # Run the binding bench. --resume means a previously-killed run
 # (same CSV path) picks up where it left off.
 echo "=== binding bench at $(date) ==="
-echo "Parameters: 11 windows × 25 000 prod + 2 500 equil steps × 2 legs"
+echo "Parameters: 11 windows × 25 000 prod + 2 500 equil steps"
+echo "            × 2 decoupling legs + restraint-on-real leg (~5 windows)"
 echo "            × 4 streptavidin compounds (biotin / desthiobiotin /"
 echo "              2-iminobiotin / biotin methyl ester)"
 echo "            FF: amber14-all + tip3pfb + SMIRNOFF ligand"
+echo "            Closed absolute cycle (--restraint-on-real-leg): this"
+echo "            is the Milestone-B ABSOLUTE gate |ΔG(biotin)-(-18.3)|<3."
+echo "            (BUG_AUDIT #1-#13 fixes: sign, FF match, r0, #4 leg.)"
 echo ""
 
 time ./scripts/cellsim fep-binding bench \
@@ -136,6 +140,7 @@ time ./scripts/cellsim fep-binding bench \
     --out-csv "${CSV}" \
     --resume \
     --replica-exchange \
+    --restraint-on-real-leg \
     2>&1 | tee -a "${OUT_DIR}/run.log"
 
 EXIT_CODE=${PIPESTATUS[0]}
