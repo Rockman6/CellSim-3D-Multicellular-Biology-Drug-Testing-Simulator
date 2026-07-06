@@ -170,6 +170,67 @@ def test_restraint_correction_matches_openmmtools_ssc():
         "kcal/mol")
 
 
+def test_restraint_correction_is_r0_aware():
+    """BUG_AUDIT.md #9/#10: the standard-state correction must use the
+    r0-aware restraint volume. At r0=0 it equals the Gaussian value;
+    for r0>0 the accessible shell is larger so the positive correction
+    shrinks monotonically."""
+    from src.fep.binding import (
+        _harmonic_restraint_free_energy_kcalmol as corr,
+        _harmonic_restraint_volume_nm3 as vol,
+    )
+    k = 4184.0
+    # r0=0 reduces to the isotropic Gaussian volume (2π kT/k)^1.5.
+    kT_kJ = 0.0083144626 * 298.15
+    v_gauss = (2.0 * math.pi * kT_kJ / k) ** 1.5
+    assert abs(vol(k, r0_nm=0.0) - v_gauss) < 1e-9
+
+    c0 = corr(k, r0_nm=0.0)
+    c02 = corr(k, r0_nm=0.2)
+    c05 = corr(k, r0_nm=0.5)
+    # All positive (confinement), shrinking as the shell grows.
+    assert c0 > c02 > c05 > 0, (c0, c02, c05)
+    # Ballpark from the verified closed form.
+    assert abs(c0 - 5.27) < 0.05
+    assert abs(c05 - 1.28) < 0.05
+
+
+def test_restraint_r0_from_geometry_is_placement_to_anchor_distance():
+    from src.fep.binding import _restraint_r0_from_geometry
+    import numpy as np
+    # Three anchor atoms with centroid at origin; placement 0.3 nm away.
+    pos = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    anchor = [0, 1, 2]              # centroid = (0,0,0)
+    placement = np.array([0.3, 0.0, 0.0])
+    r0 = _restraint_r0_from_geometry(pos, anchor, placement)
+    assert abs(r0 - 0.3) < 1e-9
+
+
+def test_placed_pose_sits_near_restraint_minimum():
+    """BUG_AUDIT.md #7: with r0 = placement→anchor distance the docked
+    ligand starts at (not ~125 kcal/mol above) the restraint minimum.
+    Verify the built pose's ligand-centroid→anchor-centroid distance
+    equals the restraint r0, so the restraint energy there is ~0 and
+    never exceeds what the old r0=0 choice would have cost."""
+    import numpy as np
+    from openmm import unit as u
+    pdb = REPO_ROOT / "benchmarks/md/1ubq.pdb"
+    cx = _build_complex_alchemical_system_amber14("C", pdb, padding_nm=0.8)
+    pos = np.asarray(cx["positions"].value_in_unit(u.nanometer))
+    lig_c = pos[cx["ligand_indices"]].mean(axis=0)
+    anch_c = pos[cx["anchor_indices"]].mean(axis=0)
+    r = float(np.linalg.norm(lig_c - anch_c))
+    r0 = cx["restraint_r0_nm"]
+    k = cx["restraint_k_kJ_per_nm2"]
+    e_fixed = 0.5 * k * (r - r0) ** 2 / 4.184        # kcal/mol
+    e_r0_zero = 0.5 * k * r ** 2 / 4.184             # the old-bug energy
+    assert e_fixed < 5.0, (
+        f"placed-pose restraint energy {e_fixed:.2f} kcal/mol too high "
+        f"(r={r:.3f}, r0={r0:.3f}); ligand not at restraint minimum")
+    assert e_fixed <= e_r0_zero + 1e-6, (
+        "geometry-derived r0 should never cost more than r0=0")
+
+
 def test_complex_alchemical_builder_on_ubiquitin():
     """Scaffold build ubiquitin + methane complex — verifies the
     PDBFixer → Topology.from_pdb → Interchange → alchemical factory
