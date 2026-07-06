@@ -530,38 +530,42 @@ def _sample_via_replica_exchange(
     # pins the per-replica dynamics stream.
     _seed_ghmc_move(move, seed)
 
+    import shutil
+
     tmpdir = tempfile.mkdtemp(prefix="cellsim_rex_")
     storage = os.path.join(tmpdir, "replex.nc")
-    reporter = MultiStateReporter(
-        storage, checkpoint_interval=max(1, n_iterations // 10))
-
-    sampler = ReplicaExchangeSampler(
-        mcmc_moves=move, number_of_iterations=n_iterations)
-    sampler.create(
-        thermodynamic_states=thermo,
-        sampler_states=sampler_states,
-        storage=reporter)
-
+    reporter = None
+    rep_read = None
     try:
-        sampler.minimize()
-    except Exception as e:
-        logger.warning(
-            "replica-exchange minimize warning (continuing): %s",
-            str(e)[:120])
+        reporter = MultiStateReporter(
+            storage, checkpoint_interval=max(1, n_iterations // 10))
 
-    try:
-        sampler.run()
-    except Exception as e:
-        result.reason = (
-            f"replica-exchange run failed: {str(e)[:200]}")
-        result.wall_seconds = time.time() - t0
-        return result
+        sampler = ReplicaExchangeSampler(
+            mcmc_moves=move, number_of_iterations=n_iterations)
+        sampler.create(
+            thermodynamic_states=thermo,
+            sampler_states=sampler_states,
+            storage=reporter)
 
-    # Analyse via openmmtools' built-in MBAR wrapper.
-    rep_read = MultiStateReporter(
-        storage, open_mode="r",
-        checkpoint_interval=max(1, n_iterations // 10))
-    try:
+        try:
+            sampler.minimize()
+        except Exception as e:
+            logger.warning(
+                "replica-exchange minimize warning (continuing): %s",
+                str(e)[:120])
+
+        try:
+            sampler.run()
+        except Exception as e:
+            result.reason = (
+                f"replica-exchange run failed: {str(e)[:200]}")
+            result.wall_seconds = time.time() - t0
+            return result
+
+        # Analyse via openmmtools' built-in MBAR wrapper.
+        rep_read = MultiStateReporter(
+            storage, open_mode="r",
+            checkpoint_interval=max(1, n_iterations // 10))
         try:
             ana = MultiStateSamplerAnalyzer(rep_read)
             Delta_f, dDelta_f = ana.get_free_energy()
@@ -590,10 +594,16 @@ def _sample_via_replica_exchange(
         except Exception:
             result.ghmc_acceptance = [1.0] * n_windows  # placeholder
     finally:
-        try:
-            rep_read.close()
-        except Exception:
-            pass
+        # Close both reporters and remove the scratch dir on EVERY exit
+        # path (BUG_AUDIT.md #13 — the tmpdir + .nc storage leaked once
+        # per replica-exchange call, filling $TMPDIR over a bench run).
+        for _r in (reporter, rep_read):
+            try:
+                if _r is not None:
+                    _r.close()
+            except Exception:
+                pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     result.wall_seconds = time.time() - t0
     return result
@@ -654,7 +664,17 @@ def _biologist_reason_for_mbar_error(
 
 
 def estimate_free_energy(u_kn, N_k) -> tuple[float, float]:
-    """Run MBAR and return (ΔG_λ=0→λ=1, uncertainty) in kT.
+    """Run MBAR and return (ΔG_{λ=1→λ=0}, uncertainty) in kT.
+
+    Returns ``Delta_f[K-1, 0] = f(state 0) − f(state K-1)``, i.e. the
+    free energy of going from the fully-coupled endpoint (state K-1,
+    λ_sterics=λ_elec=1) to the decoupled endpoint (state 0, both 0):
+    ΔG_{1→0} = +ΔG_decoupling (annihilation). Callers (hydration and
+    binding) treat the value as the *decoupling* free energy and
+    compose accordingly — do not flip its sign here. (BUG_AUDIT.md #12:
+    the docstring previously said λ=0→λ=1, the reverse of what the code
+    returns; this is the exact confusion that produced the c461053
+    hydration sign regression.)
 
     Raises on convergence / overlap failure. Callers should wrap
     with _biologist_reason_for_mbar_error to translate."""
