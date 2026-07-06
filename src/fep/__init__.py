@@ -449,6 +449,13 @@ def compute_hydration_dg(
     result = HydrationDGResult(
         smiles=smiles, ok=False, n_windows=n_windows)
 
+    if n_windows < 3:
+        result.reason = (
+            f"n_windows must be >= 3 (need decoupled + midpoint + "
+            f"coupled states); got {n_windows}")
+        result.wall_seconds = time.time() - t0
+        return result
+
     try:
         (vac_alch, solv_alch,
          vac_top, solv_top,

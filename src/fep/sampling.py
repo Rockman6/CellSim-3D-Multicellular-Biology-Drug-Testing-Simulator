@@ -101,7 +101,14 @@ def _split_lambda_schedule(
     the (elec=0, sterics=1) midpoint so no duplicate state.
     """
     if n_windows < 3:
-        n_windows = 3
+        # Was a silent clamp to 3, which desynced from the caller's
+        # `n_states = n_windows` and produced an out-of-bounds write
+        # into u_kn (BUG_AUDIT.md #8). Fail loudly instead.
+        raise ValueError(
+            f"n_windows must be >= 3 (the split electrostatics/sterics "
+            f"schedule needs at least a decoupled endpoint, a shared "
+            f"(elec=0, sterics=1) midpoint, and a coupled endpoint); "
+            f"got {n_windows}")
     # Split ~half-and-half. With n=11: 6 elec + 5 sterics (the
     # (elec=0, sterics=1) midpoint belongs to the elec stage).
     n_elec = (n_windows + 1) // 2     # 6 for n=11
@@ -126,6 +133,40 @@ def _split_lambda_schedule(
     assert schedule[-1] == (1.0, 1.0), schedule[-1]
     assert len(schedule) == n_windows, (len(schedule), n_windows)
     return schedule
+
+
+def _seed_ghmc_move(move, seed: int):
+    """Force a GHMCMove's lazily-built integrator to use a fixed RNG
+    seed so runs are reproducible.
+
+    openmmtools' GHMCMove creates its GHMCIntegrator in
+    `_get_integrator(thermodynamic_state)` and never seeds it, so the
+    `seed` parameter plumbed through `sample_alchemical_windows` was
+    dead — OpenMM fell back to system-clock entropy and no two runs
+    (even at seed=1) were identical (BUG_AUDIT.md #2). We wrap
+    `_get_integrator` to call `setRandomNumberSeed` on the integrator
+    it returns. OpenMM treats seed 0 as "nondeterministic", so we map
+    to a positive 31-bit value and avoid 0.
+    """
+    if getattr(move, "_cellsim_seeded", False):
+        move._cellsim_seed = int(seed)
+        return move
+    _orig_get_integrator = move._get_integrator
+    safe_seed = (int(seed) & 0x7FFFFFFF) or 1
+
+    def _seeded_get_integrator(thermodynamic_state):
+        integrator = _orig_get_integrator(thermodynamic_state)
+        try:
+            integrator.setRandomNumberSeed(
+                (int(move._cellsim_seed) & 0x7FFFFFFF) or 1)
+        except Exception:
+            pass
+        return integrator
+
+    move._cellsim_seed = safe_seed
+    move._get_integrator = _seeded_get_integrator
+    move._cellsim_seeded = True
+    return move
 
 
 def sample_alchemical_windows(
@@ -156,6 +197,11 @@ def sample_alchemical_windows(
     biotin-streptavidin) — confirmed to unblock acetic_acid where
     the hand-rolled path returned MBAR overlap failure. See
     BENCHMARKS.md § 'Replica exchange unblocks tight binders'."""
+    # Validate up front so a bad --n-windows fails with a clear
+    # message instead of an out-of-bounds u_kn write mid-run
+    # (BUG_AUDIT.md #8). Both sampler paths share this guard.
+    if n_windows < 3:
+        raise ValueError(f"n_windows must be >= 3; got {n_windows}")
     if use_replica_exchange:
         return _sample_via_replica_exchange(
             alch_system, positions,
@@ -257,6 +303,11 @@ def sample_alchemical_windows(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
+    # Plumb the seed into the GHMC integrators so runs are actually
+    # reproducible (BUG_AUDIT.md #2). Offset the production stream so
+    # it doesn't mirror equilibration.
+    _seed_ghmc_move(equil_move, seed)
+    _seed_ghmc_move(prod_move, seed + 1)
 
     # Minimise the initial state at λ=1 (fully coupled) before
     # starting any MD. Direct setPositions + LocalEnergyMinimizer,
@@ -474,6 +525,10 @@ def _sample_via_replica_exchange(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
+    # Seed the MD integrator for reproducibility (BUG_AUDIT.md #2).
+    # ReplicaExchangeSampler manages its own replica-mixing RNG; this
+    # pins the per-replica dynamics stream.
+    _seed_ghmc_move(move, seed)
 
     tmpdir = tempfile.mkdtemp(prefix="cellsim_rex_")
     storage = os.path.join(tmpdir, "replex.nc")
