@@ -39,33 +39,84 @@ from src.fep.binding import (  # noqa: E402
 
 def test_harmonic_restraint_correction_matches_closed_form():
     """Cross-check `_harmonic_restraint_free_energy_kcalmol` against
-    the Gaussian integral written out by hand."""
+    the Gaussian integral written out by hand. The helper returns the
+    confinement / standard-state correction to ADD to ΔG_bind:
+    +kT·ln(V_std/V_harm) > 0 (BUG_AUDIT.md #1/#3)."""
     T_K = 298.15
     k_kJ_per_nm2 = 4184.0           # 10 kcal/mol/Å²
     kT_kJ = 0.0083144626 * T_K      # 2.479 kJ/mol
     # Volume of an isotropic 3D Gaussian: (2π·kT/k)^{3/2}
     v_harm_nm3 = (2.0 * math.pi * kT_kJ / k_kJ_per_nm2) ** 1.5
     v_std_nm3 = 1.66054             # 1 M per-molecule volume
-    dG_kJ = -kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
+    # POSITIVE confinement work — this is the additive correction, not
+    # the (negative) release free energy.
+    dG_kJ = kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
     expected_kcalmol = dG_kJ / 4.184
 
     got = _harmonic_restraint_free_energy_kcalmol(k_kJ_per_nm2)
+    assert got > 0, (
+        f"standard-state correction must be POSITIVE (confinement "
+        f"penalty); got {got:.4f}. A negative value is the reverted "
+        "BUG_AUDIT #1/#3 sign error.")
     assert abs(got - expected_kcalmol) < 1e-6, (
         f"correction drift: got {got:.6f}, "
         f"expected {expected_kcalmol:.6f}")
 
 
 def test_correction_scales_monotonically_with_k():
-    """Looser spring → smaller magnitude correction. If this breaks,
-    the sign convention in the formula has flipped."""
+    """Tighter spring → smaller restraint volume → LARGER positive
+    standard-state correction. If this breaks, the sign convention in
+    the formula has flipped (BUG_AUDIT.md #1/#3)."""
     tight = _harmonic_restraint_free_energy_kcalmol(4184.0)
     loose = _harmonic_restraint_free_energy_kcalmol(418.4)
-    # Both are negative (standard-state volume > Gaussian volume).
-    # Tighter spring → harder confinement → MORE negative correction.
-    assert tight < 0 and loose < 0
-    assert tight < loose, (
-        f"expected tight ({tight:.2f}) more negative than loose "
+    # Both positive (confinement cost). Tighter spring confines the
+    # ligand to a smaller volume → larger entropy penalty.
+    assert tight > 0 and loose > 0
+    assert tight > loose, (
+        f"expected tight ({tight:.2f}) MORE positive than loose "
         f"({loose:.2f}); the spring-k monotonicity is broken")
+
+
+def test_restraint_correction_matches_openmmtools_ssc():
+    """Ground-truth the standard-state correction against openmmtools'
+    HarmonicRestraintForce.compute_standard_state_correction. The DDM
+    cycle adds the CONFINEMENT work, which is the negative of
+    openmmtools' (release-direction) SSC. This is the load-bearing
+    regression for BUG_AUDIT.md #1/#3 — it pins the sign to an
+    independent, YANK-validated reference rather than our own algebra."""
+    from openmm import System, NonbondedForce, unit
+    from openmmtools import forces, states
+
+    T_K = 298.15
+    k_kJ_per_nm2 = 4184.0
+    kT_kcal = 0.0083144626 * T_K / 4.184
+
+    sys_ = System()
+    sys_.addParticle(12.0 * unit.dalton)
+    sys_.addParticle(12.0 * unit.dalton)
+    nb = NonbondedForce()
+    nb.addParticle(0.0, 0.1, 0.0)
+    nb.addParticle(0.0, 0.1, 0.0)
+    sys_.addForce(nb)
+    restraint = forces.HarmonicRestraintForce(
+        spring_constant=(k_kJ_per_nm2
+                         * unit.kilojoule_per_mole / unit.nanometer**2),
+        restrained_atom_indices1=[0],
+        restrained_atom_indices2=[1])
+    sys_.addForce(restraint)
+    ts = states.ThermodynamicState(
+        system=sys_, temperature=T_K * unit.kelvin)
+    ssc_kcal = restraint.compute_standard_state_correction(ts) * kT_kcal
+
+    ours = _harmonic_restraint_free_energy_kcalmol(k_kJ_per_nm2)
+    # openmmtools reports the release direction (negative); our
+    # additive correction is its negation (positive).
+    assert ours > 0 > ssc_kcal, (
+        f"sign convention broken: ours={ours:+.4f} (want > 0), "
+        f"openmmtools SSC={ssc_kcal:+.4f} (want < 0)")
+    assert abs(ours - (-ssc_kcal)) < 0.05, (
+        f"helper {ours:+.4f} != -(openmmtools SSC) {-ssc_kcal:+.4f} "
+        "kcal/mol")
 
 
 def test_complex_alchemical_builder_on_ubiquitin():
@@ -179,6 +230,8 @@ if __name__ == "__main__":
          test_harmonic_restraint_correction_matches_closed_form),
         ("restraint k monotonicity",
          test_correction_scales_monotonically_with_k),
+        ("restraint correction vs openmmtools SSC",
+         test_restraint_correction_matches_openmmtools_ssc),
         ("complex builder on 1ubq + methane",
          test_complex_alchemical_builder_on_ubiquitin),
         ("amber14 builder on 1stp (Phase-2 regression guard)",
