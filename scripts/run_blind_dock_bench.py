@@ -188,13 +188,19 @@ def summarise(rows: list[dict]) -> dict:
     errored = [r for r in rows if r.get("error")]
     n = len(scored)
     recov = [r for r in scored if r["top1_rmsd_A"] <= 2.0]
+    recov3 = [r for r in scored
+              if r.get("top3_best_rmsd_A") is not None
+              and r["top3_best_rmsd_A"] <= 2.0]
     pb_scored = [r for r in scored if r.get("posebusters_ok") is not None]
     pb_ok = [r for r in pb_scored if r["posebusters_ok"]]
     return {
         "n_entries": len(rows),
         "n_scored": n,
         "n_errored": len(errored),
-        "pose_recovery_frac": (len(recov) / n) if n else None,
+        # top-1 = Vina's own #1-ranked pose (scoring + sampling);
+        # top-3 = best of the top 3 (sampling power, ranking-independent).
+        "pose_recovery_top1_frac": (len(recov) / n) if n else None,
+        "pose_recovery_top3_frac": (len(recov3) / n) if n else None,
         "pose_recovery_gate": 0.75,
         "posebusters_frac": (len(pb_ok) / len(pb_scored)) if pb_scored else None,
         "posebusters_gate": 0.95,
@@ -242,10 +248,13 @@ def main(argv=None) -> int:
     print()
     print(f"[blind-dock-bench] scored {s['n_scored']}/{s['n_entries']} "
           f"({s['n_errored']} errored: {s['errored_pdbs']})")
-    if s["pose_recovery_frac"] is not None:
-        pr = s["pose_recovery_frac"]
-        print(f"  pose recovery (top-1 <= 2.0 Å): {pr:.0%}  "
+    if s["pose_recovery_top1_frac"] is not None:
+        pr = s["pose_recovery_top1_frac"]
+        pr3 = s["pose_recovery_top3_frac"]
+        print(f"  pose recovery top-1 <= 2.0 Å: {pr:.0%}  "
               f"[gate >= 75%] {'PASS' if pr >= 0.75 else 'FAIL'}")
+        print(f"  pose recovery top-3 <= 2.0 Å: {pr3:.0%}  "
+              f"(sampling power; ranking-independent)")
     if s["posebusters_frac"] is not None:
         pb = s["posebusters_frac"]
         print(f"  PoseBusters validity:           {pb:.0%}  "
