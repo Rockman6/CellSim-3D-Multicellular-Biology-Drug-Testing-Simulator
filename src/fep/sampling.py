@@ -144,18 +144,18 @@ def _seed_ghmc_move(move, seed: int):
     `setRandomNumberSeed`. OpenMM treats seed 0 as "nondeterministic",
     so we map to a positive 31-bit value and avoid 0.
 
-    KNOWN LIMITATION (re-audited 2026-07 during review of the #2 fix):
-    this does NOT by itself make `sample_alchemical_windows`
-    reproducible. `GHMCMove.apply()` propagates the integrator RETURNED
-    by the ContextCache's `get_context`, a separately-managed instance
-    — not the one we seed here. Verified empirically: seed=1 twice
-    still yields different ΔG on BOTH the Reference (deterministic) and
-    OpenCL platforms, so it is the cache indirection, not platform
-    threading. True run-to-run reproducibility needs the sampler to own
-    its Contexts and seed the stepped integrator directly (the pattern
-    `sample_restraint_coupling_dg` already uses). Until that refactor
-    lands, treat FEP output as a distribution: report mean ± SD over
-    seeds (Monte-Carlo UQ), never a single "reproducible" value.
+    NOTE (re-audited 2026-07 during review of the #2 fix): seeding alone
+    does NOT make `sample_alchemical_windows` reproducible. The deeper
+    cause is platform non-determinism — the fast Metal/OpenCL/CUDA/CPU
+    platforms give run-to-run scatter, and on the deterministic
+    Reference platform the openmmtools GHMC integrator is seed-
+    INDEPENDENT (verified: seed=1 and seed=2 give bit-identical
+    trajectories). Reproducibility is therefore delivered by the
+    `deterministic=True` path (pins Reference on EVERY context —
+    minimise, GHMC, eval), which is validated bitwise-identical.
+    This seed hook is retained as a harmless best-effort for the
+    non-deterministic path; for a reproducible run use deterministic
+    mode, and for production report mean ± SD over independent runs.
     """
     if getattr(move, "_cellsim_seeded", False):
         move._cellsim_seed = int(seed)
@@ -194,9 +194,23 @@ def sample_alchemical_windows(
     seed: int = 1,
     sample_stride: int = 100,
     use_replica_exchange: bool = False,
+    deterministic: bool = False,
 ) -> AlchemicalSamplingResult:
     """Run Langevin MD at each λ via openmmtools MCMC moves;
     return ΔG between λ=0 and λ=1 estimated via MBAR.
+
+    `deterministic=True` makes the run bitwise-reproducible: it pins
+    EVERY context (per-window minimise, GHMC propagation, cross-λ
+    energy eval) to the OpenMM Reference platform, whose CustomIntegrator
+    dynamics are fully deterministic. This is what actually delivers
+    reproducibility — the `seed` alone does not (BUG_AUDIT.md #2
+    re-audit): the fast Metal/OpenCL/CUDA/CPU platforms the default path
+    uses are non-deterministic, and the minimise/eval contexts silently
+    ran on the fast platform even when GHMC was pinned elsewhere. Trade-
+    off: Reference is single-threaded and slow — use deterministic mode
+    for CI / debugging / a reproducibility witness, NOT production.
+    Production (default) stays fast + non-deterministic; report those as
+    mean ± SD over independent runs.
 
     `use_replica_exchange=True` swaps the hand-rolled independent-
     replica path for `openmmtools.multistate.ReplicaExchangeSampler`
@@ -238,16 +252,30 @@ def sample_alchemical_windows(
     # Intel, AMD, NVIDIA) → CUDA → CPU. On an M5 Max this gives a
     # ~5-10× speedup over CPU. openmmtools' context cache uses the
     # first platform available in its list unless we pin one.
-    _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
-    _chosen_platform = None
-    for _name in _preferred:
-        try:
-            _p = Platform.getPlatformByName(_name)
-            cache.global_context_cache.platform = _p
-            _chosen_platform = _name
-            break
-        except Exception:
-            continue
+    # deterministic mode: pin the Reference platform everywhere and use
+    # a FRESH context cache so no state leaks between runs. `_ctx_plat`
+    # (passed to the direct minimise/eval contexts) and `_move_cache`
+    # (passed to the moves' apply()) stay None on the default path so
+    # its behaviour is byte-for-byte unchanged.
+    _ctx_plat = None
+    _move_cache = None
+    if deterministic:
+        _ref = Platform.getPlatformByName("Reference")
+        cache.global_context_cache.platform = _ref
+        _ctx_plat = _ref
+        _move_cache = cache.ContextCache(platform=_ref)
+        _chosen_platform = "Reference"
+    else:
+        _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+        _chosen_platform = None
+        for _name in _preferred:
+            try:
+                _p = Platform.getPlatformByName(_name)
+                cache.global_context_cache.platform = _p
+                _chosen_platform = _name
+                break
+            except Exception:
+                continue
     logger.info(
         "FEP sampling platform: %s", _chosen_platform or "default")
 
@@ -337,7 +365,9 @@ def sample_alchemical_windows(
             cs.apply_to_context(ctx)
     try:
         _min_int = Verlet(1.0 * ommunit.femtosecond)
-        _min_ctx = _Context(alch_system, _min_int)
+        _min_ctx = (_Context(alch_system, _min_int, _ctx_plat)
+                    if _ctx_plat is not None
+                    else _Context(alch_system, _min_int))
         _apply_alchemical_params(_min_ctx, compound_states[-1])
         _min_ctx.setPositions(sampler_state.positions)
         if sampler_state.box_vectors is not None:
@@ -367,7 +397,9 @@ def sample_alchemical_windows(
     # perses when the system lacks a thermostat. We build this
     # once and reuse across all sample collections.
     _eval_int = Verlet(1.0 * ommunit.femtosecond)
-    _eval_ctx = _Context(alch_system, _eval_int)
+    _eval_ctx = (_Context(alch_system, _eval_int, _ctx_plat)
+                 if _ctx_plat is not None
+                 else _Context(alch_system, _eval_int))
     _eval_state = AlchemicalState.from_system(alch_system)
     beta = 1.0 / (0.0019872041 * temperature_K)  # 1/(kT) kcal/mol
 
@@ -380,7 +412,9 @@ def sample_alchemical_windows(
         # context (no thermostat in the system).
         try:
             _mi = Verlet(1.0 * ommunit.femtosecond)
-            _mctx = _Context(alch_system, _mi)
+            _mctx = (_Context(alch_system, _mi, _ctx_plat)
+                     if _ctx_plat is not None
+                     else _Context(alch_system, _mi))
             _apply_alchemical_params(_mctx, comp_state)
             _mctx.setPositions(sampler_state.positions)
             if sampler_state.box_vectors is not None:
@@ -398,14 +432,25 @@ def sample_alchemical_windows(
 
         # Reset the equilibration move's acceptance counter
         # before each window so the per-window statistic is clean.
+        # In deterministic mode the moves run through the pinned
+        # Reference cache; otherwise apply() is called exactly as
+        # before (global cache, fast platform).
         equil_move.reset_statistics()
-        equil_move.apply(comp_state, sampler_state)
+        if _move_cache is not None:
+            equil_move.apply(comp_state, sampler_state,
+                             context_cache=_move_cache)
+        else:
+            equil_move.apply(comp_state, sampler_state)
 
         # Reset production-move counter for the window.
         prod_move.reset_statistics()
         for s in range(n_samples_per):
             col = k * n_samples_per + s
-            prod_move.apply(comp_state, sampler_state)
+            if _move_cache is not None:
+                prod_move.apply(comp_state, sampler_state,
+                                context_cache=_move_cache)
+            else:
+                prod_move.apply(comp_state, sampler_state)
             # Eval reduced potential at every target λ via direct
             # control: setPositions → set λ via AlchemicalState →
             # read potential energy → u = β·U.
@@ -459,6 +504,7 @@ def sample_restraint_coupling_dg(
     friction_ps: float = 20.0,
     seed: int = 1,
     sample_stride: int = 100,
+    deterministic: bool = False,
 ) -> AlchemicalSamplingResult:
     """ΔG to switch the CoM restraint ON at the fully-coupled bound
     endpoint (BUG_AUDIT.md #4).
@@ -507,14 +553,19 @@ def sample_restraint_coupling_dg(
         ok=False, n_windows=n_windows,
         lambda_schedule=[(lr,) for lr in lambdas])
 
-    _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
-    platform = None
-    for _name in _preferred:
-        try:
-            platform = Platform.getPlatformByName(_name)
-            break
-        except Exception:
-            continue
+    # deterministic mode pins Reference (this leg already uses a direct
+    # Context, so pinning the platform is all that's needed).
+    if deterministic:
+        platform = Platform.getPlatformByName("Reference")
+    else:
+        _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+        platform = None
+        for _name in _preferred:
+            try:
+                platform = Platform.getPlatformByName(_name)
+                break
+            except Exception:
+                continue
 
     integrator = GHMCIntegrator(
         temperature=temperature_K * ommunit.kelvin,
