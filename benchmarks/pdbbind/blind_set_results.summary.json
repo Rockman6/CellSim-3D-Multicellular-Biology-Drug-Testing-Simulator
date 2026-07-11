@@ -1,0 +1,10 @@
+{
+  "n_entries": 15,
+  "n_scored": 10,
+  "n_errored": 0,
+  "pose_recovery_frac": 0.7,
+  "pose_recovery_gate": 0.75,
+  "posebusters_frac": 1.0,
+  "posebusters_gate": 0.95,
+  "errored_pdbs": []
+}
