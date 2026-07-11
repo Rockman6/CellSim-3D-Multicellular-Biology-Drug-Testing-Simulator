@@ -438,6 +438,7 @@ def compute_hydration_dg(
     seed: int = 1,
     softcore_alpha: float = 0.5,
     use_replica_exchange: bool = False,
+    deterministic: bool = False,
 ) -> HydrationDGResult:
     """End-to-end absolute hydration free energy.
 
@@ -486,7 +487,8 @@ def compute_hydration_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not vac_r.ok:
             result.reason = f"vacuum leg failed: {vac_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -497,7 +499,8 @@ def compute_hydration_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not solv_r.ok:
             result.reason = f"solvent leg failed: {solv_r.reason}"
             result.wall_seconds = time.time() - t0

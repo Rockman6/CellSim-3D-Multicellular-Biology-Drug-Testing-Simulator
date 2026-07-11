@@ -1051,6 +1051,7 @@ def compute_absolute_binding_dg(
     force_field_path: str = "amber14",
     use_replica_exchange: bool = False,
     include_restraint_on_real_leg: bool = False,
+    deterministic: bool = False,
 ) -> BindingDGResult:
     """
     `force_field_path` selects the protein-ligand parametrisation
@@ -1181,7 +1182,8 @@ def compute_absolute_binding_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not cx_r.ok:
             result.reason = f"complex leg sample failed: {cx_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -1193,7 +1195,8 @@ def compute_absolute_binding_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not sv_r.ok:
             result.reason = f"solvent leg sample failed: {sv_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -1213,7 +1216,8 @@ def compute_absolute_binding_dg(
                 n_windows=max(3, n_windows // 2),
                 n_equilibration_steps=n_equilibration_steps,
                 n_production_steps=n_production_steps,
-                sample_stride=sample_stride, seed=seed)
+                sample_stride=sample_stride, seed=seed,
+                deterministic=deterministic)
             if not rr_r.ok:
                 result.reason = (
                     f"restraint-coupling leg failed: {rr_r.reason}")
