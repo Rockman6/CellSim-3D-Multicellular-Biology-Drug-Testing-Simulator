@@ -176,13 +176,27 @@ def pose_rmsd_symmetry_aware(
     except Exception as e:
         logger.debug("AssignBondOrdersFromTemplate failed: %s", e)
 
-    # Probe: template + pose coords assigned in SMILES order.
-    probe = Chem.Mol(template)
-    conf = Chem.Conformer(n_heavy)
-    for i, (_, xyz) in enumerate(pose_heavy):
-        conf.SetAtomPosition(i, (float(xyz[0]), float(xyz[1]),
-                                 float(xyz[2])))
-    probe.AddConformer(conf, assignId=True)
+    # Probe: prefer the Meeko-reconstructed correct mol (true atom
+    # mapping). Meeko reorders atoms during prep, so the legacy path
+    # below — assigning pose coords to the template in SMILES order —
+    # builds a SCRAMBLED conformer and returns a meaningless RMSD.
+    probe = None
+    molblock = getattr(pose, "rdkit_molblock", None)
+    if molblock:
+        pm = Chem.MolFromMolBlock(molblock, removeHs=True, sanitize=True)
+        if (pm is not None and pm.GetNumConformers() > 0
+                and pm.GetNumAtoms() == n_heavy):
+            probe = pm
+    if probe is None:
+        # Legacy fallback (assumes SMILES order — may be wrong for
+        # reordered ligands; only reached when no molblock is present).
+        logger.debug("no rdkit_molblock; using legacy SMILES-order probe")
+        probe = Chem.Mol(template)
+        conf = Chem.Conformer(n_heavy)
+        for i, (_, xyz) in enumerate(pose_heavy):
+            conf.SetAtomPosition(i, (float(xyz[0]), float(xyz[1]),
+                                     float(xyz[2])))
+        probe.AddConformer(conf, assignId=True)
 
     try:
         rmsd = rdMolAlign.GetBestRMS(probe, ref_mol)
