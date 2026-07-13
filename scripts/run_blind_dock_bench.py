@@ -135,7 +135,11 @@ def run_one(entry: dict, *, exhaustiveness: int, num_modes: int,
             rec.update(error=f"no SMILES for ligand {resname}")
             return rec
         rec["smiles"] = smiles
-        coords = extract_hetatm_ligand(pdb_path, resname)
+        # ONE ligand copy for the box centre. Crystals with the ligand
+        # in several chains (e.g. imatinib in 2hyy, 4 copies) would
+        # otherwise centre the box on the centroid of ALL copies —
+        # between the binding sites — and dock into empty space.
+        coords = extract_hetatm_ligand(pdb_path, resname, first_copy_only=True)
         if len(coords) < 4:
             rec.update(error=f"ligand {resname} has < 4 heavy atoms in file")
             return rec
