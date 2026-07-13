@@ -68,12 +68,12 @@ omit `--center` / `--box` and CellSim auto-detects pockets via fpocket
 |---|---|---|
 | **1.1 Chem** | SMILES → OpenFF-parametrised system (AM1-BCC charges) | ✅ 9/10 full tier, 10/10 RDKit tier |
 | **1.2 MD** | Classical Langevin MD, solvated protein loader (AMBER14 + TIP3P) | ✅ 1 ps ubiquitin Cα RMSD 0.74 Å |
-| **1.3 Docking** | Vina + Meeko + PoseBusters + fpocket auto-site | ✅ mini-bench 2/3 canonical gate |
+| **1.3 Docking** | Vina + Meeko + PoseBusters + fpocket auto-site | ✅ blind 15-cocrystal: top-3 87 %, PoseBusters 100 %; top-1 73 % |
 | **1.3 FEP** | Alchemical ΔG_hyd + ΔG_bind (DDM); `cellsim fep-binding {dg,ddg,bench,validate}` + `fep-report` + `bench-all` | ✅ **Milestone A PASS** (FreeSolv-12 MAE 1.42 kcal/mol on `milestone-a-pilot-3`, Pearson r +0.913); pipeline complete end-to-end; 107+ smoke tests; Milestone B binding pending GPU |
 | **1.4 Quantum** | xTB GFN2 single-point + CYP3A4 SoM predictor (BDE) | ✅ 10/10 sane + 3/3 SoM smoke |
 | **1.5 Coarse-grained** | Martini 3 membrane / bilayer MD | ⏳ scaffold only |
 | **1.6 UQ** | Monte-Carlo / Sobol / split-conformal for ΔG bounds | ✅ triad shipped |
-| **1.7 Blind harness** | PDBBind scale gate + red-team slot | ⏳ 3-cocrystal mini-bench shipped; PDBBind scale pending |
+| **1.7 Blind harness** | RCSB-fetched blind pose recovery + PoseBusters | ✅ 15-cocrystal blind set; PoseBusters #3 PASS (100 %); CASF/full-PDBBind scale pending |
 | **x-cut cache** | SQLite physics-prior memoisation (AM1-BCC, Vina, xTB) | ✅ shipped; wired into Layers 1.1 / 1.3 / 1.4 |
 
 **Cross-cutting UX:**
@@ -168,8 +168,14 @@ per-row reproducers.
 
 Headline numbers today:
 
-- **3-cocrystal mini-bench:** 2/3 = 67 % pose recovery at canonical
-  top-3 < 2 Å gate.
+- **Blind pose recovery (15 diverse cocrystals, RCSB-fetched):**
+  top-1 ≤ 2 Å = **73 %**, top-3 ≤ 2 Å = **87 %**, PoseBusters physical
+  validity = **100 %**. The top-1/top-3 gap is Vina's *scoring* (it
+  ranks the correct pose #1 only 73 % of the time) vs its *sampling*
+  (it generates the correct pose 87 % of the time). Reproduce:
+  `python scripts/run_blind_dock_bench.py benchmarks/pdbbind/blind_set.yaml`.
+  (Earlier "2/3 mini-bench" numbers were computed on molecules
+  scrambled by a Meeko atom-order bug, now fixed — see BENCHMARKS.md.)
 - **Streptavidin calibration:** Spearman ρ = **1.00** across
   14 orders of magnitude of K_d (but Pearson r = 0.98 hides the
   fact that Vina's absolute ΔG saturates on tight binders — MAE
