@@ -22,5 +22,37 @@
     "lapatinib",
     "guanidine",
     "4-aminobenzamidine"
+  ],
+  "per_target_class": [
+    {
+      "target_class": "egfr",
+      "n": 6,
+      "mean_abs_err": 2.1649999999999996,
+      "median_abs_err": 1.7670000000000003,
+      "worst_abs_err": 4.632999999999999,
+      "worst_compound": "erlotinib",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    },
+    {
+      "target_class": "streptavidin",
+      "n": 4,
+      "mean_abs_err": 4.9807500000000005,
+      "median_abs_err": 4.1205,
+      "worst_abs_err": 11.619000000000002,
+      "worst_compound": "biotin",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    },
+    {
+      "target_class": "trypsin",
+      "n": 6,
+      "mean_abs_err": 0.9071666666666668,
+      "median_abs_err": 0.7709999999999999,
+      "worst_abs_err": 1.9440000000000008,
+      "worst_compound": "4-aminobenzamidine",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    }
   ]
 }

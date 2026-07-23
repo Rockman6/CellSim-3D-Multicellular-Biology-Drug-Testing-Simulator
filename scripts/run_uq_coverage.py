@@ -122,6 +122,44 @@ def coverage_report(pairs: list, alpha: float, seed: int) -> dict:
     }
 
 
+def per_class_table(pairs: list, alpha: float) -> list:
+    """Per-target-class error table — the 'when to trust CellSim' view.
+
+    Pooling every target class into one conformal fit lets the single
+    worst class set the error bar for all of them (biotin/streptavidin
+    alone drives it to ±11.6 kcal/mol). Splitting by target class is
+    what makes the bars decision-useful.
+
+    Honesty: the calibration bundles hold only ~6 compounds each, far
+    below the n >= (1-alpha)/alpha needed for a genuine (1-alpha)
+    conformal quantile (19 for alpha=0.05). So this reports EMPIRICAL
+    error statistics per class — mean / median / worst absolute residual
+    — and explicitly does NOT dress them up as guaranteed intervals.
+    """
+    import statistics as st
+
+    by_class: dict = {}
+    for name, pred, expt, bundle in pairs:
+        by_class.setdefault(bundle, []).append((name, abs(pred - expt)))
+
+    n_min = math.ceil((1.0 - alpha) / alpha)
+    rows = []
+    for bundle, items in sorted(by_class.items()):
+        res = [r for _, r in items]
+        worst_name = max(items, key=lambda t: t[1])[0]
+        rows.append({
+            "target_class": bundle.replace("_calibration", ""),
+            "n": len(res),
+            "mean_abs_err": st.mean(res),
+            "median_abs_err": st.median(res),
+            "worst_abs_err": max(res),
+            "worst_compound": worst_name,
+            "conformal_valid": len(res) >= n_min,
+            "n_min_for_alpha": n_min,
+        })
+    return rows
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bundles", nargs="*", default=DEFAULT_BUNDLES)
@@ -162,6 +200,26 @@ def main(argv=None) -> int:
               "(overconfident — the dangerous direction).")
     print(f"  n_test={rep['n_test']} is small; the Wilson interval above "
           "is the honest uncertainty on this number.")
+    n_min = math.ceil((1.0 - args.alpha) / args.alpha)
+    if rep["n_cal"] < n_min:
+        print(f"  !! n_cal={rep['n_cal']} < {n_min} required for a genuine "
+              f"{rep['nominal_coverage']:.0%} conformal quantile. The level "
+              "saturates, so this 'interval' is just the MAXIMUM residual "
+              "seen and carries NO coverage guarantee.")
+
+    rows = per_class_table(pairs, args.alpha)
+    print()
+    print("  Per-target-class error (the 'when to trust CellSim' table):")
+    print(f"    {'target class':<16}{'n':>3}  {'mean':>6} {'median':>7} "
+          f"{'worst':>7}   worst compound")
+    for r in rows:
+        print(f"    {r['target_class']:<16}{r['n']:>3}  "
+              f"{r['mean_abs_err']:>6.2f} {r['median_abs_err']:>7.2f} "
+              f"{r['worst_abs_err']:>7.2f}   {r['worst_compound']}")
+    print("    (absolute error vs experiment, kcal/mol)")
+    print(f"    NB no class reaches n >= {n_min}, so these are EMPIRICAL "
+          "errors, not guaranteed conformal intervals.")
+    rep["per_target_class"] = rows
 
     if args.out_json:
         Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
