@@ -131,8 +131,38 @@ red-team leaderboard.
 2. ChEMBL held-out IC50 ranking Pearson r ≥ 0.7 on 5 kinase panels.
 3. PoseBusters physical-validity pass rate ≥ 95 %.
 4. UQ calibration error ≤ 10 % on held-out set via MAPIE conformal
-   wrapper; Sobol sensitivity indices documented for every headline
+   wrapper **AND** the resulting interval must be decision-useful
+   (see amendment); Sobol sensitivity indices documented for every headline
    prediction.
+
+   *Amendment 2026-07 — this criterion had a loophole.* Measured for
+   the first time on REAL predictions (`scripts/run_uq_coverage.py`,
+   16 docked compounds pooled from the streptavidin / trypsin / EGFR
+   calibration bundles, split-conformal fit on 8, coverage on 8
+   held-out): empirical coverage **100 %** vs 95 % nominal →
+   calibration error **5 %**, which "PASSES" the ≤ 10 % gate.
+
+   But the interval was **± 11.6 kcal/mol** (23 kcal/mol wide). Real
+   binding energies span roughly −4 to −20 kcal/mol, so that interval
+   covers essentially every physically possible answer — it cannot be
+   wrong, and it cannot inform a decision either. Coverage alone is
+   trivially satisfiable by widening the bars, so the criterion as
+   originally written measured *honesty* but not *usefulness*.
+
+   Root cause: split-conformal takes the (1−α) quantile of absolute
+   residuals, and the pooled set mixes target classes Vina handles very
+   differently — biotin/streptavidin alone contributes a ≈ +11.7
+   kcal/mol residual (Vina saturates on ultra-tight binders; expt
+   −19.1 vs predicted ≈ −7.4), while EGFR kinase contributes up to
+   +4.6 and trypsin under ~1.6. One target class sets the bar for all.
+
+   Consequence for users: **CellSim's absolute docking ΔG is not
+   trustworthy across target classes.** It is only decision-useful
+   within a validated, well-behaved family. Conformal intervals should
+   therefore be calibrated PER TARGET CLASS, not pooled — which is
+   exactly what the target-class reliability table (TUTORIAL.md §8)
+   is for. Re-state this criterion with a width bound (e.g. interval
+   ≤ 2–3 kcal/mol within a target class) before calling it met.
 5. Reactive-metabolite prediction matches literature on ≥ 15/20
    marketed CYP3A4 substrates.
 6. Every prediction carries a calibrated uncertainty bar + method

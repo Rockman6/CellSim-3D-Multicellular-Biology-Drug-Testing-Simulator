@@ -1,0 +1,26 @@
+{
+  "n_total": 16,
+  "n_cal": 8,
+  "n_test": 8,
+  "alpha": 0.05,
+  "nominal_coverage": 0.95,
+  "empirical_coverage": 1.0,
+  "coverage_wilson95": [
+    0.6755843804891231,
+    1.0
+  ],
+  "calibration_error": 0.050000000000000044,
+  "calibration_error_gate": 0.1,
+  "q_kcalmol": 11.619000000000002,
+  "interval_width_kcalmol": 23.238000000000003,
+  "test_names": [
+    "4-hydroxybenzamidine",
+    "gefitinib",
+    "tyrphostin_AG-494",
+    "2-iminobiotin",
+    "AG-1478",
+    "lapatinib",
+    "guanidine",
+    "4-aminobenzamidine"
+  ]
+}
