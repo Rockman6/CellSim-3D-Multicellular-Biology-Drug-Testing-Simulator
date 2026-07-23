@@ -468,6 +468,29 @@ def _worker(task: tuple) -> dict:
         **_mc_fields(),
         **_strain_fields(),
     )
+
+    # ACCURACY (how far from the truth) — distinct from the MC error
+    # bar above, which is only PRECISION (seed-to-seed scatter). On
+    # biotin/streptavidin the seed bar reads ±0.29 kcal/mol while the
+    # real error vs experiment is 11.8: Vina reproducibly returns the
+    # same wrong number, and a tight bar on a wrong number invites
+    # exactly the trust it doesn't merit. Look up the measured
+    # per-target-class error so the row carries both. Uncalibrated
+    # receptors report UNKNOWN — never a borrowed number.
+    try:
+        from src.uq import reliability_for
+        rel = reliability_for(cfg.receptor_pdb)
+        record["accuracy_kcalmol"] = rel.mean_abs_err_kcalmol
+        record["accuracy_worst_kcalmol"] = rel.worst_abs_err_kcalmol
+        record["target_class"] = rel.target_class
+        record["trust_absolute_dG"] = rel.verdict
+    except Exception as e:  # noqa: BLE001 — never break a run over this
+        logger.debug("reliability lookup failed: %s", e)
+        record["accuracy_kcalmol"] = None
+        record["accuracy_worst_kcalmol"] = None
+        record["target_class"] = None
+        record["trust_absolute_dG"] = "uncalibrated"
+
     call, why = _triage_call(record)
     record["triage"] = call
     record["triage_reason"] = why
@@ -679,6 +702,13 @@ def _write_csv(records: list[dict], out: Path) -> None:
     cols = ["rank", "name", "triage", "triage_reason",
             "smiles", "formula", "inchi_key",
             "dG_kcalmol", "dG_kJmol", "Kd_nM", "Kd_human",
+            # ACCURACY (measured error vs experiment for this target
+            # class) — the honest "how wrong could this be". Distinct
+            # from the dG_std/ci95 columns below, which are only
+            # seed-to-seed PRECISION and can look tight on a badly
+            # wrong number.
+            "trust_absolute_dG", "accuracy_kcalmol",
+            "accuracy_worst_kcalmol", "target_class",
             "dG_mean_kcalmol", "dG_std_kcalmol",
             "dG_ci95_lo", "dG_ci95_hi",
             "mc_n_ok", "mc_n_samples",
@@ -901,6 +931,25 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Biologist-friendly summary table on stdout.
     print()
+    # Accuracy banner. The whole batch shares one receptor, so the
+    # measured per-target-class error applies to every row. Printed
+    # BEFORE the table so nobody reads a ΔG column without it.
+    _rel_rec = next((r for r in records if r.get("trust_absolute_dG")), None)
+    if _rel_rec:
+        _acc = _rel_rec.get("accuracy_kcalmol")
+        _tc = _rel_rec.get("target_class")
+        if _acc is not None:
+            print(f"  ACCURACY: ΔG below is typically within "
+                  f"±{_acc:.1f} kcal/mol of experiment for this target "
+                  f"class ({_tc}; worst seen "
+                  f"{_rel_rec.get('accuracy_worst_kcalmol')}). "
+                  f"Verdict: {_rel_rec['trust_absolute_dG']}.")
+        else:
+            print("  ACCURACY: this receptor is UNCALIBRATED — the true "
+                  "error of ΔG here is UNKNOWN. Treat ΔG as rank-order "
+                  "only, not as an absolute affinity.")
+        print("  (Any ± / CI columns are seed-to-seed PRECISION, i.e. "
+              "reproducibility — not accuracy.)")
     print("RANK  NAME                       TRIAGE        "
           "ΔG(kcal)   K_d        "
           "POCKET  STRAIN       Ro5  QED   logS")
