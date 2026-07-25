@@ -129,6 +129,26 @@ red-team leaderboard.
    it ~7 points and the sampling error is wide. Scale the blind set
    before quoting it as a settled figure.
 2. ChEMBL held-out IC50 ranking Pearson r ≥ 0.7 on 5 kinase panels.
+
+   *Amended 2026-07 — decision recorded: bounded limitation, deferred to
+   FEP.* Vina's empirical scoring function does NOT rank-order kinase
+   ATP-site inhibitors to this bar. Measured evidence: the EGFR
+   calibration bundle (`benchmarks/dock/egfr_calibration.yaml`) yields a
+   mean absolute ΔG error of 2.16 kcal/mol with the class flagged
+   `rank_order_only` in the reliability table — and even the ordering is
+   weak (negative Spearman on the congeneric series noted in
+   `reliability_table.yaml`). This is the SAME limitation recorded for
+   criterion 1: Vina *generates* poses reliably and *ranks* them
+   unreliably, which is a known property of fast empirical docking, not
+   a bug. The division of labour is explicit and consistent across
+   criteria 1 and 2: **docking generates candidate poses; alchemical FEP
+   ΔΔG ranks them.** Kinase ranking to r ≥ 0.7 is therefore the job of
+   the FEP milestone (needs GPU time; see Compute), not of Vina. As a
+   docking-alone criterion this is **not met and will not be met by
+   docking**; it is re-scoped to the FEP path and documented as a bounded
+   limitation of the empirical scorer. Absolute and rank-order kinase
+   numbers must carry the `rank_order_only` reliability flag until FEP
+   validation lands.
 3. PoseBusters physical-validity pass rate ≥ 95 %.
 4. UQ calibration error ≤ 10 % on held-out set via MAPIE conformal
    wrapper **AND** the resulting interval must be decision-useful
@@ -186,6 +206,24 @@ red-team leaderboard.
    meaningful — that is correct, not a shortfall.)
 5. Reactive-metabolite prediction matches literature on ≥ 15/20
    marketed CYP3A4 substrates.
+
+   *Amended 2026-07 — decision recorded: bounded limitation, tool is
+   advisory.* After fixing the predictor to rank only C–H abstraction
+   (CYP3A4 chemistry) and enabling heme-accessibility weighting by
+   default, the sampled validation reaches ~2/3, not 15/20. Root cause
+   is a SYSTEMATIC blind spot, not tuning: the site-of-metabolism ranker
+   uses GFN2-xTB C–H bond-dissociation energies as the reactivity proxy,
+   and xTB BDEs do not resolve the reactivity of N-dealkylation /
+   N-demethylation sites (diazepam and many tertiary-amine CYP3A4
+   substrates metabolise there), so those true sites are systematically
+   mis-ranked. A genuine fix needs either DFT-level BDEs for the
+   heteroatom-adjacent positions or a curated reaction-type model — both
+   are multi-day and out of the current physics-only fast path. Decision:
+   **do not rabbit-hole.** The SoM tool is re-scoped to **advisory**: it
+   flags plausible C–H oxidation sites and is documented as NOT a
+   validated 15/20 predictor and as blind to N-dealkylation. Criterion 5
+   counts as **not met**, recorded as a bounded limitation with a known
+   cause and a known (deferred) fix path.
 6. Every prediction carries a calibrated uncertainty bar + method
    provenance. Every decision constant / rate constant cites a PMID,
    a physics derivation, or is a labelled project convention — never a
