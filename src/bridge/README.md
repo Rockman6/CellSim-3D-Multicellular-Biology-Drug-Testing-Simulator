@@ -21,6 +21,25 @@ Essentially all of this (no upstream equivalent):
 - Emission format that Campaign-2 config loaders can read directly
   (YAML with provenance block).
 
+## Accuracy, not just precision (2026-07)
+Every `RateLawPrior` carries `accuracy_kcalmol` + `accuracy_basis` +
+`trust`, and the K_d CI is driven by the LARGER of the input
+reproducibility σ and the measured target-class error. Rationale: the
+input σ is *precision* ("does the calc agree with itself?"), which on
+biotin/streptavidin was ±0.29 kcal/mol while the *true* error was
+~11.8 — a Campaign-2 cell model handed the tight bar would trust a
+wrong rate. Rules (see `_resolve_accuracy`):
+
+- **Docking-sourced** ΔG uses `benchmarks/dock/reliability_table.yaml`
+  via `src/uq/reliability.reliability_for(receptor)`. Untrustworthy
+  classes widen the CI and set `trust` accordingly.
+- **FEP-sourced** ΔG does *not* borrow the docking table (different
+  method) and CellSim's absolute FEP is not yet GPU-validated, so it is
+  `trust="uncalibrated"`, `accuracy_kcalmol=None` — flagged, never faked.
+- **Unknown receptor** → `uncalibrated` (NEVER GUESS). Consumers must
+  check `prior.accuracy_known` / `prior.trust` before treating a K_d as
+  a calibrated absolute value.
+
 ## Exit test
 For any compound in the cache, calling `bridge.rate_law(cid, target)`
 emits a valid rate-law record. When Campaign 2 resumes, its first
