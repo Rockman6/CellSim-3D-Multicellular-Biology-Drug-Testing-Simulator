@@ -40,9 +40,21 @@
 #   <= 1.5  trustworthy_absolute  — absolute dG usable for decisions
 #   <= 3.0  rank_order_only       — ordering usable, absolute is not
 #    > 3.0  do_not_trust_absolute — absolute dG is not meaningful
+#
+# Provenance of these thresholds (not magic numbers):
+#  * 1.5 kcal/mol ~ one order of magnitude in K_d: at 298 K,
+#    RT*ln(10) = 0.5925 * 2.3026 = 1.36 kcal/mol changes K_d 10x. So
+#    "<= ~1.5 kcal/mol" means the predicted K_d is within ~1 log unit
+#    of experiment — the accepted bar for a free-energy method to be
+#    decision-useful. It matches the ~1-1.5 kcal/mol RMSE that
+#    validated FEP achieves and is quoted as the success target
+#    (Wang et al 2015, J Am Chem Soc 137:2695 — FEP+ benchmark).
+#  * 3.0 kcal/mol ~ two orders of magnitude in K_d (2 x 1.36): beyond
+#    this the absolute number is not usable, though rank-ordering of a
+#    congeneric series can survive a constant offset.
 thresholds:
-  trustworthy_absolute_max: 1.5
-  rank_order_only_max: 3.0
+  trustworthy_absolute_max: 1.5   # ~1 log K_d; FEP success target (Wang 2015 JACS 137:2695)
+  rank_order_only_max: 3.0        # ~2 log K_d
 
 classes:
   - target_class: trypsin_like

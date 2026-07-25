@@ -123,12 +123,14 @@ class BatchConfig:
 # rounding pushed it to 'deprioritise' — an embarrassing
 # failure on the most canonical test case in all of docking.
 #
-# Setting the follow_up threshold to -7.3 puts biotin safely in
-# 'follow_up' band and still requires compounds to be at least
-# ~IC50 < 4 µM (ΔG < -7.3 at 298 K) to qualify. That's the
-# classic med-chem "worth following up" tier. Compounds weaker
-# than -7.3 (IC50 > 4 µM) land in 'deprioritise', and anything
-# weaker than -6 (IC50 > 40 µM) still drops out entirely.
+# PROVENANCE: these two ΔG cutoffs are CellSim PROJECT CONVENTIONS, not
+# cited literature thresholds — there is no universal "worth following
+# up" ΔG in the field (it depends on target, assay, and program goals).
+# They are set transparently: -7.3 (~IC50 4 µM at 298 K) puts biotin in
+# 'follow_up' and matches the classic med-chem triage tier; -6.0
+# (~IC50 40 µM) is the "too weak to bother" floor. Documented here so a
+# grep lands on this rationale, not a naked number — but treat them as
+# tunable policy, not physics. See docs/provenance_audit.md.
 _FOLLOWUP_DG_THRESHOLD = -7.3
 
 
