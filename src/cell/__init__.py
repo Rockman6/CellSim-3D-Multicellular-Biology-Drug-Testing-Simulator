@@ -28,5 +28,19 @@ from src.cell.occupancy import (
     occupancy_from_prior,
     hill_occupancy,
 )
+from src.cell.compartments import (
+    Permeability,
+    CellGeometry,
+    CellOccupancyResult,
+    spherical_cell_geometry,
+    equilibration_tau_s,
+    intracellular_concentration,
+    occupancy_in_cell,
+)
 
-__all__ = ["OccupancyResult", "occupancy_from_prior", "hill_occupancy"]
+__all__ = [
+    "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
+    "Permeability", "CellGeometry", "CellOccupancyResult",
+    "spherical_cell_geometry", "equilibration_tau_s",
+    "intracellular_concentration", "occupancy_in_cell",
+]
