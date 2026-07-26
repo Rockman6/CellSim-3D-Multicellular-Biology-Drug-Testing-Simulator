@@ -42,6 +42,10 @@ from src.cell.competition import (
     CompetitiveResult,
     competitive_occupancy,
 )
+from src.cell.complexation import (
+    ComplexationResult,
+    complex_equilibrium,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -49,4 +53,5 @@ __all__ = [
     "spherical_cell_geometry", "equilibration_tau_s",
     "intracellular_concentration", "occupancy_in_cell",
     "LigandOccupancy", "CompetitiveResult", "competitive_occupancy",
+    "ComplexationResult", "complex_equilibrium",
 ]

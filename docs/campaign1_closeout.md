@@ -98,37 +98,46 @@ target-class reliability verdict** (`src/uq/reliability.py`) to every
 in an untrustworthy class. Until then, a cell model could inherit a tight
 bar on a wrong rate. *(High-value, self-contained fix; do first.)*
 
-**Gap C — only two edge types exist, and the missing ones are exactly
-the questions already raised about the cell:**
+**Gap C — the missing edge types are exactly the questions already
+raised about the cell. All three now have a first, honest model:**
 
-- **Two drugs interacting / competing at one site** ("will two drugs
-  stick and change the ruler?") — needs a *competitive-binding* edge:
-  two `RateLawPrior` K_d's feeding a shared-site occupancy term, and
-  (for covalent/complex formation) a reaction that makes a new species.
-  Not yet modelled.
-- **Concentration varying across the membrane** ("measurements differ by
-  how much drug is around that part") — needs a *spatial concentration
-  field* + a *membrane-permeability* edge. Layer 1.5 (Martini bilayer)
-  is the physics source for the permeability coefficient; the bridge
-  would emit a transport rate, and the Campaign-2 model would carry
-  per-compartment concentration. Not yet wired.
-- **Drug inside vs outside the cell** — needs at least two
-  *compartments* (extracellular / cytoplasm) with the permeability edge
-  connecting them, so occupancy is computed at the *local* concentration,
-  not a single bulk number. Not yet modelled.
+- **Concentration varying across the membrane / drug inside vs outside**
+  ("measurements differ by how much drug is around that part",
+  "drugs inside the cell") — ✅ `src/cell/compartments.py`. Two
+  compartments (extracellular reservoir ↔ cytoplasm), passive permeation
+  `C_in(t) = C_out(1 − e^{−t/τ})`, `τ = V/(P·A) = r/3P`. Occupancy is
+  computed at the *local* `C_in`, and the naive bulk-`C_out` reading is
+  kept alongside so the barrier's effect is explicit. The permeability P
+  carries provenance + `trust` (would come from a Martini PMF/diffusion
+  profile, Layer 1.5 — not wired yet, so `uncalibrated` until then).
+- **Two drugs competing at one site** ("will two drugs change the
+  ruler?") — ✅ `src/cell/competition.py`. Single-site competitive
+  equilibrium `θᵢ = (Lᵢ/Kdᵢ)/(1 + Σ Lⱼ/Kdⱼ)`; rigorous interval CI over
+  the K_d CIs (θ is monotonic in each K_d).
+- **Two drugs sticking to form a new species** ("stick and form a new
+  drug, how strongly they stick") — ✅ `src/cell/complexation.py`.
+  Bimolecular `A + B ⇌ AB` solved as the standard quadratic; the "how
+  strongly" ruler is the pair's K_d prior; complex CI is exact over K_d.
 
-These three are the substance of Campaign 2's first module and map
-one-to-one onto real questions about how a drug actually acts on a cell.
-They are named here so the roadmap is explicit, not so they are claimed
-as built.
+Every one of these carries the `trust` verdict through to the readout, so
+a cell-level number built on an untrustworthy K_d (or an uncalibrated
+permeability) is never mistaken for decision-grade.
 
-### Suggested order
+**Still not modelled (next):** time-course *dynamics* as an ODE network
+(the compartment model is analytic-transient + steady state, not a
+general integrator), pH / ion trapping (weak-base accumulation), an
+intracellular *binding sink* buffering the free concentration, active
+transport / efflux, and joint multi-parameter CI via Monte-Carlo (the
+per-module CIs are exact-per-source; a full joint propagation would use
+the `src/uq` sampler).
 
-1. **Gap B** — attach reliability to `RateLawPrior` (small, high-value,
-   applies the criterion-4 lesson; keeps the cell model honest from
-   day one).
-2. **Gap A** — a minimal single-compartment occupancy model consuming a
-   `RateLawPrior`, with the uncertainty carried end-to-end and rendered
-   — this also gives criterion 8 its first real viewer.
-3. **Gap C** — add compartments + permeability (uses Layer 1.5) and
-   competitive/multi-drug edges, in that order.
+### Order taken
+
+1. **Gap B — DONE.** Reliability attached to `RateLawPrior`.
+2. **Gap A — DONE.** Single-compartment occupancy readout.
+3. **Gap C — DONE (first models).** Compartments + permeability,
+   competitive binding, and drug–drug complexation, all with trust +
+   CI carried end-to-end.
+
+A real viewer (criterion 8) rendering one of these scenes is the natural
+next step; the numeric layer it would visualise now exists.
