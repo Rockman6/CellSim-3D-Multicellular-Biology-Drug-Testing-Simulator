@@ -46,6 +46,12 @@ from src.cell.complexation import (
     ComplexationResult,
     complex_equilibrium,
 )
+from src.cell.dynamics import (
+    RateConstants,
+    TimeCourse,
+    rate_constants_from_prior,
+    simulate_binding_in_cell,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -54,4 +60,6 @@ __all__ = [
     "intracellular_concentration", "occupancy_in_cell",
     "LigandOccupancy", "CompetitiveResult", "competitive_occupancy",
     "ComplexationResult", "complex_equilibrium",
+    "RateConstants", "TimeCourse", "rate_constants_from_prior",
+    "simulate_binding_in_cell",
 ]

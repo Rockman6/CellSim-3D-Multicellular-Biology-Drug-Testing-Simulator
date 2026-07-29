@@ -123,13 +123,21 @@ Every one of these carries the `trust` verdict through to the readout, so
 a cell-level number built on an untrustworthy K_d (or an uncalibrated
 permeability) is never mistaken for decision-grade.
 
-**Still not modelled (next):** time-course *dynamics* as an ODE network
-(the compartment model is analytic-transient + steady state, not a
-general integrator), pH / ion trapping (weak-base accumulation), an
-intracellular *binding sink* buffering the free concentration, active
-transport / efflux, and joint multi-parameter CI via Monte-Carlo (the
-per-module CIs are exact-per-source; a full joint propagation would use
-the `src/uq` sampler).
+**Time-course dynamics — ✅ `src/cell/dynamics.py`.** The coupled
+permeation + reversible-binding ODE, integrated with a stiff-aware
+adaptive solver (LSODA). Kinetics come from thermodynamics: K_d fixes
+k_off = k_on·K_d, with k_on a documented physics input (diffusion-limited,
+Berg–Purcell-capped). Rigor anchors: (1) the ODE steady state PROVABLY
+equals the analytic Hill occupancy at L_out (consistency test, exact);
+(2) mass is conserved to ~1e-15; (3) the EQUILIBRIUM trust depends on K_d
+alone and is kept separate from the uncalibrated k_on *timescale*, so an
+unmeasured on-rate never taints the equilibrium verdict.
+
+**Still not modelled (next):** pH / ion trapping (weak-base
+accumulation), an intracellular *binding sink* buffering the free
+concentration, active transport / efflux, and joint multi-parameter CI
+via Monte-Carlo (the per-module CIs are exact-per-source; a full joint
+propagation would use the `src/uq` sampler).
 
 ### Order taken
 
