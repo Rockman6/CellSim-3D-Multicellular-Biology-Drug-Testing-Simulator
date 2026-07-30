@@ -133,11 +133,19 @@ equals the analytic Hill occupancy at L_out (consistency test, exact);
 alone and is kept separate from the uncalibrated k_on *timescale*, so an
 unmeasured on-rate never taints the equilibrium verdict.
 
+**Joint multi-parameter uncertainty — ✅ `src/cell/montecarlo.py`.**
+`monte_carlo_propagate` samples each prior's binding ΔG (Gaussian; the
+EFFECTIVE σ = max of precision and measured accuracy, so it carries
+accuracy) → K_d = exp(ΔG/RT), runs any cell readout, and returns the
+output distribution + percentile CI + worst-of-inputs trust. Deterministic
+given a seed. Rigor: for a single-prior monotone readout its CI AGREES
+with the exact interval-arithmetic CI the analytic modules compute (mutual
+cross-check); for multiple correlated inputs / non-monotone readouts —
+where the per-module interval is not valid — the MC is the correct tool.
+
 **Still not modelled (next):** pH / ion trapping (weak-base
 accumulation), an intracellular *binding sink* buffering the free
-concentration, active transport / efflux, and joint multi-parameter CI
-via Monte-Carlo (the per-module CIs are exact-per-source; a full joint
-propagation would use the `src/uq` sampler).
+concentration, and active transport / efflux.
 
 ### Order taken
 

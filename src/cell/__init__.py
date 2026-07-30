@@ -52,6 +52,10 @@ from src.cell.dynamics import (
     rate_constants_from_prior,
     simulate_binding_in_cell,
 )
+from src.cell.montecarlo import (
+    MCResult,
+    monte_carlo_propagate,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -62,4 +66,5 @@ __all__ = [
     "ComplexationResult", "complex_equilibrium",
     "RateConstants", "TimeCourse", "rate_constants_from_prior",
     "simulate_binding_in_cell",
+    "MCResult", "monte_carlo_propagate",
 ]
