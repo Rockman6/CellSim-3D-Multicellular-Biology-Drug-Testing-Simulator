@@ -143,9 +143,19 @@ with the exact interval-arithmetic CI the analytic modules compute (mutual
 cross-check); for multiple correlated inputs / non-monotone readouts —
 where the per-module interval is not valid — the MC is the correct tool.
 
-**Still not modelled (next):** pH / ion trapping (weak-base
-accumulation), an intracellular *binding sink* buffering the free
-concentration, and active transport / efflux.
+**pH partitioning / ion trapping — ✅ `src/cell/partitioning.py`.** Exact
+Henderson-Hasselbalch: only the neutral form crosses, so at steady state
+the TOTAL concentration differs between compartments of different pH —
+weak bases accumulate in acidic compartments (lysosomes), weak acids in
+basic ones. `accumulation R = f_neutral(pH_out)/f_neutral(pH_in)`, exact
+given (pKa, pHs, ion type). Cited physiological pH constants
+(`COMPARTMENT_PH`). This is the first module where C_in ≠ C_out at steady
+state — demo: a pKa-9 base targeting a lysosomal enzyme accumulates 489×,
+lifting predicted occupancy from a naive 6.8 % (blood conc) to 97 %.
+
+**Still not modelled (next):** an intracellular *binding sink* buffering
+the free concentration, active transport / efflux, and diprotic
+partitioning (chloroquine-class, traps even harder).
 
 ### Order taken
 
