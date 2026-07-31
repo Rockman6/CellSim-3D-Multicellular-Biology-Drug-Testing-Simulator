@@ -153,9 +153,20 @@ given (pKa, pHs, ion type). Cited physiological pH constants
 state — demo: a pKa-9 base targeting a lysosomal enzyme accumulates 489×,
 lifting predicted occupancy from a naive 6.8 % (blood conc) to 97 %.
 
+**Active efflux transport — ✅ `src/cell/transport.py`.** A saturable
+Michaelis-Menten efflux pump (P-gp / ABCB1) that holds the intracellular
+concentration BELOW C_out — the central mechanism of multidrug
+resistance. Steady state solves `k_perm(C_out − C_in) = V_max·C_in/(K_m +
+C_in)` in closed form (positive root of the quadratic). Because the pump
+is saturable, its effect is dose-dependent: demo shows C_in held 17.7×
+low at 1 nM (0 % occupancy — drug defeated) but the pump 99 % saturated at
+10 µM so C_in recovers (97 % occupancy). K_m can come from the
+`bridge.affinity_to_michaelis` prior (now it has a consumer).
+
 **Still not modelled (next):** an intracellular *binding sink* buffering
-the free concentration, active transport / efflux, and diprotic
-partitioning (chloroquine-class, traps even harder).
+the free concentration, and diprotic partitioning (chloroquine-class,
+traps even harder). Composition of the transport / trapping / binding
+effects into one steady state is also open (each is exact alone).
 
 ### Order taken
 

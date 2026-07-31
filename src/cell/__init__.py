@@ -63,6 +63,12 @@ from src.cell.partitioning import (
     accumulation_ratio,
     partition_across_membrane,
 )
+from src.cell.transport import (
+    EffluxPump,
+    EffluxSteadyState,
+    efflux_steady_state,
+    pump_from_michaelis_prior,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -76,4 +82,6 @@ __all__ = [
     "MCResult", "monte_carlo_propagate",
     "PartitionResult", "COMPARTMENT_PH", "neutral_fraction",
     "accumulation_ratio", "partition_across_membrane",
+    "EffluxPump", "EffluxSteadyState", "efflux_steady_state",
+    "pump_from_michaelis_prior",
 ]
