@@ -69,6 +69,12 @@ from src.cell.transport import (
     efflux_steady_state,
     pump_from_michaelis_prior,
 )
+from src.cell.binding_sink import (
+    BindingSink,
+    SinkResult,
+    total_from_free,
+    free_from_total,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -84,4 +90,5 @@ __all__ = [
     "accumulation_ratio", "partition_across_membrane",
     "EffluxPump", "EffluxSteadyState", "efflux_steady_state",
     "pump_from_michaelis_prior",
+    "BindingSink", "SinkResult", "total_from_free", "free_from_total",
 ]
