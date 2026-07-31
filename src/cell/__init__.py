@@ -75,6 +75,10 @@ from src.cell.binding_sink import (
     total_from_free,
     free_from_total,
 )
+from src.cell.steady_state import (
+    IntracellularSteadyState,
+    solve_steady_state,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -91,4 +95,5 @@ __all__ = [
     "EffluxPump", "EffluxSteadyState", "efflux_steady_state",
     "pump_from_michaelis_prior",
     "BindingSink", "SinkResult", "total_from_free", "free_from_total",
+    "IntracellularSteadyState", "solve_steady_state",
 ]

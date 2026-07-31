@@ -163,10 +163,28 @@ low at 1 nM (0 % occupancy — drug defeated) but the pump 99 % saturated at
 10 µM so C_in recovers (97 % occupancy). K_m can come from the
 `bridge.affinity_to_michaelis` prior (now it has a consumer).
 
-**Still not modelled (next):** an intracellular *binding sink* buffering
-the free concentration, and diprotic partitioning (chloroquine-class,
-traps even harder). Composition of the transport / trapping / binding
-effects into one steady state is also open (each is exact alone).
+**Intracellular binding sink — ✅ `src/cell/binding_sink.py`.** A
+saturable reservoir (nonspecific protein/lipid/off-target binding) buffers
+the free concentration: `total = free + S_tot·free/(K_s+free)`, invertible
+both ways. A cell holds a large TOTAL while the free level the target sees
+stays low.
+
+**Unified steady state — ✅ `src/cell/steady_state.py`.** Composes
+permeation + pH partitioning + efflux + binding sink into ONE
+self-consistent state by balancing the neutral passive flux against the
+pump: `k_perm(C_out·f_neu(pH_out) − f·f_neu(pH_in)) = V_max·f/(K_m+f)`
+(quadratic in the free concentration f). Cross-check tests prove it
+reduces to each standalone module in its limit. Physics insight it makes
+explicit: **the binding sink does not change the steady-state free
+concentration** (no net flux into an equilibrated sink) — it only sets the
+TOTAL stored and the approach time. Grand demo (weak base, lysosomal
+target): permeation 28 % occ → +trapping 99 % → +P-gp efflux 0.1 %
+(resistance wins) → +sink: free (hence occ) unchanged, total rises.
+
+**Still not modelled (next):** diprotic partitioning (chloroquine-class,
+traps even harder), and a transient integrator for the composed system
+(the `dynamics` ODE covers permeation+binding; extending it to
+efflux+trapping+sink would give the full time course).
 
 ### Order taken
 
