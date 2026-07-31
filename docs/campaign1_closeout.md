@@ -181,10 +181,18 @@ TOTAL stored and the approach time. Grand demo (weak base, lysosomal
 target): permeation 28 % occ → +trapping 99 % → +P-gp efflux 0.1 %
 (resistance wins) → +sink: free (hence occ) unchanged, total rises.
 
+**Full-system transient — ✅ `src/cell/disposition.py`.** The complete
+composed disposition (permeation + pH + efflux + sink) integrated over
+time with LSODA, tracking total intracellular drug and recovering free via
+the fast-sink equilibrium. Anchor test: the t→∞ limit converges to
+`solve_steady_state` (all effects on). Physics it makes visible: the
+binding sink is a CAPACITOR — same steady-state free, but t½ stretches
+241 s → 2.5 ks → 228 ks as sink capacity grows (demo).
+
 **Still not modelled (next):** diprotic partitioning (chloroquine-class,
-traps even harder), and a transient integrator for the composed system
-(the `dynamics` ODE covers permeation+binding; extending it to
-efflux+trapping+sink would give the full time course).
+traps even harder). The single-cell drug-disposition layer is otherwise
+complete — steady state and full transient, all effects composed and
+cross-validated.
 
 ### Order taken
 

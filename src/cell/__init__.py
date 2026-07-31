@@ -79,6 +79,10 @@ from src.cell.steady_state import (
     IntracellularSteadyState,
     solve_steady_state,
 )
+from src.cell.disposition import (
+    DispositionTimeCourse,
+    simulate_disposition,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -96,4 +100,5 @@ __all__ = [
     "pump_from_michaelis_prior",
     "BindingSink", "SinkResult", "total_from_free", "free_from_total",
     "IntracellularSteadyState", "solve_steady_state",
+    "DispositionTimeCourse", "simulate_disposition",
 ]
