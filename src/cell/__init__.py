@@ -56,6 +56,13 @@ from src.cell.montecarlo import (
     MCResult,
     monte_carlo_propagate,
 )
+from src.cell.partitioning import (
+    PartitionResult,
+    COMPARTMENT_PH,
+    neutral_fraction,
+    accumulation_ratio,
+    partition_across_membrane,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -67,4 +74,6 @@ __all__ = [
     "RateConstants", "TimeCourse", "rate_constants_from_prior",
     "simulate_binding_in_cell",
     "MCResult", "monte_carlo_propagate",
+    "PartitionResult", "COMPARTMENT_PH", "neutral_fraction",
+    "accumulation_ratio", "partition_across_membrane",
 ]
