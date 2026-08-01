@@ -21,6 +21,9 @@ how much drug gets inside, what it does there, and how sure we are.
 | `montecarlo.py` | Joint uncertainty propagation through any readout |
 | `tissue.py` | **Spatial** reaction–diffusion — cells at depth see less drug |
 | `fate.py` | **Cell fate** — occupancy → effect → proliferate / arrest / die |
+| `resistance.py` | **Resistance evolution** — two-clone selection, relapse, drug holidays |
+| `clearance.py` | **Metabolic clearance + PK/PD** — exposure decays; potency ≠ efficacy |
+| `agents.py` | **Agent-based cells** — individuals on a lattice; contact inhibition, spatial sanctuaries |
 | `viewer.py` | Criterion-8 reference scene |
 
 ## Two invariants everything obeys
