@@ -189,10 +189,27 @@ the fast-sink equilibrium. Anchor test: the t→∞ limit converges to
 binding sink is a CAPACITOR — same steady-state free, but t½ stretches
 241 s → 2.5 ks → 228 ks as sink capacity grows (demo).
 
-**Still not modelled (next):** diprotic partitioning (chloroquine-class,
-traps even harder). The single-cell drug-disposition layer is otherwise
-complete — steady state and full transient, all effects composed and
-cross-validated.
+**Polyprotic partitioning — ✅** `neutral_fraction_polyprotic` /
+`accumulation_ratio_polyprotic`. Successive-protonation partition
+function; reduces exactly to the monoprotic form for one pKa. A second
+site is worth orders of magnitude (pKa-10.2 base: 500× → chloroquine
+228,366×). Reported as an **upper bound**: the ideal value exceeds
+measured chloroquine trapping (~10³–10⁴) because an accumulating base
+raises lysosomal pH and self-limits — documented, not tuned away.
+
+**Criterion-8 viewer — ✅ `src/cell/viewer.py`.** Four-panel reference
+scene (`docs/images/cell_disposition_scene.png`) rendered from the
+validated engine: dose–response + efflux resistance with a Monte-Carlo CI
+band; the transient on log time showing the sink as a capacitor;
+pH trapping across compartments; and the composed steady-state waterfall.
+Okabe–Ito colourblind-safe palette. This gives criterion 8 its first real
+layer viewer.
+
+**The single-cell drug-disposition layer is complete** — steady state and
+full transient, every transport effect composed and cross-validated,
+uncertainty + trust carried end-to-end, and a rendered reference scene.
+Next frontier is multi-cell / spatial (concentration gradients across a
+tissue) or metabolism-driven clearance.
 
 ### Order taken
 
