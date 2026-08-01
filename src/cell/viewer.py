@@ -209,6 +209,7 @@ def render_disposition_scene(
 
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "cell_disposition_scene.png"
+    out = (sys.argv[1] if len(sys.argv) > 1
+           else "docs/images/cell_disposition_scene.png")
     render_disposition_scene(save=out, show=False)
     print(f"wrote {out}")
