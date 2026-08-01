@@ -23,7 +23,7 @@ how much drug gets inside, what it does there, and how sure we are.
 | `fate.py` | **Cell fate** — occupancy → effect → proliferate / arrest / die |
 | `resistance.py` | **Resistance evolution** — two-clone selection, relapse, drug holidays |
 | `clearance.py` | **Metabolic clearance + PK/PD** — exposure decays; potency ≠ efficacy |
-| `agents.py` | **Agent-based cells** — individuals on a lattice; contact inhibition, spatial sanctuaries |
+| `agents.py` | **Agent-based cells** — individuals on a lattice; contact inhibition, spatial sanctuaries, optional cycle phase |
 | `cycle.py` | **Cell-cycle phases** — phase-specific drugs, transit-limited kill ceiling, G0 sanctuary |
 | `combination.py` | **Combination therapy** — resistance multiplies; cytostatics antagonise phase-specific drugs |
 | `synchrony.py` | **Full cycle transient** — cohort structure, dose timing; bounds the QSS limit |
