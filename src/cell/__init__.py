@@ -91,6 +91,11 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.resistance import (
+    ResistantClone,
+    ResistanceOutcome,
+    resistance_outcome,
+)
 from src.cell.fate import (
     CellFateParams,
     CellFate,
@@ -124,4 +129,5 @@ __all__ = [
     "CellFateParams", "CellFate", "TissueFateProfile",
     "effect_from_occupancy", "fate_from_occupancy", "critical_occupancy",
     "tissue_fate_profile",
+    "ResistantClone", "ResistanceOutcome", "resistance_outcome",
 ]
