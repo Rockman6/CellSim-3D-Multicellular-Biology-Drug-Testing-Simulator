@@ -59,7 +59,15 @@ Four panels, all computed from the validated engine above:
 - **G** occupancy → net growth rate, with the critical occupancy θ* where
   fate flips from proliferating to dying;
 - **H** the tissue fate map — cells die near the vessel, survive in the
-  depths (the picture of why a tumour regrows from its interior).
+  depths (the picture of why a tumour regrows from its interior);
+- **I** response then relapse — the resistant clone sweeping under
+  selection;
+- **J** the same drug at the same dose killing or failing on clearance
+  alone (PK/PD);
+- **K** the agent-based lattice — a cleared zone at the vessel and a dense
+  survivor population beyond the drug's reach;
+- **L** contact inhibition emerging: the colony tracks the unconstrained
+  exponential, then peels away and saturates.
 
 Palette is Okabe–Ito (colourblind-safe), assigned in fixed order.
 
