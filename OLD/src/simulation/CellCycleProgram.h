@@ -18,7 +18,7 @@
 //  At MAX_CELLS=2000 this is ~few MB total, well within budget.
 //
 //  References cited in the division plan at
-//  ~/.claude/plans/make-this-plan-into-virtual-key.md:
+//  ~/plans/make-this-plan-into-virtual-key.md:
 //    Alberts MBoC 7e Ch 4-5, 17-18
 //    Diffley 2011 Cold Spring Harb (origin licensing)
 //    Musacchio 2015 Curr Biol (SAC)
