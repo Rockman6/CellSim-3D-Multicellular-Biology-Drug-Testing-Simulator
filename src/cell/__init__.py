@@ -85,6 +85,12 @@ from src.cell.disposition import (
     DispositionTimeCourse,
     simulate_disposition,
 )
+from src.cell.tissue import (
+    TissueProfile,
+    penetration_depth_um,
+    penetration_profile_first_order,
+    penetration_profile_saturable,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -104,4 +110,6 @@ __all__ = [
     "BindingSink", "SinkResult", "total_from_free", "free_from_total",
     "IntracellularSteadyState", "solve_steady_state",
     "DispositionTimeCourse", "simulate_disposition",
+    "TissueProfile", "penetration_depth_um",
+    "penetration_profile_first_order", "penetration_profile_saturable",
 ]
