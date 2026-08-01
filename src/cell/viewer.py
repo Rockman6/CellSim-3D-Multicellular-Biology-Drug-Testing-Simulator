@@ -73,7 +73,7 @@ def render_disposition_scene(
     geom = spherical_cell_geometry(10.0)
     pump = EffluxPump(Vmax_M_per_s=3e-9, Km_M=1e-7, name="P-gp")
 
-    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+    fig, axes = plt.subplots(3, 2, figsize=(12.5, 13.0))
     fig.suptitle(
         f"Single-cell drug disposition — reference scene "
         f"(ΔG={dG_kcalmol:g} kcal/mol, K_d={prior.parameters['Kd_M']:.1e} M)",
@@ -200,7 +200,41 @@ def render_disposition_scene(
         color=_OI["grey"])
     _recessive_axes(ax)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    # ---- E. Spatial penetration into tissue -----------------------------
+    from src.cell import penetration_profile_first_order
+    ax = axes[2, 0]
+    for k, col, lab in [(1e-3, _OI["blue"], "slow uptake"),
+                        (1e-2, _OI["green"], "moderate"),
+                        (1e-1, _OI["orange"], "fast"),
+                        (1.0, _OI["vermillion"], "very fast")]:
+        pr = penetration_profile_first_order(1e-5, thickness_um=150.0,
+                                             k_per_s=k)
+        ax.plot(pr.x_um, np.array(pr.C_M) / pr.C_vessel_M * 100, color=col,
+                lw=2, label=f"{lab} (λ={pr.penetration_depth_um:.0f}µm)")
+    ax.set_xlabel("depth from vessel (µm)")
+    ax.set_ylabel("% of vessel concentration")
+    ax.set_title("E · Tissue penetration (Krogh half-distance 150 µm)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5)
+    _recessive_axes(ax)
+
+    # ---- F. Treated fraction of tissue ----------------------------------
+    ax = axes[2, 1]
+    ks = np.logspace(-4, 0.3, 30)
+    treated = [penetration_profile_first_order(
+        1e-5, thickness_um=150.0, k_per_s=float(k)).treated_fraction(prior)
+        * 100 for k in ks]
+    ax.plot(ks, treated, color=_OI["purple"], lw=2.5)
+    ax.fill_between(ks, 0, treated, color=_OI["purple"], alpha=0.12, lw=0)
+    ax.set_xscale("log")
+    ax.set_xlabel("cellular uptake rate k (s⁻¹)")
+    ax.set_ylabel("% of tissue with >50% occupancy")
+    ax.set_title("F · Therapeutic coverage collapses with uptake", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.set_ylim(0, 105)
+    _recessive_axes(ax)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
     if save is not None:
         fig.savefig(save, dpi=130, bbox_inches="tight")
     if show:

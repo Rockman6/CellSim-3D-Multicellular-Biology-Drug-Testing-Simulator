@@ -19,6 +19,7 @@ how much drug gets inside, what it does there, and how sure we are.
 | `competition.py` | Two drugs contending for one site |
 | `complexation.py` | Two drugs binding each other (A + B ⇌ AB) |
 | `montecarlo.py` | Joint uncertainty propagation through any readout |
+| `tissue.py` | **Spatial** reaction–diffusion — cells at depth see less drug |
 | `viewer.py` | Criterion-8 reference scene |
 
 ## Two invariants everything obeys
@@ -47,11 +48,15 @@ Four panels, all computed from the validated engine above:
   plateau, t½ shifted ~3 decades by sink capacity);
 - **C** pH ion trapping across compartments (weak base vs weak acid);
 - **D** composed steady state: permeation 28 % → +lysosomal trapping 99 %
-  → +P-gp efflux 0.1 %.
+  → +P-gp efflux 0.1 %;
+- **E** tissue penetration vs depth (λ = √(D/k)) across a 150 µm Krogh
+  half-distance;
+- **F** therapeutic coverage collapsing as cellular uptake accelerates.
 
 Palette is Okabe–Ito (colourblind-safe), assigned in fixed order.
 
 ## Not modelled yet
 
-Diprotic partitioning (chloroquine-class); multi-cell / spatial gradients;
-metabolism-driven clearance.
+Metabolism-driven clearance (wiring the CYP layer in so drug is consumed);
+cell state — growth, division, death — which is the next Campaign-2 module
+and the point of the whole project.
