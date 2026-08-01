@@ -20,6 +20,7 @@ how much drug gets inside, what it does there, and how sure we are.
 | `complexation.py` | Two drugs binding each other (A + B ⇌ AB) |
 | `montecarlo.py` | Joint uncertainty propagation through any readout |
 | `tissue.py` | **Spatial** reaction–diffusion — cells at depth see less drug |
+| `fate.py` | **Cell fate** — occupancy → effect → proliferate / arrest / die |
 | `viewer.py` | Criterion-8 reference scene |
 
 ## Two invariants everything obeys
@@ -51,12 +52,16 @@ Four panels, all computed from the validated engine above:
   → +P-gp efflux 0.1 %;
 - **E** tissue penetration vs depth (λ = √(D/k)) across a 150 µm Krogh
   half-distance;
-- **F** therapeutic coverage collapsing as cellular uptake accelerates.
+- **F** therapeutic coverage collapsing as cellular uptake accelerates;
+- **G** occupancy → net growth rate, with the critical occupancy θ* where
+  fate flips from proliferating to dying;
+- **H** the tissue fate map — cells die near the vessel, survive in the
+  depths (the picture of why a tumour regrows from its interior).
 
 Palette is Okabe–Ito (colourblind-safe), assigned in fixed order.
 
 ## Not modelled yet
 
 Metabolism-driven clearance (wiring the CYP layer in so drug is consumed);
-cell state — growth, division, death — which is the next Campaign-2 module
-and the point of the whole project.
+resistance evolution (survivors repopulating with a shifted phenotype);
+cell-cycle phase structure; explicit agent-based cells on a grid.
