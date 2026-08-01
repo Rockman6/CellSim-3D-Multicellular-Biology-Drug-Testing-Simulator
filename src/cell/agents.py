@@ -70,6 +70,19 @@ class ColonyTrajectory:
     occupied: List[Tuple[int, int, str]]      # final (x, y, clone)
     seed: int
     extinct: bool
+    # Cycle-phase bookkeeping — empty unless a `cycle` was supplied.
+    n_by_phase: Dict[str, List[int]] = field(default_factory=dict)
+    phase_of: List[Tuple[int, int, str]] = field(default_factory=list)
+
+    def phase_fractions(self) -> Dict[str, float]:
+        """Share of the final population in each cycle phase."""
+        if not self.phase_of:
+            return {}
+        total = len(self.phase_of)
+        out: Dict[str, float] = {p: 0.0 for p in self.n_by_phase}
+        for _, _, p in self.phase_of:
+            out[p] = out.get(p, 0.0) + 1.0 / total
+        return out
 
     @property
     def final_count(self) -> int:
@@ -115,6 +128,9 @@ def simulate_colony(
     rng_seed: int = 0,
     record_every: int = 1,
     seed_scattered: bool = False,
+    cycle=None,
+    phase_specific: Optional[List[str]] = None,
+    cycle_rate_field: Optional[Callable[[int, int], float]] = None,
 ) -> ColonyTrajectory:
     """Simulate individual cells dividing and dying on a lattice.
 
@@ -129,6 +145,16 @@ def simulate_colony(
         params: cell-fate pharmacodynamics.
         dt_h: step size in hours. n_steps: number of steps.
         rng_seed: deterministic seed.
+        cycle: optional `CellCycle`. When given, every cell carries a
+            CYCLE PHASE, advances through it stochastically, and divides
+            only on leaving the last phase. This is what lets a
+            phase-specific drug interact with space.
+        phase_specific: phases the drug kills in (needs `cycle`). None
+            means non-specific — it kills in every phase.
+        cycle_rate_field: (x, y) → multiplier on the local cycling speed.
+            Cells deep in tissue divide more slowly (nutrient/oxygen
+            limitation), which — combined with seeing less drug — creates
+            a DOUBLE sanctuary against a phase-specific agent.
         seed_scattered: place the seed cells at random free sites
             (a DILUTE culture, where every cell has room to divide) rather
             than as one packed cluster (a COLONY, where interior cells are
@@ -185,13 +211,57 @@ def simulate_colony(
             conc = max(0.0, float(drug_field(x, y)))
             occ = hill_occupancy(conc, Kd, n_hill) \
                 * clone_by_name[clone_name].occupancy_scale
-        f = fate_from_occupancy(min(1.0, occ), p)
         from src.cell.fate import effect_from_occupancy
         E = effect_from_occupancy(min(1.0, occ), p.transduction_tau)
         k_div = max(0.0, p.k_prolif_per_s * (1.0 - p.cytostatic_fraction * E))
         k_die = max(0.0, p.k_death_basal_per_s + p.k_maxkill_per_s * E)
         out = (k_div * 3600.0, k_die * 3600.0)     # per hour
         rate_cache[key] = out
+        return out
+
+    # ---- cycle-aware rates ---------------------------------------------
+    phase_names = list(cycle.phases) if cycle is not None else []
+    if phase_specific:
+        unknown = set(phase_specific) - set(phase_names)
+        if unknown:
+            raise ValueError(f"phase_specific names not in the cycle: "
+                             f"{sorted(unknown)}")
+    if phase_specific and cycle is None:
+        raise ValueError("phase_specific needs a cycle")
+    if cycle_rate_field is not None and cycle is None:
+        raise ValueError("cycle_rate_field needs a cycle")
+    killed_phases = set(phase_specific) if phase_specific else set(phase_names)
+
+    cycle_cache: Dict[Tuple[str, int, int, int], Tuple[float, float]] = {}
+
+    def cycle_rates_at(clone_name: str, x: int, y: int, phase_i: int):
+        """(phase-transition rate, death rate) per hour for a cycling cell."""
+        key = (clone_name, x, y, phase_i)
+        hit = cycle_cache.get(key)
+        if hit is not None:
+            return hit
+        from src.cell.fate import effect_from_occupancy
+        p = clone_params[clone_name]
+        occ = 0.0
+        if drug_field is not None:
+            conc = max(0.0, float(drug_field(x, y)))
+            occ = hill_occupancy(conc, Kd, n_hill) \
+                * clone_by_name[clone_name].occupancy_scale
+        E = effect_from_occupancy(min(1.0, occ), p.transduction_tau)
+
+        # Local cycling speed: nutrient/oxygen limitation deep in tissue.
+        speed = 1.0
+        if cycle_rate_field is not None:
+            speed = max(0.0, float(cycle_rate_field(x, y)))
+        # Fitness cost slows the whole cycle for that clone.
+        speed *= (1.0 - clone_by_name[clone_name].fitness_cost)
+        k_trans = speed / cycle.phase_hours[phase_names[phase_i]]
+
+        k_die = p.k_death_basal_per_s * 3600.0
+        if phase_names[phase_i] in killed_phases:
+            k_die += p.k_maxkill_per_s * 3600.0 * E
+        out = (k_trans, k_die)
+        cycle_cache[key] = out
         return out
 
     # ---- seed the colony ------------------------------------------------
@@ -226,11 +296,25 @@ def simulate_colony(
                     placed += 1
         ring += 1
 
+    # Cycle phase per cell, drawn from the stable (asynchronous)
+    # distribution so the colony does not start artificially in step.
+    phase_of: Dict[Tuple[int, int], int] = {}
+    if cycle is not None:
+        from src.cell.cycle import stable_phase_fractions
+        fr = stable_phase_fractions(cycle)
+        pw = np.array([fr[p] for p in phase_names], dtype=float)
+        pw = pw / pw.sum()
+        for site in occupied:
+            phase_of[site] = int(rng.choice(len(phase_names), p=pw))
+
     t_h: List[float] = [0.0]
     n_total: List[int] = [len(occupied)]
     n_by_clone: Dict[str, List[int]] = {
         c.name: [sum(1 for v in occupied.values() if v == c.name)]
         for c in cl_list}
+    n_by_phase: Dict[str, List[int]] = {
+        p: [sum(1 for v in phase_of.values() if phase_names[v] == p)]
+        for p in phase_names}
     n_div = n_death = 0
 
     # ---- step ------------------------------------------------------------
@@ -246,6 +330,32 @@ def simulate_colony(
             if name is None:          # died earlier this step
                 continue
             x, y = site
+
+            if cycle is not None:
+                ph = phase_of[site]
+                k_trans, k_die = cycle_rates_at(name, x, y, ph)
+                if rng.random() < 1.0 - math.exp(-k_die * dt_h):
+                    del occupied[site]
+                    phase_of.pop(site, None)
+                    n_death += 1
+                    continue
+                if rng.random() < 1.0 - math.exp(-k_trans * dt_h):
+                    if ph == len(phase_names) - 1:
+                        # Leaving the last phase = mitosis.
+                        free = [(x + a, y + b) for a, b in _NEIGHBOURS
+                                if 0 <= x + a < nx and 0 <= y + b < ny
+                                and (x + a, y + b) not in occupied]
+                        if free:
+                            tgt = free[int(rng.integers(len(free)))]
+                            occupied[tgt] = name
+                            phase_of[tgt] = 0
+                            phase_of[site] = 0
+                            n_div += 1
+                        # else: mitotic arrest by crowding — stay put.
+                    else:
+                        phase_of[site] = ph + 1
+                continue
+
             k_div, k_die = rates_at(name, x, y)
             p_die = 1.0 - math.exp(-k_die * dt_h)
             p_div = 1.0 - math.exp(-k_div * dt_h)
@@ -269,9 +379,14 @@ def simulate_colony(
             for c in cl_list:
                 n_by_clone[c.name].append(
                     sum(1 for v in occupied.values() if v == c.name))
+            for p in phase_names:
+                n_by_phase[p].append(
+                    sum(1 for v in phase_of.values() if phase_names[v] == p))
 
     return ColonyTrajectory(
         t_h=t_h, n_total=n_total, n_by_clone=n_by_clone,
         n_divisions=n_div, n_deaths=n_death, grid_size=(nx, ny),
         occupied=[(x, y, nm) for (x, y), nm in occupied.items()],
-        seed=rng_seed, extinct=not occupied)
+        seed=rng_seed, extinct=not occupied,
+        n_by_phase=n_by_phase,
+        phase_of=[(x, y, phase_names[p]) for (x, y), p in phase_of.items()])
