@@ -4,8 +4,8 @@ You are running CellSim's Milestone A accuracy gate on behalf of
 a friend. This is one command, ~4–6 hours wall time on an M5 Max,
 and produces one tarball to send back.
 
-This README is written for you **and** your Claude Code. Either
-can follow it; Claude will probably run it end-to-end with minimal
+This README is written for you **and** your coding agent. Either
+can follow it; an agent will probably run it end-to-end with minimal
 human intervention.
 
 ## What you're running
@@ -251,8 +251,8 @@ opens.
 
 ## Questions
 
-Ask Henry directly. He will give Claude explicit instructions
-too — if your Claude is unsure about something, let it paste
+Ask Henry directly. He will give your agent explicit instructions
+too — if your agent is unsure about something, let it paste
 the question into WeChat to Henry and wait.
 
 Thanks for lending the machine. Good luck.

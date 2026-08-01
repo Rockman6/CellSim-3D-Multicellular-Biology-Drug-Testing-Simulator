@@ -26,6 +26,7 @@ how much drug gets inside, what it does there, and how sure we are.
 | `agents.py` | **Agent-based cells** — individuals on a lattice; contact inhibition, spatial sanctuaries |
 | `cycle.py` | **Cell-cycle phases** — phase-specific drugs, transit-limited kill ceiling, G0 sanctuary |
 | `combination.py` | **Combination therapy** — resistance multiplies; cytostatics antagonise phase-specific drugs |
+| `synchrony.py` | **Full cycle transient** — cohort structure, dose timing; bounds the QSS limit |
 | `viewer.py` | Criterion-8 reference scene |
 
 ## Two invariants everything obeys
