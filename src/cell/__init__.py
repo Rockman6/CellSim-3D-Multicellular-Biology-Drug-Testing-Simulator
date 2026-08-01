@@ -91,6 +91,15 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.combination import (
+    DrugAction,
+    ScheduleBlock,
+    ScheduleOutcome,
+    apply_drugs,
+    evaluate_combination,
+    evaluate_schedule,
+    double_resistant_fraction,
+)
 from src.cell.cycle import (
     CellCycle,
     CycleOutcome,
@@ -157,4 +166,6 @@ __all__ = [
     "Clone", "ColonyTrajectory", "simulate_colony",
     "CellCycle", "CycleOutcome", "growth_rate_per_h",
     "stable_phase_fractions", "evaluate_cycle_drug",
+    "DrugAction", "ScheduleBlock", "ScheduleOutcome", "apply_drugs",
+    "evaluate_combination", "evaluate_schedule", "double_resistant_fraction",
 ]
