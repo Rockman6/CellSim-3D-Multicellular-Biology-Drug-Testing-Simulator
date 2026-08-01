@@ -91,6 +91,13 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.cycle import (
+    CellCycle,
+    CycleOutcome,
+    growth_rate_per_h,
+    stable_phase_fractions,
+    evaluate_cycle_drug,
+)
 from src.cell.agents import (
     Clone,
     ColonyTrajectory,
@@ -148,4 +155,6 @@ __all__ = [
     "single_dose_exposure", "repeat_dose_exposure",
     "dosing_accumulation_ratio", "evaluate_regimen",
     "Clone", "ColonyTrajectory", "simulate_colony",
+    "CellCycle", "CycleOutcome", "growth_rate_per_h",
+    "stable_phase_fractions", "evaluate_cycle_drug",
 ]
