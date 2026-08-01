@@ -91,6 +91,11 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.agents import (
+    Clone,
+    ColonyTrajectory,
+    simulate_colony,
+)
 from src.cell.clearance import (
     HepaticClearance,
     ExposureProfile,
@@ -142,4 +147,5 @@ __all__ = [
     "HepaticClearance", "ExposureProfile", "RegimenOutcome",
     "single_dose_exposure", "repeat_dose_exposure",
     "dosing_accumulation_ratio", "evaluate_regimen",
+    "Clone", "ColonyTrajectory", "simulate_colony",
 ]
