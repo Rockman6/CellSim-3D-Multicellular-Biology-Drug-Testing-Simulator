@@ -67,6 +67,59 @@ def neutral_fraction(pH: float, pKa: float, ion_type: str) -> float:
     return 1.0 / (1.0 + 10.0 ** exponent)
 
 
+def neutral_fraction_polyprotic(pH: float, pKas, ion_type: str) -> float:
+    """Neutral fraction for a POLYPROTIC drug with several ionisable sites.
+
+    Chloroquine-class diprotic bases trap far harder than the monoprotic
+    model allows, because each protonation site multiplies the number of
+    charged states available in an acidic compartment.
+
+    For a base with pKa₁…pKa_n the successive-protonation partition
+    function (relative to the neutral form) is
+
+        Z = 1 + Σ_k Π_{i≤k} 10^(pKa_i − pH)      →   f_neutral = 1/Z
+
+    and for an acid the exponents flip sign (successive deprotonations).
+    Reduces exactly to `neutral_fraction` for a single pKa.
+
+    HONESTY LIMIT — this is an UPPER BOUND on passive trapping. For
+    chloroquine (pKa 10.2, 8.4) it predicts ~2.3e5× lysosomal
+    accumulation, while measured values are ~1e3-1e4×. The gap is real
+    physics deliberately omitted here: an accumulating base RAISES
+    lysosomal pH, shrinking the gradient that drives the trapping
+    (self-limiting), and finite drug / lysosomal volume / binding cap it
+    further. Treat large polyprotic ratios as "traps strongly, bounded
+    above by this number", not as a calibrated prediction.
+    """
+    if ion_type not in _VALID_IONS:
+        raise ValueError(f"ion_type must be one of {_VALID_IONS}")
+    if ion_type == "neutral":
+        return 1.0
+    ks = [float(p) for p in pKas]
+    if not ks:
+        raise ValueError("need at least one pKa")
+    # Protonate strongest site first (descending) for a base; for an acid
+    # deprotonate the strongest acid (lowest pKa) first (ascending).
+    ks.sort(reverse=(ion_type == "base"))
+    Z = 1.0
+    term = 1.0
+    for pKa in ks:
+        exponent = (pKa - pH) if ion_type == "base" else (pH - pKa)
+        term *= 10.0 ** exponent
+        Z += term
+    return 1.0 / Z
+
+
+def accumulation_ratio_polyprotic(pKas, pH_in: float, pH_out: float,
+                                  ion_type: str) -> float:
+    """Steady-state total_in/total_out for a polyprotic drug."""
+    fn_in = neutral_fraction_polyprotic(pH_in, pKas, ion_type)
+    fn_out = neutral_fraction_polyprotic(pH_out, pKas, ion_type)
+    if fn_in <= 0.0:
+        return math.inf
+    return fn_out / fn_in
+
+
 @dataclass
 class PartitionResult:
     """Steady-state accumulation of an ionisable drug across a membrane."""
