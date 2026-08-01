@@ -73,7 +73,7 @@ def render_disposition_scene(
     geom = spherical_cell_geometry(10.0)
     pump = EffluxPump(Vmax_M_per_s=3e-9, Km_M=1e-7, name="P-gp")
 
-    fig, axes = plt.subplots(4, 2, figsize=(12.5, 17.0))
+    fig, axes = plt.subplots(6, 2, figsize=(12.5, 25.5))
     fig.suptitle(
         f"Molecule → cell → tissue → fate  ·  reference scene "
         f"(ΔG={dG_kcalmol:g} kcal/mol, K_d={prior.parameters['Kd_M']:.1e} M)",
@@ -287,7 +287,117 @@ def render_disposition_scene(
     ax.legend(frameon=False, fontsize=9, loc="upper right")
     _recessive_axes(ax)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.975])
+    # ---- I. Resistance: response then relapse ---------------------------
+    from src.cell import (ResistantClone, resistance_outcome,
+                          HepaticClearance, single_dose_exposure,
+                          repeat_dose_exposure, evaluate_regimen,
+                          Clone, simulate_colony)
+    _DAY = 86400.0
+    ax = axes[4, 0]
+    clone = ResistantClone(occupancy_scale=0.02, fitness_cost=0.15,
+                           initial_fraction=1e-4)
+    out = resistance_outcome(0.95, clone)
+    days = np.linspace(0.0, 60.0, 400)
+    pop = np.array([out.total_population_at(d * _DAY) for d in days])
+    frac = np.array([100 * out.resistant_fraction_at(d * _DAY) for d in days])
+    ax.semilogy(days, pop, color=_OI["blue"], lw=2.2, label="total population")
+    ax.axhline(1.0, color=_OI["grey"], lw=1.0, ls=":")
+    t_rel = out.time_to_relapse_s()
+    if t_rel is not None:
+        ax.axvline(t_rel / _DAY, color=_OI["vermillion"], lw=1.6, ls="--")
+        ax.text(t_rel / _DAY + 1.0, pop.min() * 3,
+                f"relapse\nday {t_rel/_DAY:.0f}", color=_OI["vermillion"],
+                fontsize=9, fontweight="bold")
+    ax2 = ax.twinx()
+    ax2.plot(days, frac, color=_OI["orange"], lw=2.0, ls="-.",
+             label="resistant %")
+    ax2.set_ylabel("resistant fraction (%)", color=_OI["orange"])
+    ax2.tick_params(axis="y", labelcolor=_OI["orange"])
+    ax2.set_ylim(0, 105)
+    ax2.spines["top"].set_visible(False)
+    ax.set_xlabel("days of treatment")
+    ax.set_ylabel("population (relative)")
+    ax.set_title("I · Response, then relapse — the drug selects resistance",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    _recessive_axes(ax)
+
+    # ---- J. PK/PD: potency is not efficacy ------------------------------
+    ax = axes[4, 1]
+    potent = binding_to_hill(-11.0, uncertainty_kcalmol=0.2,
+                             receptor=receptor, method="vina")
+    regimens = [("slow metabolism", 0.5, _OI["green"]),
+                ("moderate", 50.0, _OI["orange"]),
+                ("CYP-labile", 5000.0, _OI["vermillion"])]
+    C_star = None
+    for label, clint, colour in regimens:
+        cl = HepaticClearance(CLint_L_per_h=clint, fu_plasma=1.0, Vd_L=70.0)
+        exp_p = single_dose_exposure(1e-4, cl, duration_h=168.0)
+        res = evaluate_regimen(exp_p, potent)
+        C_star = res.threshold_conc_M or C_star
+        ax.semilogy(exp_p.t_h, np.maximum(exp_p.C_M, 1e-14), color=colour,
+                    lw=2.2, label=f"{label} ({res.log10_kill:+.1f} log)")
+    if C_star:
+        ax.axhline(C_star, color=_OI["purple"], lw=1.6, ls="--")
+        ax.text(4, C_star * 1.7, "C* (kill threshold)", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("hours after dose")
+    ax.set_ylabel("plasma concentration (M)")
+    ax.set_ylim(1e-12, 1e-4)
+    ax.set_title("J · Same drug, same dose — clearance decides",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5, loc="upper right")
+    _recessive_axes(ax)
+
+    # ---- K. Agent-based colony: spatial sanctuary -----------------------
+    ax = axes[5, 0]
+    import math as _math
+    tr = simulate_colony(grid_size=(60, 40), n_seed_cells=1500, prior=prior,
+                         drug_field=lambda x, y: 1e-5 * _math.exp(-x / 8.0),
+                         dt_h=2.0, n_steps=80, rng_seed=5)
+    grid, names = tr.occupancy_grid()
+    from matplotlib.colors import ListedColormap
+    cmap = ListedColormap(["#F2F2F2", _OI["blue"]])
+    ax.imshow(np.clip(grid.T + 1, 0, 1), origin="lower", cmap=cmap,
+              aspect="auto", interpolation="nearest",
+              extent=[0, 60, 0, 40])
+    # Overlay the drug gradient as a shaded band on the vessel side.
+    xs_g = np.linspace(0, 60, 200)
+    ax.plot(xs_g, 40 * np.exp(-xs_g / 8.0), color=_OI["vermillion"], lw=2.0,
+            ls="--")
+    ax.text(1.0, 36.0, "vessel →  drug", color=_OI["vermillion"], fontsize=9,
+            fontweight="bold")
+    ax.set_xlabel("x — distance from vessel (lattice sites)")
+    ax.set_ylabel("y (lattice sites)")
+    ax.set_title(f"K · Individual cells: survivors hide from the drug "
+                 f"({tr.final_count} left)",
+                 loc="left", fontsize=11, fontweight="bold")
+
+    # ---- L. Colony growth: contact inhibition emerges -------------------
+    ax = axes[5, 1]
+    from src.cell import CellFateParams as _CFP
+    colony = simulate_colony(grid_size=(30, 30), n_seed_cells=1, dt_h=2.0,
+                             n_steps=260, rng_seed=1)
+    t_days = np.array(colony.t_h) / 24.0
+    k_per_day = _CFP().k_prolif_per_s * 86400.0
+    ideal = np.exp(k_per_day * t_days)          # unconstrained exponential
+    ax.plot(t_days, ideal, color=_OI["green"], lw=2.0, ls="--",
+            label="unconstrained exponential (no crowding)")
+    ax.plot(t_days, colony.n_total, color=_OI["blue"], lw=2.4,
+            label="simulated colony — surface-limited")
+    ax.axhline(30 * 30, color=_OI["grey"], lw=1.2, ls=":")
+    ax.text(0.5, 30 * 30 * 1.2, "grid capacity", color=_OI["grey"],
+            fontsize=9)
+    ax.set_yscale("log")
+    ax.set_ylim(0.7, 5e3)
+    ax.set_xlabel("days")
+    ax.set_ylabel("cells")
+    ax.set_title("L · Contact inhibition is emergent, not imposed",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5, loc="lower right")
+    _recessive_axes(ax)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.982])
     if save is not None:
         fig.savefig(save, dpi=130, bbox_inches="tight")
     if show:
