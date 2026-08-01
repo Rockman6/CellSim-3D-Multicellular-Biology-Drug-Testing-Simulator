@@ -91,6 +91,15 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.clearance import (
+    HepaticClearance,
+    ExposureProfile,
+    RegimenOutcome,
+    single_dose_exposure,
+    repeat_dose_exposure,
+    accumulation_ratio as dosing_accumulation_ratio,
+    evaluate_regimen,
+)
 from src.cell.resistance import (
     ResistantClone,
     ResistanceOutcome,
@@ -130,4 +139,7 @@ __all__ = [
     "effect_from_occupancy", "fate_from_occupancy", "critical_occupancy",
     "tissue_fate_profile",
     "ResistantClone", "ResistanceOutcome", "resistance_outcome",
+    "HepaticClearance", "ExposureProfile", "RegimenOutcome",
+    "single_dose_exposure", "repeat_dose_exposure",
+    "dosing_accumulation_ratio", "evaluate_regimen",
 ]
