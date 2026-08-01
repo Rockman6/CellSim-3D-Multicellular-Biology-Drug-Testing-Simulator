@@ -73,11 +73,11 @@ def render_disposition_scene(
     geom = spherical_cell_geometry(10.0)
     pump = EffluxPump(Vmax_M_per_s=3e-9, Km_M=1e-7, name="P-gp")
 
-    fig, axes = plt.subplots(3, 2, figsize=(12.5, 13.0))
+    fig, axes = plt.subplots(4, 2, figsize=(12.5, 17.0))
     fig.suptitle(
-        f"Single-cell drug disposition — reference scene "
+        f"Molecule → cell → tissue → fate  ·  reference scene "
         f"(ΔG={dG_kcalmol:g} kcal/mol, K_d={prior.parameters['Kd_M']:.1e} M)",
-        fontsize=13, fontweight="bold")
+        fontsize=13.5, fontweight="bold")
 
     # ---- A. Dose-response + resistance + MC band ------------------------
     ax = axes[0, 0]
@@ -234,7 +234,60 @@ def render_disposition_scene(
     ax.set_ylim(0, 105)
     _recessive_axes(ax)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    # ---- G. Occupancy → cell fate ---------------------------------------
+    from src.cell import (fate_from_occupancy, critical_occupancy,
+                          tissue_fate_profile)
+    ax = axes[3, 0]
+    occ_grid = np.linspace(0.0, 1.0, 200)
+    knet = np.array([fate_from_occupancy(float(o)).k_net_per_s
+                     for o in occ_grid]) * 3600.0        # per hour
+    theta_star = critical_occupancy()
+    ax.axhline(0.0, color="#555555", lw=1)
+    ax.fill_between(occ_grid * 100, 0, knet, where=(knet > 0),
+                    color=_OI["green"], alpha=0.25, lw=0, label="proliferating")
+    ax.fill_between(occ_grid * 100, 0, knet, where=(knet <= 0),
+                    color=_OI["vermillion"], alpha=0.25, lw=0, label="dying")
+    ax.plot(occ_grid * 100, knet, color=_OI["blue"], lw=2.2)
+    if theta_star is not None:
+        ax.axvline(theta_star * 100, color=_OI["purple"], lw=1.6, ls="--")
+        ax.text(theta_star * 100 + 1.5, knet.min() * 0.75,
+                f"θ* = {100*theta_star:.0f}%", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("sustained target occupancy (%)")
+    ax.set_ylabel("net growth rate (per hour)")
+    ax.set_title("G · Occupancy decides fate (θ* = kill threshold)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    _recessive_axes(ax)
+
+    # ---- H. Tissue fate map: who lives, who dies ------------------------
+    ax = axes[3, 1]
+    prof = penetration_profile_first_order(1e-5, thickness_um=150.0,
+                                           k_per_s=1e-1)
+    tf = tissue_fate_profile(prof, prior)
+    x = np.array(tf.x_um)
+    occ = np.array(tf.occupancy) * 100
+    dying = np.array([f == "dying" for f in tf.fates])
+    ax.fill_between(x, 0, occ, where=dying, color=_OI["vermillion"],
+                    alpha=0.3, lw=0, label="dying")
+    ax.fill_between(x, 0, occ, where=~dying, color=_OI["green"],
+                    alpha=0.3, lw=0, label="surviving")
+    ax.plot(x, occ, color=_OI["blue"], lw=2.2)
+    if tf.critical_occupancy is not None:
+        ax.axhline(tf.critical_occupancy * 100, color=_OI["purple"],
+                   lw=1.6, ls="--")
+        ax.text(2, tf.critical_occupancy * 100 + 2,
+                f"θ* = {100*tf.critical_occupancy:.0f}%", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("depth from vessel (µm)")
+    ax.set_ylabel("target occupancy (%)")
+    ax.set_title(f"H · Tumour regrows from the depths "
+                 f"({100*(1-tf.killed_fraction):.0f}% survives)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper right")
+    _recessive_axes(ax)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.975])
     if save is not None:
         fig.savefig(save, dpi=130, bbox_inches="tight")
     if show:

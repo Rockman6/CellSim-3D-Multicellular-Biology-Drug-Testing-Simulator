@@ -91,6 +91,15 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.fate import (
+    CellFateParams,
+    CellFate,
+    TissueFateProfile,
+    effect_from_occupancy,
+    fate_from_occupancy,
+    critical_occupancy,
+    tissue_fate_profile,
+)
 
 __all__ = [
     "OccupancyResult", "occupancy_from_prior", "hill_occupancy",
@@ -112,4 +121,7 @@ __all__ = [
     "DispositionTimeCourse", "simulate_disposition",
     "TissueProfile", "penetration_depth_um",
     "penetration_profile_first_order", "penetration_profile_saturable",
+    "CellFateParams", "CellFate", "TissueFateProfile",
+    "effect_from_occupancy", "fate_from_occupancy", "critical_occupancy",
+    "tissue_fate_profile",
 ]
