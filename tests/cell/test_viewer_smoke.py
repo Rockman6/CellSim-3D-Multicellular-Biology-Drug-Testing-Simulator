@@ -27,8 +27,8 @@ def test_reference_scene_renders(tmp_path):
 
 def test_committed_reference_scene_exists():
     """The checked-in reference scene is the criterion-8 artifact."""
-    png = REPO_ROOT / "benchmarks" / "dock" / "cell_disposition_scene.png"
+    png = REPO_ROOT / "docs" / "images" / "cell_disposition_scene.png"
     assert png.exists(), (
-        "run `python src/cell/viewer.py benchmarks/dock/"
+        "run `python src/cell/viewer.py docs/images/"
         "cell_disposition_scene.png` to regenerate the reference scene")
     assert png.stat().st_size > 20_000

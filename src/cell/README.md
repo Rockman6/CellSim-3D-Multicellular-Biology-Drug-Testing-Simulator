@@ -35,8 +35,10 @@ how much drug gets inside, what it does there, and how sure we are.
 ## Reference scene (criterion 8)
 
 ```bash
-python src/cell/viewer.py benchmarks/dock/cell_disposition_scene.png
+python src/cell/viewer.py docs/images/cell_disposition_scene.png
 ```
+
+![reference scene](../../docs/images/cell_disposition_scene.png)
 
 Four panels, all computed from the validated engine above:
 
