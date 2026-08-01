@@ -91,6 +91,12 @@ from src.cell.tissue import (
     penetration_profile_first_order,
     penetration_profile_saturable,
 )
+from src.cell.synchrony import (
+    PhaseTrajectory,
+    TimingScan,
+    simulate_schedule_transient,
+    best_second_dose_delay,
+)
 from src.cell.combination import (
     DrugAction,
     ScheduleBlock,
@@ -168,4 +174,6 @@ __all__ = [
     "stable_phase_fractions", "evaluate_cycle_drug",
     "DrugAction", "ScheduleBlock", "ScheduleOutcome", "apply_drugs",
     "evaluate_combination", "evaluate_schedule", "double_resistant_fraction",
+    "PhaseTrajectory", "TimingScan", "simulate_schedule_transient",
+    "best_second_dose_delay",
 ]
