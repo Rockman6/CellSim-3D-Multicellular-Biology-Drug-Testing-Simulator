@@ -60,7 +60,9 @@ from src.cell.partitioning import (
     PartitionResult,
     COMPARTMENT_PH,
     neutral_fraction,
+    neutral_fraction_polyprotic,
     accumulation_ratio,
+    accumulation_ratio_polyprotic,
     partition_across_membrane,
 )
 from src.cell.transport import (
@@ -95,7 +97,8 @@ __all__ = [
     "simulate_binding_in_cell",
     "MCResult", "monte_carlo_propagate",
     "PartitionResult", "COMPARTMENT_PH", "neutral_fraction",
-    "accumulation_ratio", "partition_across_membrane",
+    "neutral_fraction_polyprotic", "accumulation_ratio",
+    "accumulation_ratio_polyprotic", "partition_across_membrane",
     "EffluxPump", "EffluxSteadyState", "efflux_steady_state",
     "pump_from_michaelis_prior",
     "BindingSink", "SinkResult", "total_from_free", "free_from_total",
