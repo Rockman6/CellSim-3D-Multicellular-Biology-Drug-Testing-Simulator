@@ -4,7 +4,7 @@ Authoritative strategic plan: **`GOAL`** (5-campaign hierarchical
 multi-scale hybrid simulator, 4–7 years).
 
 Approved execution plan for the current restart:
-**`.claude-plans/make-this-plan-into-virtual-key.md`** (migration
+**`plans/make-this-plan-into-virtual-key.md`** (migration
 manifest + Campaign-1 scope + build-vs-buy table).
 
 ## Where we are

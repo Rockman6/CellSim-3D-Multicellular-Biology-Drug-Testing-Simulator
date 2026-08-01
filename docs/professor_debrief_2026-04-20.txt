@@ -36,7 +36,7 @@ this to anyone else.
   7806421  Phase G6:  unified blind-benchmark validation harness
   8449143  Phase G6.2: orthogonal benchmarks (Nutlin-3 + dose-response)
 
-Seven commits. No `Co-Authored-By: Claude` trailers. No amended
+Seven commits. No co-author trailers. No amended
 commits. Bisectable.
 
 
