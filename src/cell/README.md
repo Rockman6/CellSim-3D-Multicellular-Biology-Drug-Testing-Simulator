@@ -25,6 +25,7 @@ how much drug gets inside, what it does there, and how sure we are.
 | `clearance.py` | **Metabolic clearance + PK/PD** — exposure decays; potency ≠ efficacy |
 | `agents.py` | **Agent-based cells** — individuals on a lattice; contact inhibition, spatial sanctuaries |
 | `cycle.py` | **Cell-cycle phases** — phase-specific drugs, transit-limited kill ceiling, G0 sanctuary |
+| `combination.py` | **Combination therapy** — resistance multiplies; cytostatics antagonise phase-specific drugs |
 | `viewer.py` | Criterion-8 reference scene |
 
 ## Two invariants everything obeys
