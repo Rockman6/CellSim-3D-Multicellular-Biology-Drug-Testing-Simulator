@@ -101,7 +101,14 @@ def _split_lambda_schedule(
     the (elec=0, sterics=1) midpoint so no duplicate state.
     """
     if n_windows < 3:
-        n_windows = 3
+        # Was a silent clamp to 3, which desynced from the caller's
+        # `n_states = n_windows` and produced an out-of-bounds write
+        # into u_kn (BUG_AUDIT.md #8). Fail loudly instead.
+        raise ValueError(
+            f"n_windows must be >= 3 (the split electrostatics/sterics "
+            f"schedule needs at least a decoupled endpoint, a shared "
+            f"(elec=0, sterics=1) midpoint, and a coupled endpoint); "
+            f"got {n_windows}")
     # Split ~half-and-half. With n=11: 6 elec + 5 sterics (the
     # (elec=0, sterics=1) midpoint belongs to the elec stage).
     n_elec = (n_windows + 1) // 2     # 6 for n=11
@@ -128,6 +135,49 @@ def _split_lambda_schedule(
     return schedule
 
 
+def _seed_ghmc_move(move, seed: int):
+    """Seed a GHMCMove's lazily-built integrator — a NECESSARY but NOT
+    SUFFICIENT step toward reproducibility (BUG_AUDIT.md #2).
+
+    openmmtools' GHMCMove builds its GHMCIntegrator in
+    `_get_integrator(...)` and never seeds it; we wrap that to call
+    `setRandomNumberSeed`. OpenMM treats seed 0 as "nondeterministic",
+    so we map to a positive 31-bit value and avoid 0.
+
+    NOTE (re-audited 2026-07 during review of the #2 fix): seeding alone
+    does NOT make `sample_alchemical_windows` reproducible. The deeper
+    cause is platform non-determinism — the fast Metal/OpenCL/CUDA/CPU
+    platforms give run-to-run scatter, and on the deterministic
+    Reference platform the openmmtools GHMC integrator is seed-
+    INDEPENDENT (verified: seed=1 and seed=2 give bit-identical
+    trajectories). Reproducibility is therefore delivered by the
+    `deterministic=True` path (pins Reference on EVERY context —
+    minimise, GHMC, eval), which is validated bitwise-identical.
+    This seed hook is retained as a harmless best-effort for the
+    non-deterministic path; for a reproducible run use deterministic
+    mode, and for production report mean ± SD over independent runs.
+    """
+    if getattr(move, "_cellsim_seeded", False):
+        move._cellsim_seed = int(seed)
+        return move
+    _orig_get_integrator = move._get_integrator
+    safe_seed = (int(seed) & 0x7FFFFFFF) or 1
+
+    def _seeded_get_integrator(thermodynamic_state):
+        integrator = _orig_get_integrator(thermodynamic_state)
+        try:
+            integrator.setRandomNumberSeed(
+                (int(move._cellsim_seed) & 0x7FFFFFFF) or 1)
+        except Exception:
+            pass
+        return integrator
+
+    move._cellsim_seed = safe_seed
+    move._get_integrator = _seeded_get_integrator
+    move._cellsim_seeded = True
+    return move
+
+
 def sample_alchemical_windows(
     alch_system,
     topology,            # kept for API compat; unused
@@ -144,9 +194,23 @@ def sample_alchemical_windows(
     seed: int = 1,
     sample_stride: int = 100,
     use_replica_exchange: bool = False,
+    deterministic: bool = False,
 ) -> AlchemicalSamplingResult:
     """Run Langevin MD at each λ via openmmtools MCMC moves;
     return ΔG between λ=0 and λ=1 estimated via MBAR.
+
+    `deterministic=True` makes the run bitwise-reproducible: it pins
+    EVERY context (per-window minimise, GHMC propagation, cross-λ
+    energy eval) to the OpenMM Reference platform, whose CustomIntegrator
+    dynamics are fully deterministic. This is what actually delivers
+    reproducibility — the `seed` alone does not (BUG_AUDIT.md #2
+    re-audit): the fast Metal/OpenCL/CUDA/CPU platforms the default path
+    uses are non-deterministic, and the minimise/eval contexts silently
+    ran on the fast platform even when GHMC was pinned elsewhere. Trade-
+    off: Reference is single-threaded and slow — use deterministic mode
+    for CI / debugging / a reproducibility witness, NOT production.
+    Production (default) stays fast + non-deterministic; report those as
+    mean ± SD over independent runs.
 
     `use_replica_exchange=True` swaps the hand-rolled independent-
     replica path for `openmmtools.multistate.ReplicaExchangeSampler`
@@ -156,6 +220,11 @@ def sample_alchemical_windows(
     biotin-streptavidin) — confirmed to unblock acetic_acid where
     the hand-rolled path returned MBAR overlap failure. See
     BENCHMARKS.md § 'Replica exchange unblocks tight binders'."""
+    # Validate up front so a bad --n-windows fails with a clear
+    # message instead of an out-of-bounds u_kn write mid-run
+    # (BUG_AUDIT.md #8). Both sampler paths share this guard.
+    if n_windows < 3:
+        raise ValueError(f"n_windows must be >= 3; got {n_windows}")
     if use_replica_exchange:
         return _sample_via_replica_exchange(
             alch_system, positions,
@@ -183,16 +252,30 @@ def sample_alchemical_windows(
     # Intel, AMD, NVIDIA) → CUDA → CPU. On an M5 Max this gives a
     # ~5-10× speedup over CPU. openmmtools' context cache uses the
     # first platform available in its list unless we pin one.
-    _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
-    _chosen_platform = None
-    for _name in _preferred:
-        try:
-            _p = Platform.getPlatformByName(_name)
-            cache.global_context_cache.platform = _p
-            _chosen_platform = _name
-            break
-        except Exception:
-            continue
+    # deterministic mode: pin the Reference platform everywhere and use
+    # a FRESH context cache so no state leaks between runs. `_ctx_plat`
+    # (passed to the direct minimise/eval contexts) and `_move_cache`
+    # (passed to the moves' apply()) stay None on the default path so
+    # its behaviour is byte-for-byte unchanged.
+    _ctx_plat = None
+    _move_cache = None
+    if deterministic:
+        _ref = Platform.getPlatformByName("Reference")
+        cache.global_context_cache.platform = _ref
+        _ctx_plat = _ref
+        _move_cache = cache.ContextCache(platform=_ref)
+        _chosen_platform = "Reference"
+    else:
+        _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+        _chosen_platform = None
+        for _name in _preferred:
+            try:
+                _p = Platform.getPlatformByName(_name)
+                cache.global_context_cache.platform = _p
+                _chosen_platform = _name
+                break
+            except Exception:
+                continue
     logger.info(
         "FEP sampling platform: %s", _chosen_platform or "default")
 
@@ -257,6 +340,12 @@ def sample_alchemical_windows(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
+    # Seed the GHMC integrators (BUG_AUDIT.md #2). NOTE: prerequisite
+    # only — NOT sufficient for run-to-run reproducibility, because
+    # openmmtools' ContextCache steps a separate integrator (see
+    # _seed_ghmc_move). Offset the production stream from equilibration.
+    _seed_ghmc_move(equil_move, seed)
+    _seed_ghmc_move(prod_move, seed + 1)
 
     # Minimise the initial state at λ=1 (fully coupled) before
     # starting any MD. Direct setPositions + LocalEnergyMinimizer,
@@ -276,7 +365,9 @@ def sample_alchemical_windows(
             cs.apply_to_context(ctx)
     try:
         _min_int = Verlet(1.0 * ommunit.femtosecond)
-        _min_ctx = _Context(alch_system, _min_int)
+        _min_ctx = (_Context(alch_system, _min_int, _ctx_plat)
+                    if _ctx_plat is not None
+                    else _Context(alch_system, _min_int))
         _apply_alchemical_params(_min_ctx, compound_states[-1])
         _min_ctx.setPositions(sampler_state.positions)
         if sampler_state.box_vectors is not None:
@@ -306,7 +397,9 @@ def sample_alchemical_windows(
     # perses when the system lacks a thermostat. We build this
     # once and reuse across all sample collections.
     _eval_int = Verlet(1.0 * ommunit.femtosecond)
-    _eval_ctx = _Context(alch_system, _eval_int)
+    _eval_ctx = (_Context(alch_system, _eval_int, _ctx_plat)
+                 if _ctx_plat is not None
+                 else _Context(alch_system, _eval_int))
     _eval_state = AlchemicalState.from_system(alch_system)
     beta = 1.0 / (0.0019872041 * temperature_K)  # 1/(kT) kcal/mol
 
@@ -319,7 +412,9 @@ def sample_alchemical_windows(
         # context (no thermostat in the system).
         try:
             _mi = Verlet(1.0 * ommunit.femtosecond)
-            _mctx = _Context(alch_system, _mi)
+            _mctx = (_Context(alch_system, _mi, _ctx_plat)
+                     if _ctx_plat is not None
+                     else _Context(alch_system, _mi))
             _apply_alchemical_params(_mctx, comp_state)
             _mctx.setPositions(sampler_state.positions)
             if sampler_state.box_vectors is not None:
@@ -337,14 +432,25 @@ def sample_alchemical_windows(
 
         # Reset the equilibration move's acceptance counter
         # before each window so the per-window statistic is clean.
+        # In deterministic mode the moves run through the pinned
+        # Reference cache; otherwise apply() is called exactly as
+        # before (global cache, fast platform).
         equil_move.reset_statistics()
-        equil_move.apply(comp_state, sampler_state)
+        if _move_cache is not None:
+            equil_move.apply(comp_state, sampler_state,
+                             context_cache=_move_cache)
+        else:
+            equil_move.apply(comp_state, sampler_state)
 
         # Reset production-move counter for the window.
         prod_move.reset_statistics()
         for s in range(n_samples_per):
             col = k * n_samples_per + s
-            prod_move.apply(comp_state, sampler_state)
+            if _move_cache is not None:
+                prod_move.apply(comp_state, sampler_state,
+                                context_cache=_move_cache)
+            else:
+                prod_move.apply(comp_state, sampler_state)
             # Eval reduced potential at every target λ via direct
             # control: setPositions → set λ via AlchemicalState →
             # read potential energy → u = β·U.
@@ -380,6 +486,159 @@ def sample_alchemical_windows(
     kT = 0.0019872041 * temperature_K
     result.ok = True
     result.n_samples_per_window = n_samples_per
+    result.dG_kcalmol = dG_kT * kT
+    result.dG_uncertainty_kcalmol = ddG_kT * kT
+    result.wall_seconds = time.time() - t0
+    return result
+
+
+def sample_restraint_coupling_dg(
+    alch_system,
+    positions,
+    *,
+    n_windows: int = 6,
+    n_equilibration_steps: int = 500,
+    n_production_steps: int = 2000,
+    timestep_fs: float = 1.0,
+    temperature_K: float = 298.15,
+    friction_ps: float = 20.0,
+    seed: int = 1,
+    sample_stride: int = 100,
+    deterministic: bool = False,
+) -> AlchemicalSamplingResult:
+    """ΔG to switch the CoM restraint ON at the fully-coupled bound
+    endpoint (BUG_AUDIT.md #4).
+
+    The double-decoupling cycle keeps the restraint on at every λ of the
+    complex leg, so the "coupled restrained" endpoint is NOT the
+    physical (unrestrained) bound state. The work to go between them —
+    ΔG_restraint_on_real = G(coupled, restrained) − G(coupled,
+    unrestrained) — is a real leg that the composition previously set to
+    zero. This function samples it by scaling the `lambda_restraint`
+    global from 1 (on) to 0 (off) with lambda_sterics = lambda_
+    electrostatics = 1 fixed.
+
+    Sign: state 0 = restraint ON (λ_r=1), state K-1 = OFF (λ_r=0), so
+    MBAR's Delta_f[K-1,0] = G(on) − G(off) = ΔG_restraint_on_real
+    (returned as `dG_kcalmol`), which `compute_absolute_binding_dg`
+    SUBTRACTS. A well-aligned restraint (r0 at the pose, BUG_AUDIT.md
+    #7) on a tightly-bound ligand gives a small positive value
+    (~1-3 kcal/mol); a loose or misaligned one gives more.
+
+    Requires a system carrying the `lambda_restraint` global (i.e. the
+    complex leg). Returns a not-ok result if the parameter is absent.
+
+    NOTE: opt-in and validated to RUN end-to-end; the production
+    magnitude / k-invariance must be confirmed on a GPU Milestone-B run
+    before absolute ΔG_bind is trusted (this is the term that closes the
+    k-invariance check in BUG_AUDIT.md #4's verification).
+    """
+    import numpy as np
+    from openmm import (
+        unit as ommunit,
+        Context as _Context,
+        LocalEnergyMinimizer as _Min,
+        Platform,
+    )
+    from openmmtools.integrators import GHMCIntegrator
+
+    if n_windows < 3:
+        raise ValueError(f"n_windows must be >= 3; got {n_windows}")
+
+    t0 = time.time()
+    # State k: lambda_restraint = 1 − k/(K−1). State 0 = fully ON,
+    # state K-1 = fully OFF.
+    lambdas = [1.0 - k / (n_windows - 1) for k in range(n_windows)]
+    result = AlchemicalSamplingResult(
+        ok=False, n_windows=n_windows,
+        lambda_schedule=[(lr,) for lr in lambdas])
+
+    # deterministic mode pins Reference (this leg already uses a direct
+    # Context, so pinning the platform is all that's needed).
+    if deterministic:
+        platform = Platform.getPlatformByName("Reference")
+    else:
+        _preferred = ("Metal", "OpenCL", "CUDA", "CPU")
+        platform = None
+        for _name in _preferred:
+            try:
+                platform = Platform.getPlatformByName(_name)
+                break
+            except Exception:
+                continue
+
+    integrator = GHMCIntegrator(
+        temperature=temperature_K * ommunit.kelvin,
+        collision_rate=friction_ps / ommunit.picosecond,
+        timestep=timestep_fs * ommunit.femtosecond)
+    try:
+        integrator.setRandomNumberSeed((int(seed) & 0x7FFFFFFF) or 1)
+    except Exception:
+        pass
+
+    ctx = (_Context(alch_system, integrator, platform)
+           if platform is not None
+           else _Context(alch_system, integrator))
+    try:
+        # Confirm the restraint global exists before doing any work.
+        state_params = ctx.getParameters()
+        if "lambda_restraint" not in state_params:
+            result.reason = (
+                "system has no 'lambda_restraint' global — "
+                "restraint-coupling leg only applies to the complex "
+                "leg built with a CoM restraint")
+            result.wall_seconds = time.time() - t0
+            return result
+
+        ctx.setPositions(positions)
+        if alch_system.usesPeriodicBoundaryConditions():
+            ctx.setPeriodicBoxVectors(
+                *alch_system.getDefaultPeriodicBoxVectors())
+        # Full coupling throughout; restraint fully ON for the initial
+        # minimise (state 0).
+        for name, val in (("lambda_sterics", 1.0),
+                          ("lambda_electrostatics", 1.0),
+                          ("lambda_restraint", 1.0)):
+            if name in state_params:
+                ctx.setParameter(name, val)
+        _Min.minimize(ctx, tolerance=1.0, maxIterations=2000)
+        ctx.applyConstraints(1e-6)
+
+        n_samples_per = max(1, n_production_steps // sample_stride)
+        u_kn = np.zeros((n_windows, n_windows * n_samples_per))
+        N_k = np.array([n_samples_per] * n_windows)
+        beta = 1.0 / (0.0019872041 * temperature_K)  # 1/kT, kcal/mol
+
+        for k, lam_r in enumerate(lambdas):
+            ctx.setParameter("lambda_restraint", lam_r)
+            integrator.step(n_equilibration_steps)
+            for s in range(n_samples_per):
+                integrator.step(sample_stride)
+                col = k * n_samples_per + s
+                for n, lr in enumerate(lambdas):
+                    ctx.setParameter("lambda_restraint", lr)
+                    U = ctx.getState(
+                        getEnergy=True).getPotentialEnergy(
+                        ).value_in_unit(
+                        ommunit.kilocalorie_per_mole)
+                    u_kn[n, col] = beta * U
+                ctx.setParameter("lambda_restraint", lam_r)
+    finally:
+        del ctx, integrator
+
+    try:
+        dG_kT, ddG_kT = estimate_free_energy(u_kn, N_k)
+    except Exception as e:
+        result.reason = _biologist_reason_for_mbar_error(
+            e, n_windows=n_windows,
+            n_production_steps=n_production_steps)
+        result.wall_seconds = time.time() - t0
+        return result
+
+    kT = 0.0019872041 * temperature_K
+    result.ok = True
+    result.n_samples_per_window = n_samples_per
+    # Delta_f[K-1,0] = G(state0=on) − G(state K-1=off) = ΔG_restraint_on_real
     result.dG_kcalmol = dG_kT * kT
     result.dG_uncertainty_kcalmol = ddG_kT * kT
     result.wall_seconds = time.time() - t0
@@ -474,39 +733,47 @@ def _sample_via_replica_exchange(
         timestep=timestep_fs * ommunit.femtosecond,
         collision_rate=friction_ps / ommunit.picosecond,
         n_steps=sample_stride)
+    # Seed the MD integrator (BUG_AUDIT.md #2) — prerequisite only; see
+    # _seed_ghmc_move for why the ContextCache indirection means this
+    # does not by itself guarantee reproducible replica-exchange runs.
+    _seed_ghmc_move(move, seed)
+
+    import shutil
 
     tmpdir = tempfile.mkdtemp(prefix="cellsim_rex_")
     storage = os.path.join(tmpdir, "replex.nc")
-    reporter = MultiStateReporter(
-        storage, checkpoint_interval=max(1, n_iterations // 10))
-
-    sampler = ReplicaExchangeSampler(
-        mcmc_moves=move, number_of_iterations=n_iterations)
-    sampler.create(
-        thermodynamic_states=thermo,
-        sampler_states=sampler_states,
-        storage=reporter)
-
+    reporter = None
+    rep_read = None
     try:
-        sampler.minimize()
-    except Exception as e:
-        logger.warning(
-            "replica-exchange minimize warning (continuing): %s",
-            str(e)[:120])
+        reporter = MultiStateReporter(
+            storage, checkpoint_interval=max(1, n_iterations // 10))
 
-    try:
-        sampler.run()
-    except Exception as e:
-        result.reason = (
-            f"replica-exchange run failed: {str(e)[:200]}")
-        result.wall_seconds = time.time() - t0
-        return result
+        sampler = ReplicaExchangeSampler(
+            mcmc_moves=move, number_of_iterations=n_iterations)
+        sampler.create(
+            thermodynamic_states=thermo,
+            sampler_states=sampler_states,
+            storage=reporter)
 
-    # Analyse via openmmtools' built-in MBAR wrapper.
-    rep_read = MultiStateReporter(
-        storage, open_mode="r",
-        checkpoint_interval=max(1, n_iterations // 10))
-    try:
+        try:
+            sampler.minimize()
+        except Exception as e:
+            logger.warning(
+                "replica-exchange minimize warning (continuing): %s",
+                str(e)[:120])
+
+        try:
+            sampler.run()
+        except Exception as e:
+            result.reason = (
+                f"replica-exchange run failed: {str(e)[:200]}")
+            result.wall_seconds = time.time() - t0
+            return result
+
+        # Analyse via openmmtools' built-in MBAR wrapper.
+        rep_read = MultiStateReporter(
+            storage, open_mode="r",
+            checkpoint_interval=max(1, n_iterations // 10))
         try:
             ana = MultiStateSamplerAnalyzer(rep_read)
             Delta_f, dDelta_f = ana.get_free_energy()
@@ -535,10 +802,16 @@ def _sample_via_replica_exchange(
         except Exception:
             result.ghmc_acceptance = [1.0] * n_windows  # placeholder
     finally:
-        try:
-            rep_read.close()
-        except Exception:
-            pass
+        # Close both reporters and remove the scratch dir on EVERY exit
+        # path (BUG_AUDIT.md #13 — the tmpdir + .nc storage leaked once
+        # per replica-exchange call, filling $TMPDIR over a bench run).
+        for _r in (reporter, rep_read):
+            try:
+                if _r is not None:
+                    _r.close()
+            except Exception:
+                pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     result.wall_seconds = time.time() - t0
     return result
@@ -599,7 +872,17 @@ def _biologist_reason_for_mbar_error(
 
 
 def estimate_free_energy(u_kn, N_k) -> tuple[float, float]:
-    """Run MBAR and return (ΔG_λ=0→λ=1, uncertainty) in kT.
+    """Run MBAR and return (ΔG_{λ=1→λ=0}, uncertainty) in kT.
+
+    Returns ``Delta_f[K-1, 0] = f(state 0) − f(state K-1)``, i.e. the
+    free energy of going from the fully-coupled endpoint (state K-1,
+    λ_sterics=λ_elec=1) to the decoupled endpoint (state 0, both 0):
+    ΔG_{1→0} = +ΔG_decoupling (annihilation). Callers (hydration and
+    binding) treat the value as the *decoupling* free energy and
+    compose accordingly — do not flip its sign here. (BUG_AUDIT.md #12:
+    the docstring previously said λ=0→λ=1, the reverse of what the code
+    returns; this is the exact confusion that produced the c461053
+    hydration sign regression.)
 
     Raises on convergence / overlap failure. Callers should wrap
     with _biologist_reason_for_mbar_error to translate."""

@@ -216,7 +216,12 @@ def ligand_hydration_fep(
         return result
 
     try:
-        mol = Molecule.from_smiles(smiles)
+        # allow_undefined_stereo=True to match the binding builders
+        # (BUG_AUDIT.md #6): without it a SMILES with ambiguous stereo
+        # (e.g. an exocyclic C=N) raises UndefinedStereochemistryError
+        # here while the binding complex leg builds fine — an
+        # asymmetric failure across legs.
+        mol = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
         mol.generate_conformers(n_conformers=1)
         # AM1-BCC charges — same method src.chem.parametrize
         # uses for docking. Cached internally by the toolkit.
@@ -371,7 +376,13 @@ def _build_alchemical_legs(smiles: str, *,
     from openmm import unit as ommunit
     from openmmtools import alchemy
 
-    mol = Molecule.from_smiles(smiles)
+    # allow_undefined_stereo=True so the solvent leg matches the
+    # binding complex builders and never raises UndefinedStereo-
+    # chemistryError on an ambiguous-stereo ligand that the complex
+    # leg accepts (BUG_AUDIT.md #6). RDKit assigns stereo
+    # deterministically for a fixed SMILES, so both legs get the same
+    # molecule.
+    mol = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
     mol.generate_conformers(n_conformers=1)
     mol.assign_partial_charges("am1bcc")
     top = mol.to_topology()
@@ -427,6 +438,7 @@ def compute_hydration_dg(
     seed: int = 1,
     softcore_alpha: float = 0.5,
     use_replica_exchange: bool = False,
+    deterministic: bool = False,
 ) -> HydrationDGResult:
     """End-to-end absolute hydration free energy.
 
@@ -449,6 +461,13 @@ def compute_hydration_dg(
     result = HydrationDGResult(
         smiles=smiles, ok=False, n_windows=n_windows)
 
+    if n_windows < 3:
+        result.reason = (
+            f"n_windows must be >= 3 (need decoupled + midpoint + "
+            f"coupled states); got {n_windows}")
+        result.wall_seconds = time.time() - t0
+        return result
+
     try:
         (vac_alch, solv_alch,
          vac_top, solv_top,
@@ -468,7 +487,8 @@ def compute_hydration_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not vac_r.ok:
             result.reason = f"vacuum leg failed: {vac_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -479,7 +499,8 @@ def compute_hydration_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not solv_r.ok:
             result.reason = f"solvent leg failed: {solv_r.reason}"
             result.wall_seconds = time.time() - t0
