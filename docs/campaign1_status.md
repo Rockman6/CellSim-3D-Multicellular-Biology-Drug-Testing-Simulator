@@ -9,13 +9,13 @@ the realistic timeline is to Stage 1 completion on CPU-only.
 |---|---|---|---|
 | **1.1 Chem foundation** (RDKit + OpenFF + AM1-BCC) | ✅ DONE | 10k ChEMBL round-trip, ADMET + AM1-BCC cache, profile dashboard | — |
 | **1.2 Classical MD** (OpenMM + ff14SB + TIP3P) | ✅ DONE (MVP) | 1 ps ubiquitin Cα RMSD 0.74 Å; 100 ns ubiquitin gate awaits GPU | full 100 ns gate (GPU) |
-| **1.3a Docking** (Vina + Meeko + PoseBusters + fpocket) | ✅ DONE | mini-bench 2/3 canonical re-dock; off-target panel; CYP3A4 SoM; strain-gate; triage rules + viewer | — |
+| **1.3a Docking** (Vina + Meeko + PoseBusters + fpocket) | ✅ DONE (with caveat) | blind 15-cocrystal: PoseBusters 100 % (#3 PASS), pose recovery top-3 87 % / top-1 73 % (#1 marginal — Vina *scoring*, not sampling); off-target panel; CYP3A4 SoM; strain-gate; triage rules + viewer. NB fixed a pose-reconstruction bug that had corrupted all prior RMSD/PoseBusters numbers. | lift top-1 via FEP ranking or re-scope #1 to top-3 |
 | **1.3b FEP Milestone A** (hydration ΔG) | ✅ **PASS** (today) | FreeSolv-12 MAE **1.42 kcal/mol** (gate ≤ 1.5), Pearson r +0.913, GHMC 99%, tag `milestone-a-pilot-3` | 12/12 closure on 2 polar fails (structural, doc'd; not blocking) |
 | **1.3c FEP Milestone B** (binding ΔG) | ⏳ in flight | streptavidin bench RUNNING on CPU (PID 75132, started 2026-05-30 22:15, ETA ~20 h); EGFR queued | both benches → fep-report → tarball |
 | **1.4 Quantum** (xTB GFN2 + PySCF DFT) | ✅ DONE (MVP) | 10/10 sanity + 3/3 CYP3A4 SoM; 2/3 on literature validation (aspirin ✓, midazolam ✓, diazepam doc'd-fail) | optional: extend literature set to 20 |
 | **1.5 Coarse-grained Martini 3** | ⏳ scaffold only | `src/cg/{bilayer,protein_cg}.py` are NotImplementedError stubs (~90 LOC total) | full bilayer builder + martinize2 wrapper + OpenMM-Martini MD driver + area-per-lipid validation |
 | **1.6 UQ** (Sobol + MC + MAPIE) | ✅ DONE | MC-dock seeds, Sobol sensitivity, conformal quantiles, streptavidin/trypsin/EGFR calibration bundles | — |
-| **1.7 Blind harness** (PDBBind / CASF / PoseBusters / ChEMBL) | ⏳ partial | PoseBusters integrated, fpocket integrated, 3-cocrystal mini-bench shipped; `benchmarks/{pdbbind,casf}/` are empty dirs | PDBBind 500-compound CPU subset (full 5k needs GPU); CASF-2016 ranking gate |
+| **1.7 Blind harness** (PDBBind / CASF / PoseBusters / ChEMBL) | ⏳ partial | `scripts/run_blind_dock_bench.py` fetches structures + ligand SMILES from RCSB and scores pose recovery + PoseBusters on a 15-cocrystal blind set (`benchmarks/pdbbind/blind_set.yaml`). #3 PoseBusters PASSES (100 %); #1 pose recovery measured honestly (top-1 73 %, top-3 87 %). | scale the blind set (30–50); CASF-2016 ranking gate |
 
 ## CPU-only timeline to Stage 1 complete
 
