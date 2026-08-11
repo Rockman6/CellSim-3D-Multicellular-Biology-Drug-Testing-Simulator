@@ -1,0 +1,412 @@
+"""Reference-scene viewer for the single-cell drug-disposition layer.
+
+Renders one figure that shows, entirely from the REAL validated model
+(`src/cell`), the four behaviours the layer captures:
+
+  A. Dose–response + resistance — target occupancy vs extracellular dose,
+     passive vs a P-gp efflux pump (with a Monte-Carlo uncertainty band
+     from the K_d prior).
+  B. Time course — the full composed transient converging to steady state,
+     and the binding sink acting as a capacitor (same endpoint, slower).
+  C. pH ion trapping — steady-state accumulation of a weak base vs a weak
+     acid across cellular compartments.
+  D. Composed waterfall — how occupancy changes as each transport effect
+     is layered on (permeation → +trapping → +efflux → +sink).
+
+This is the Layer viewer for criterion 8: it renders the reference scene
+(`save=...`) from the validated numeric engine, not a re-implementation.
+
+Palette: Okabe–Ito (published colourblind-safe). Categorical hues are
+assigned in fixed order, never cycled.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+# Okabe-Ito, fixed order.
+_OI = {
+    "blue": "#0072B2", "vermillion": "#D55E00", "green": "#009E73",
+    "orange": "#E69F00", "purple": "#CC79A7", "sky": "#56B4E9",
+    "grey": "#8A8A8A",
+}
+
+
+def _recessive_axes(ax):
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(True, which="both", color="#DDDDDD", linewidth=0.6, zorder=0)
+    ax.set_axisbelow(True)
+
+
+def render_disposition_scene(
+    *,
+    dG_kcalmol: float = -9.0,
+    receptor: str = "benchmarks/dock/3ptb.pdb",
+    save: Optional[str] = None,
+    show: bool = True,
+    mc_samples: int = 1500,
+) -> None:
+    import numpy as np
+    import matplotlib
+    if save is not None and not show:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from src.bridge import binding_to_hill
+    from src.cell import (
+        Permeability, spherical_cell_geometry,
+        EffluxPump, BindingSink, COMPARTMENT_PH,
+        occupancy_from_prior, hill_occupancy,
+        efflux_steady_state, accumulation_ratio,
+        solve_steady_state, simulate_disposition,
+        monte_carlo_propagate,
+    )
+
+    prior = binding_to_hill(dG_kcalmol, uncertainty_kcalmol=0.3,
+                            receptor=receptor, method="vina")
+    perm = Permeability(P_cm_per_s=1e-6, source="literature")
+    geom = spherical_cell_geometry(10.0)
+    pump = EffluxPump(Vmax_M_per_s=3e-9, Km_M=1e-7, name="P-gp")
+
+    fig, axes = plt.subplots(6, 2, figsize=(12.5, 25.5))
+    fig.suptitle(
+        f"Molecule → cell → tissue → fate  ·  reference scene "
+        f"(ΔG={dG_kcalmol:g} kcal/mol, K_d={prior.parameters['Kd_M']:.1e} M)",
+        fontsize=13.5, fontweight="bold")
+
+    # ---- A. Dose-response + resistance + MC band ------------------------
+    ax = axes[0, 0]
+    doses = np.logspace(-10, -4, 40)
+    occ_passive, occ_pgp = [], []
+    band_lo, band_hi = [], []
+    for d in doses:
+        occ_passive.append(hill_occupancy(d, prior.parameters["Kd_M"], 1.0))
+        ss = efflux_steady_state(d, perm, geom, pump)
+        occ_pgp.append(hill_occupancy(ss.C_in_M, prior.parameters["Kd_M"], 1.0))
+        mc = monte_carlo_propagate(
+            {"A": prior}, lambda kd: hill_occupancy(d, kd["A"], 1.0),
+            n=mc_samples, seed=0)
+        band_lo.append(mc.ci95[0])
+        band_hi.append(mc.ci95[1])
+    occ_passive = np.array(occ_passive) * 100
+    occ_pgp = np.array(occ_pgp) * 100
+    ax.fill_between(doses, np.array(band_lo) * 100, np.array(band_hi) * 100,
+                    color=_OI["blue"], alpha=0.15, lw=0,
+                    label="passive 95% CI (K_d unc.)")
+    ax.plot(doses, occ_passive, color=_OI["blue"], lw=2, label="passive")
+    ax.plot(doses, occ_pgp, color=_OI["vermillion"], lw=2,
+            label="with P-gp efflux")
+    ax.set_xscale("log")
+    ax.set_xlabel("extracellular dose (M)")
+    ax.set_ylabel("target occupancy (%)")
+    ax.set_title("A · Dose–response and efflux resistance", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    _recessive_axes(ax)
+
+    # ---- B. Time course: sink as capacitor (log time) -------------------
+    # The three curves equilibrate on timescales spanning ~10^3, so a log
+    # time axis is the only way to show all three; the capacitor effect is
+    # the rightward shift with sink capacity (same plateau).
+    ax = axes[0, 1]
+    for label, sink, col in [
+        ("no sink", None, _OI["blue"]),
+        ("modest sink", BindingSink(1e-5, 1e-6), _OI["green"]),
+        ("large sink", BindingSink(1e-3, 1e-6), _OI["purple"]),
+    ]:
+        # Each curve gets its OWN horizon (the module's default scales with
+        # sink capacity); a shared grid would render the fast curves as a
+        # single flat point on a log axis.
+        tc = simulate_disposition(1e-7, permeability=perm, geometry=geom,
+                                  prior=prior, sink=sink, n_points=400)
+        t = np.array(tc.t_s)
+        occ = np.array(tc.occupancy) * 100
+        ax.plot(t[1:], occ[1:], color=col, lw=2, label=label)
+        th = tc.time_to_fraction_of_steady_state(0.5)
+        if th:
+            ax.plot([th], [np.interp(th, t, occ)], "o", color=col, ms=7,
+                    zorder=4, markeredgecolor="white", markeredgewidth=1.2)
+    ax.set_xscale("log")
+    ax.set_xlabel("time (s, log)   •   dot = t½")
+    ax.set_ylabel("target occupancy (%)")
+    ax.set_title("B · Transient — binding sink is a capacitor", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    _recessive_axes(ax)
+
+    # ---- C. pH ion trapping across compartments -------------------------
+    ax = axes[1, 0]
+    comps = ["lysosome", "early_endosome", "cytosol", "mitochondrion"]
+    x = np.arange(len(comps))
+    base_R = [accumulation_ratio(9.0, COMPARTMENT_PH[c], 7.4, "base")
+              for c in comps]
+    acid_R = [accumulation_ratio(4.0, COMPARTMENT_PH[c], 7.4, "acid")
+              for c in comps]
+    w = 0.38
+    ax.bar(x - w / 2, base_R, w, color=_OI["green"], label="weak base (pKa 9)",
+           zorder=3)
+    ax.bar(x + w / 2, acid_R, w, color=_OI["orange"], label="weak acid (pKa 4)",
+           zorder=3)
+    ax.axhline(1.0, color=_OI["grey"], lw=1, ls="--", zorder=2)
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels([c.replace("_", "\n") for c in comps], fontsize=9)
+    ax.set_ylabel("accumulation  C_in / C_out")
+    ax.set_title("C · pH ion trapping (vs blood pH 7.4)", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9)
+    _recessive_axes(ax)
+
+    # ---- D. Composed waterfall ------------------------------------------
+    ax = axes[1, 1]
+    C_out = 1e-7
+    stages = [
+        ("permeation", dict()),
+        ("+ lysosomal\ntrapping", dict(pKa=9.0, ion_type="base",
+                                       pH_in=COMPARTMENT_PH["lysosome"])),
+        ("+ P-gp\nefflux", dict(pKa=9.0, ion_type="base",
+                                pH_in=COMPARTMENT_PH["lysosome"], pump=pump)),
+    ]
+    labels, occs = [], []
+    for name, kw in stages:
+        ss = solve_steady_state(C_out, permeability=perm, geometry=geom, **kw)
+        labels.append(name)
+        occs.append(ss.occupancy(prior) * 100)
+    xs = np.arange(len(labels))
+    bars = ax.bar(xs, occs, 0.6, color=[_OI["blue"], _OI["green"],
+                                        _OI["vermillion"]], zorder=3)
+    for b, v in zip(bars, occs):
+        # Label small values inside-above so a ~0 % bar still reports its
+        # number (the efflux collapse is the point of the panel).
+        txt = f"{v:.1f}%" if v < 10 else f"{v:.0f}%"
+        ax.text(b.get_x() + b.get_width() / 2, max(v, 0) + 1.5, txt,
+                ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("target occupancy (%)")
+    ax.set_ylim(0, 112)
+    ax.set_title(f"D · Composed steady state (dose {C_out:.0e} M)", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.text(0.99, 0.96, "trust: " + (
+        "calibrated" if solve_steady_state(
+            C_out, permeability=perm, geometry=geom).inputs_calibrated
+        else "UNCALIBRATED inputs"),
+        transform=ax.transAxes, ha="right", va="top", fontsize=8,
+        color=_OI["grey"])
+    _recessive_axes(ax)
+
+    # ---- E. Spatial penetration into tissue -----------------------------
+    from src.cell import penetration_profile_first_order
+    ax = axes[2, 0]
+    for k, col, lab in [(1e-3, _OI["blue"], "slow uptake"),
+                        (1e-2, _OI["green"], "moderate"),
+                        (1e-1, _OI["orange"], "fast"),
+                        (1.0, _OI["vermillion"], "very fast")]:
+        pr = penetration_profile_first_order(1e-5, thickness_um=150.0,
+                                             k_per_s=k)
+        ax.plot(pr.x_um, np.array(pr.C_M) / pr.C_vessel_M * 100, color=col,
+                lw=2, label=f"{lab} (λ={pr.penetration_depth_um:.0f}µm)")
+    ax.set_xlabel("depth from vessel (µm)")
+    ax.set_ylabel("% of vessel concentration")
+    ax.set_title("E · Tissue penetration (Krogh half-distance 150 µm)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5)
+    _recessive_axes(ax)
+
+    # ---- F. Treated fraction of tissue ----------------------------------
+    ax = axes[2, 1]
+    ks = np.logspace(-4, 0.3, 30)
+    treated = [penetration_profile_first_order(
+        1e-5, thickness_um=150.0, k_per_s=float(k)).treated_fraction(prior)
+        * 100 for k in ks]
+    ax.plot(ks, treated, color=_OI["purple"], lw=2.5)
+    ax.fill_between(ks, 0, treated, color=_OI["purple"], alpha=0.12, lw=0)
+    ax.set_xscale("log")
+    ax.set_xlabel("cellular uptake rate k (s⁻¹)")
+    ax.set_ylabel("% of tissue with >50% occupancy")
+    ax.set_title("F · Therapeutic coverage collapses with uptake", loc="left",
+                 fontsize=11, fontweight="bold")
+    ax.set_ylim(0, 105)
+    _recessive_axes(ax)
+
+    # ---- G. Occupancy → cell fate ---------------------------------------
+    from src.cell import (fate_from_occupancy, critical_occupancy,
+                          tissue_fate_profile)
+    ax = axes[3, 0]
+    occ_grid = np.linspace(0.0, 1.0, 200)
+    knet = np.array([fate_from_occupancy(float(o)).k_net_per_s
+                     for o in occ_grid]) * 3600.0        # per hour
+    theta_star = critical_occupancy()
+    ax.axhline(0.0, color="#555555", lw=1)
+    ax.fill_between(occ_grid * 100, 0, knet, where=(knet > 0),
+                    color=_OI["green"], alpha=0.25, lw=0, label="proliferating")
+    ax.fill_between(occ_grid * 100, 0, knet, where=(knet <= 0),
+                    color=_OI["vermillion"], alpha=0.25, lw=0, label="dying")
+    ax.plot(occ_grid * 100, knet, color=_OI["blue"], lw=2.2)
+    if theta_star is not None:
+        ax.axvline(theta_star * 100, color=_OI["purple"], lw=1.6, ls="--")
+        ax.text(theta_star * 100 + 1.5, knet.min() * 0.75,
+                f"θ* = {100*theta_star:.0f}%", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("sustained target occupancy (%)")
+    ax.set_ylabel("net growth rate (per hour)")
+    ax.set_title("G · Occupancy decides fate (θ* = kill threshold)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    _recessive_axes(ax)
+
+    # ---- H. Tissue fate map: who lives, who dies ------------------------
+    ax = axes[3, 1]
+    prof = penetration_profile_first_order(1e-5, thickness_um=150.0,
+                                           k_per_s=1e-1)
+    tf = tissue_fate_profile(prof, prior)
+    x = np.array(tf.x_um)
+    occ = np.array(tf.occupancy) * 100
+    dying = np.array([f == "dying" for f in tf.fates])
+    ax.fill_between(x, 0, occ, where=dying, color=_OI["vermillion"],
+                    alpha=0.3, lw=0, label="dying")
+    ax.fill_between(x, 0, occ, where=~dying, color=_OI["green"],
+                    alpha=0.3, lw=0, label="surviving")
+    ax.plot(x, occ, color=_OI["blue"], lw=2.2)
+    if tf.critical_occupancy is not None:
+        ax.axhline(tf.critical_occupancy * 100, color=_OI["purple"],
+                   lw=1.6, ls="--")
+        ax.text(2, tf.critical_occupancy * 100 + 2,
+                f"θ* = {100*tf.critical_occupancy:.0f}%", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("depth from vessel (µm)")
+    ax.set_ylabel("target occupancy (%)")
+    ax.set_title(f"H · Tumour regrows from the depths "
+                 f"({100*(1-tf.killed_fraction):.0f}% survives)",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper right")
+    _recessive_axes(ax)
+
+    # ---- I. Resistance: response then relapse ---------------------------
+    from src.cell import (ResistantClone, resistance_outcome,
+                          HepaticClearance, single_dose_exposure,
+                          repeat_dose_exposure, evaluate_regimen,
+                          Clone, simulate_colony)
+    _DAY = 86400.0
+    ax = axes[4, 0]
+    clone = ResistantClone(occupancy_scale=0.02, fitness_cost=0.15,
+                           initial_fraction=1e-4)
+    out = resistance_outcome(0.95, clone)
+    days = np.linspace(0.0, 60.0, 400)
+    pop = np.array([out.total_population_at(d * _DAY) for d in days])
+    frac = np.array([100 * out.resistant_fraction_at(d * _DAY) for d in days])
+    ax.semilogy(days, pop, color=_OI["blue"], lw=2.2, label="total population")
+    ax.axhline(1.0, color=_OI["grey"], lw=1.0, ls=":")
+    t_rel = out.time_to_relapse_s()
+    if t_rel is not None:
+        ax.axvline(t_rel / _DAY, color=_OI["vermillion"], lw=1.6, ls="--")
+        ax.text(t_rel / _DAY + 1.0, pop.min() * 3,
+                f"relapse\nday {t_rel/_DAY:.0f}", color=_OI["vermillion"],
+                fontsize=9, fontweight="bold")
+    ax2 = ax.twinx()
+    ax2.plot(days, frac, color=_OI["orange"], lw=2.0, ls="-.",
+             label="resistant %")
+    ax2.set_ylabel("resistant fraction (%)", color=_OI["orange"])
+    ax2.tick_params(axis="y", labelcolor=_OI["orange"])
+    ax2.set_ylim(0, 105)
+    ax2.spines["top"].set_visible(False)
+    ax.set_xlabel("days of treatment")
+    ax.set_ylabel("population (relative)")
+    ax.set_title("I · Response, then relapse — the drug selects resistance",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    _recessive_axes(ax)
+
+    # ---- J. PK/PD: potency is not efficacy ------------------------------
+    ax = axes[4, 1]
+    potent = binding_to_hill(-11.0, uncertainty_kcalmol=0.2,
+                             receptor=receptor, method="vina")
+    regimens = [("slow metabolism", 0.5, _OI["green"]),
+                ("moderate", 50.0, _OI["orange"]),
+                ("CYP-labile", 5000.0, _OI["vermillion"])]
+    C_star = None
+    for label, clint, colour in regimens:
+        cl = HepaticClearance(CLint_L_per_h=clint, fu_plasma=1.0, Vd_L=70.0)
+        exp_p = single_dose_exposure(1e-4, cl, duration_h=168.0)
+        res = evaluate_regimen(exp_p, potent)
+        C_star = res.threshold_conc_M or C_star
+        ax.semilogy(exp_p.t_h, np.maximum(exp_p.C_M, 1e-14), color=colour,
+                    lw=2.2, label=f"{label} ({res.log10_kill:+.1f} log)")
+    if C_star:
+        ax.axhline(C_star, color=_OI["purple"], lw=1.6, ls="--")
+        ax.text(4, C_star * 1.7, "C* (kill threshold)", color=_OI["purple"],
+                fontsize=9, fontweight="bold")
+    ax.set_xlabel("hours after dose")
+    ax.set_ylabel("plasma concentration (M)")
+    ax.set_ylim(1e-12, 1e-4)
+    ax.set_title("J · Same drug, same dose — clearance decides",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5, loc="upper right")
+    _recessive_axes(ax)
+
+    # ---- K. Agent-based colony: spatial sanctuary -----------------------
+    ax = axes[5, 0]
+    import math as _math
+    tr = simulate_colony(grid_size=(60, 40), n_seed_cells=1500, prior=prior,
+                         drug_field=lambda x, y: 1e-5 * _math.exp(-x / 8.0),
+                         dt_h=2.0, n_steps=80, rng_seed=5)
+    grid, names = tr.occupancy_grid()
+    from matplotlib.colors import ListedColormap
+    cmap = ListedColormap(["#F2F2F2", _OI["blue"]])
+    ax.imshow(np.clip(grid.T + 1, 0, 1), origin="lower", cmap=cmap,
+              aspect="auto", interpolation="nearest",
+              extent=[0, 60, 0, 40])
+    # Overlay the drug gradient as a shaded band on the vessel side.
+    xs_g = np.linspace(0, 60, 200)
+    ax.plot(xs_g, 40 * np.exp(-xs_g / 8.0), color=_OI["vermillion"], lw=2.0,
+            ls="--")
+    ax.text(1.0, 36.0, "vessel →  drug", color=_OI["vermillion"], fontsize=9,
+            fontweight="bold")
+    ax.set_xlabel("x — distance from vessel (lattice sites)")
+    ax.set_ylabel("y (lattice sites)")
+    ax.set_title(f"K · Individual cells: survivors hide from the drug "
+                 f"({tr.final_count} left)",
+                 loc="left", fontsize=11, fontweight="bold")
+
+    # ---- L. Colony growth: contact inhibition emerges -------------------
+    ax = axes[5, 1]
+    from src.cell import CellFateParams as _CFP
+    colony = simulate_colony(grid_size=(30, 30), n_seed_cells=1, dt_h=2.0,
+                             n_steps=260, rng_seed=1)
+    t_days = np.array(colony.t_h) / 24.0
+    k_per_day = _CFP().k_prolif_per_s * 86400.0
+    ideal = np.exp(k_per_day * t_days)          # unconstrained exponential
+    ax.plot(t_days, ideal, color=_OI["green"], lw=2.0, ls="--",
+            label="unconstrained exponential (no crowding)")
+    ax.plot(t_days, colony.n_total, color=_OI["blue"], lw=2.4,
+            label="simulated colony — surface-limited")
+    ax.axhline(30 * 30, color=_OI["grey"], lw=1.2, ls=":")
+    ax.text(0.5, 30 * 30 * 1.2, "grid capacity", color=_OI["grey"],
+            fontsize=9)
+    ax.set_yscale("log")
+    ax.set_ylim(0.7, 5e3)
+    ax.set_xlabel("days")
+    ax.set_ylabel("cells")
+    ax.set_title("L · Contact inhibition is emergent, not imposed",
+                 loc="left", fontsize=11, fontweight="bold")
+    ax.legend(frameon=False, fontsize=8.5, loc="lower right")
+    _recessive_axes(ax)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.982])
+    if save is not None:
+        fig.savefig(save, dpi=130, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    out = (sys.argv[1] if len(sys.argv) > 1
+           else "docs/images/cell_disposition_scene.png")
+    render_disposition_scene(save=out, show=False)
+    print(f"wrote {out}")

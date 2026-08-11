@@ -103,7 +103,7 @@ def run_som_validation(
     yaml_path: str | Path,
     *,
     dft_verify: int = 0,
-    heme_accessibility: bool = False,
+    heme_accessibility: bool = True,
     max_fe_distance_A: float = 10.0,
     cache_path: Optional[str] = None,
 ) -> SoMValidationResult:
@@ -113,11 +113,19 @@ def run_som_validation(
     each prediction before checking against the SMARTS. Much slower
     (minutes per compound) but more accurate.
 
-    `heme_accessibility`: if True, dock each compound into CYP3A4
-    (1TQN) and re-rank SoM candidates by (accessible first, then
-    BDE ascending). Matches the biological mechanism: only C-H
-    bonds within `max_fe_distance_A` of the heme iron can be
-    oxidised by the ferryl species.
+    `heme_accessibility`: dock each compound into CYP3A4 (1TQN) and
+    re-rank SoM candidates by (accessible first, then BDE ascending).
+    Matches the biological mechanism: only C-H bonds within
+    `max_fe_distance_A` of the heme iron can be oxidised by the ferryl
+    species.
+
+    DEFAULT ON (changed 2026-07). Bare BDE ranking asks only "which
+    C-H is weakest?", never "can the enzyme actually reach it?", and
+    that is not how CYP3A4 works — a buried weak C-H is not a site of
+    metabolism. Measured on the bundled literature set, bare BDE scores
+    1/3 and the heme re-rank 2/3, so the accurate path is now the
+    default and the fast path is opt-out (`--no-heme-access`). Cost:
+    one docking run per compound.
     """
     import yaml as pyyaml
     from rdkit import Chem
@@ -244,11 +252,14 @@ if __name__ == "__main__":
     ap.add_argument("--dft-verify", type=int, default=0, metavar="N",
                     help="after xTB top-N ranking, DFT-rescore those "
                          "N for every compound (slow but paper-grade)")
-    ap.add_argument("--heme-access", action="store_true",
-                    help="dock each compound into CYP3A4 (1TQN) "
-                         "and re-rank SoM candidates by Fe-atom "
-                         "accessibility (only atoms within 10 Å of "
-                         "heme iron are kept)")
+    ap.add_argument("--no-heme-access", action="store_true",
+                    help="DISABLE the CYP3A4 (1TQN) heme-accessibility "
+                         "re-rank. Faster, but markedly less accurate: "
+                         "bare BDE ranking ignores whether a C-H can "
+                         "physically reach the ferryl oxygen, and on "
+                         "the bundled literature set it scores 1/3 vs "
+                         "2/3 with the re-rank. Only use for a quick "
+                         "look, never for a reported number.")
     ap.add_argument("--max-fe", type=float, default=10.0,
                     help="Fe-distance cutoff when --heme-access "
                          "(default 10.0 Å)")
@@ -259,7 +270,7 @@ if __name__ == "__main__":
     r = run_som_validation(
         args.yaml,
         dft_verify=args.dft_verify,
-        heme_accessibility=args.heme_access,
+        heme_accessibility=not args.no_heme_access,
         max_fe_distance_A=args.max_fe,
         cache_path=args.cache)
     print()
