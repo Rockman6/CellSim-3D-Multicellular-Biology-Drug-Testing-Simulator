@@ -37,21 +37,38 @@ python -u tests/<path>/<test>.py    # or cellsim <subcommand> …
 
 ## 1.3 Docking: pose-recovery on bundled cocrystals
 
-Re-docking gate — canonical Astex/PDBBind convention (top-1 ≤ 2.5 Å
-**AND** best-of-top-3 < 2.0 Å).
+> **CORRECTION (2026-07):** the per-system RMSDs previously tabulated
+> here (1STP 2.02 Å, 1M17 4.23 Å, …) were computed on molecules
+> *scrambled* by a Meeko atom-order bug in the pose reconstruction —
+> `_build_pose_mol` / `pose_rmsd` assumed Meeko preserves SMILES atom
+> order, which it does not. The bug is fixed (docked poses are now
+> reconstructed via Meeko's reverse conversion) and the numbers below
+> are recomputed on correct molecules. It made good poses look bad —
+> e.g. biotin/1STP went from a reported 2.02 Å to the real **0.69 Å**.
 
-| System | ligand | top-1 RMSD | top-3-best | status | notes |
-|---|---|:-:|:-:|:-:|---|
-| 1STP streptavidin | biotin | 2.02 Å | 1.99 Å | ✅ PASS | canonical benchmark since AutoDock 1.0 |
-| 3PTB trypsin | benzamidine | 1.30 Å | 1.30 Å | ✅ PASS | classic S1-pocket test |
-| 1M17 EGFR kinase | erlotinib | 4.23 Å | 4.23 Å | ❌ FAIL | Vina scoring-function failure; known hard kinase case |
+**Blind pose recovery — 15 diverse cocrystals**, structures + ligand
+SMILES fetched from RCSB at run time (not hard-coded, so not circular
+on our own inputs). Reproducer:
+`python scripts/run_blind_dock_bench.py benchmarks/pdbbind/blind_set.yaml`.
 
-**Aggregate: 2/3 = 67 %** at canonical gate.
-Vina papers report ~75–85 % on Astex Diverse Set (85 systems) at
-exhaustiveness=32; our 3-cocrystal set is deliberately harder
-(includes a known failure case — erlotinib).
+| Metric | Result | Campaign-1 gate |
+|---|:-:|:-:|
+| PoseBusters physical validity (#3) | **100 %** (15/15) | ✅ ≥ 95 % |
+| Pose recovery, top-1 ≤ 2 Å (#1) | **73 %** (11/15) | ⚠️ ≥ 75 % |
+| Pose recovery, top-3 ≤ 2 Å | **87 %** (13/15) | — |
 
-Reproducer: `python tests/dock/test_mini_bench.py`.
+The top-1/top-3 gap is the headline: Vina's **sampling** finds the
+correct pose 87 % of the time, but its **scoring** ranks it #1 only
+73 %. The remaining top-1 misses are two ranking failures (1M17, 1HPX —
+correct pose at rank 2–3) and two genuine sampling near-misses (1FKG,
+1DWD, top-3 best 2.26 / 2.34 Å). A UFF-strain re-rank does *not* recover
+the ranking failures (the correct pose is not lower-strain), so top-1 is
+a Vina-scoring limitation — the same root as the kinase-ranking result
+below, which is what FEP addresses.
+
+The legacy 3-cocrystal re-dock smoke (`tests/dock/test_mini_bench.py`)
+still runs as an API-regression gate; the 15-cocrystal blind set above
+is the real accuracy measurement.
 
 ---
 

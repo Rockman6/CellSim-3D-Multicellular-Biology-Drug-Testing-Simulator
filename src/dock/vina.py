@@ -100,9 +100,18 @@ class DockingPose:
     posebusters_geometry_ok: Optional[bool] = None
     posebusters_flags: Optional[dict] = None
     # Coordinates (Å) — per-atom positions in the same atom ordering
-    # as the prep step produced.
+    # as the prep step produced (Meeko/PDBQT order, NOT SMILES order —
+    # see rdkit_molblock).
     positions_A: list = field(default_factory=list)
     elements: list = field(default_factory=list)
+    # Correct RDKit molecule for this pose, as a MOL block, reconstructed
+    # via Meeko's reverse conversion (PDBQTMolecule + RDKitMolCreate).
+    # Meeko reorders atoms during prep, so mapping positions_A onto a
+    # SMILES template by index scrambles the molecule; consumers that
+    # need a chemically-correct 3D mol (PoseBusters, symmetry-aware RMSD)
+    # must use THIS, not positions_A + a template. None if reconstruction
+    # was unavailable.
+    rdkit_molblock: Optional[str] = None
 
     def biologist_summary(self) -> str:
         """One-line human summary in biologist units."""
@@ -291,11 +300,48 @@ def _prep_ligand_pdbqt(smiles: str, workdir: Path, seed: int = 1) -> Path:
     return out
 
 
+def _reconstruct_pose_molblocks(pdbqt_text: str) -> list:
+    """Correct per-pose RDKit MOL blocks via Meeko's reverse conversion.
+
+    Meeko REORDERS atoms during ligand prep (e.g. biotin SMILES order
+    OCOCCCCC… becomes PDBQT order CCCOOCCC…). Downstream code that maps
+    the pose's PDBQT-order coordinates onto a `MolFromSmiles` template
+    by atom index therefore builds a topologically SCRAMBLED molecule —
+    with physically impossible 3–5 Å "bonds" — which fails PoseBusters
+    and corrupts symmetry-aware RMSD. `PDBQTMolecule` + `RDKitMolCreate.
+    from_pdbqt_mol` reconstruct the true bonding + atom correspondence
+    (Meeko stored the mapping in the PDBQT remarks Vina preserves).
+
+    Returns [molblock | None] in Vina pose order (best first). Empty
+    list on any failure — callers fall back to the (buggy) template path
+    but should treat that as degraded.
+    """
+    try:
+        from meeko import PDBQTMolecule, RDKitMolCreate
+        from rdkit import Chem
+    except Exception:
+        return []
+    try:
+        pmol = PDBQTMolecule(pdbqt_text, is_dlg=False, skip_typing=True)
+        mols = RDKitMolCreate.from_pdbqt_mol(pmol)
+        if not mols or mols[0] is None:
+            return []
+        mol = mols[0]
+        return [Chem.MolToMolBlock(mol, confId=c.GetId())
+                for c in mol.GetConformers()]
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).debug(
+            "Meeko pose reconstruction failed: %s", str(e)[:150])
+        return []
+
+
 def _parse_vina_output(pdbqt_out: Path) -> list[DockingPose]:
     """Parse Vina's output PDBQT into DockingPose objects.
 
     Vina writes MODEL/ENDMDL blocks; the `REMARK VINA RESULT:` line
-    of each model carries `affinity rmsd_lb rmsd_ub`.
+    of each model carries `affinity rmsd_lb rmsd_ub`. Each pose also
+    gets a chemically-correct `rdkit_molblock` reconstructed via Meeko
+    (see `_reconstruct_pose_molblocks`).
     """
     poses: list[DockingPose] = []
     current_mode = 0
@@ -305,7 +351,8 @@ def _parse_vina_output(pdbqt_out: Path) -> list[DockingPose]:
     positions: list = []
     elements: list = []
 
-    for line in pdbqt_out.read_text().splitlines():
+    pdbqt_text = pdbqt_out.read_text()
+    for line in pdbqt_text.splitlines():
         if line.startswith("MODEL"):
             current_mode = int(line.split()[-1])
             positions = []
@@ -355,6 +402,14 @@ def _parse_vina_output(pdbqt_out: Path) -> list[DockingPose]:
                     positions_A=positions,
                     elements=elements,
                 ))
+
+    # Attach chemically-correct RDKit mol blocks (Meeko reverse). Poses
+    # are in Vina rank order in both the text and the reconstruction, so
+    # they align by index.
+    molblocks = _reconstruct_pose_molblocks(pdbqt_text)
+    for i, pose in enumerate(poses):
+        if i < len(molblocks):
+            pose.rdkit_molblock = molblocks[i]
     return poses
 
 

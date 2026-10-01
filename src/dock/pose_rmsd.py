@@ -39,18 +39,37 @@ logger = logging.getLogger(__name__)
 
 
 def extract_hetatm_ligand(
-    pdb_path: str | Path, resname: str
+    pdb_path: str | Path, resname: str, *,
+    first_copy_only: bool = False,
 ) -> list[dict]:
-    """Return [{elem, x, y, z}] for all HETATM rows with `resname`.
+    """Return [{elem, x, y, z}] for heavy HETATM rows with `resname`.
 
     Only heavy atoms (no H); biologists compare heavy-atom RMSD.
+
+    `first_copy_only=True` returns just ONE ligand copy — the atoms of
+    the first (chain, residue-number) instance encountered, keeping only
+    the blank/'A' alternate location. Crystals routinely contain the
+    same ligand in several chains (e.g. imatinib in 2hyy appears 4×) or
+    at multiple alternate conformations; grabbing all of them makes the
+    atom count a multiple of the real ligand and breaks the RMSD atom
+    match. RMSD comparisons should use one copy.
     """
     rows: list[dict] = []
+    first_key = None
     for line in Path(pdb_path).read_text().splitlines():
         if not line.startswith("HETATM"):
             continue
         if line[17:20].strip() != resname:
             continue
+        if first_copy_only:
+            altloc = line[16]
+            if altloc not in (" ", "A"):
+                continue
+            key = (line[21], line[22:27])   # chain id, resSeq + iCode
+            if first_key is None:
+                first_key = key
+            elif key != first_key:
+                continue
         elem = (line[76:78].strip() or line[12:14].strip()).title()
         if elem == "H":
             continue
@@ -62,6 +81,97 @@ def extract_hetatm_ligand(
             continue
         rows.append({"elem": elem, "x": x, "y": y, "z": z})
     return rows
+
+
+def _build_ref_mol(ref_heavy_atoms: list[dict], template):
+    """Build a one-copy crystal-ligand RDKit mol from the HETATM heavy-
+    atom snippet, with bond ORDERS copied from the SMILES template.
+    `ref_heavy_atoms` must already be a single ligand copy (see
+    extract_hetatm_ligand first_copy_only)."""
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    lines = ["HEADER    ref"]
+    for i, row in enumerate(ref_heavy_atoms, 1):
+        lines.append(
+            f"HETATM{i:5d}  {row['elem']:<3s} LIG A   1    "
+            f"{row['x']:8.3f}{row['y']:8.3f}{row['z']:8.3f}"
+            f"  1.00  0.00           {row['elem']:>2s}")
+    lines.append("END")
+    ref_mol = Chem.MolFromPDBBlock(
+        "\n".join(lines), sanitize=False, removeHs=True)
+    if ref_mol is None:
+        return None
+    if template is not None:
+        try:
+            ref_mol = AllChem.AssignBondOrdersFromTemplate(template, ref_mol)
+        except Exception:
+            pass  # keep distance-inferred connectivity
+    return ref_mol
+
+
+def _robust_heavy_rmsd(probe, ref_mol) -> Optional[float]:
+    """Symmetry-aware heavy-atom RMSD between a docked-pose mol and a
+    crystal reference mol, tolerant of atom-count differences.
+
+    - Same heavy-atom count → `GetBestRMS` (symmetry-minimal, aligned;
+      on an already-pocketed pose the alignment is ~identity).
+    - Different count (crystal missing a disordered atom, or the
+      deposited SMILES carries an extra) → in-place RMSD over the
+      maximum common substructure, so the pose still scores instead of
+      being dropped.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import rdMolAlign, rdFMCS
+    import numpy as np
+
+    # The crystal ref mol is built with sanitize=False (to tolerate raw
+    # geometry), so ring perception may be uninitialised — FindMCS /
+    # substructure matching then raise "RingInfo not initialized".
+    # Initialise it (best effort) on both mols first.
+    for m in (probe, ref_mol):
+        try:
+            m.UpdatePropertyCache(strict=False)
+            Chem.FastFindRings(m)
+        except Exception:
+            pass
+
+    try:
+        if probe.GetNumAtoms() == ref_mol.GetNumAtoms():
+            return float(rdMolAlign.GetBestRMS(probe, ref_mol))
+    except Exception as e:
+        logger.debug("GetBestRMS failed: %s; trying MCS", e)
+    try:
+        res = rdFMCS.FindMCS(
+            [probe, ref_mol], timeout=15,
+            atomCompare=rdFMCS.AtomCompare.CompareElements,
+            bondCompare=rdFMCS.BondCompare.CompareAny,
+            ringMatchesRingOnly=True, completeRingsOnly=False)
+        if res.canceled or res.numAtoms < 3:
+            return None
+        q = Chem.MolFromSmarts(res.smartsString)
+        if q is None:
+            return None
+        ref_match = ref_mol.GetSubstructMatch(q)
+        probe_matches = probe.GetSubstructMatches(
+            q, uniquify=False, maxMatches=500)
+        if not ref_match or not probe_matches:
+            return None
+        rc = ref_mol.GetConformer()
+        pc = probe.GetConformer()
+        ref_xyz = np.array([list(rc.GetAtomPosition(i)) for i in ref_match])
+        best = None
+        for match in probe_matches:
+            if len(match) != len(ref_match):
+                continue
+            pxyz = np.array([list(pc.GetAtomPosition(i)) for i in match])
+            rmsd = float(np.sqrt(((pxyz - ref_xyz) ** 2).sum(1).mean()))
+            if best is None or rmsd < best:
+                best = rmsd
+        return best
+    except Exception as e:
+        logger.debug("MCS RMSD failed: %s", e)
+        return None
 
 
 def pose_rmsd_symmetry_aware(
@@ -99,68 +209,46 @@ def pose_rmsd_symmetry_aware(
     from rdkit import Chem
     from rdkit.Chem import AllChem, rdMolAlign
 
-    # Pose heavy atoms (filter hydrogens).
+    # Pose heavy atoms (used by the legacy path + last-resort ref).
     pose_heavy = [
         (elem, pose.positions_A[i])
         for i, elem in enumerate(pose.elements)
         if elem.upper() != "H"
     ]
-    if len(pose_heavy) != len(ref_heavy_atoms):
-        logger.debug(
-            "pose heavy=%d ref heavy=%d; element count mismatch",
-            len(pose_heavy), len(ref_heavy_atoms))
-        return None
 
-    # Authoritative topology from SMILES.
     template = Chem.MolFromSmiles(smiles)
+    if template is not None:
+        template = Chem.RemoveHs(template)
+
+    # One-copy crystal reference mol (with template bond orders).
+    ref_mol = _build_ref_mol(ref_heavy_atoms, template)
+
+    # PREFERRED PATH: robust RMSD from the Meeko-reconstructed pose mol
+    # (true atom mapping) against the crystal mol. Tolerates atom-count
+    # differences via an MCS common-core match, so it scores cases the
+    # exact-count legacy path used to drop to None (crystals routinely
+    # miss a disordered atom, or the deposited SMILES carries an extra).
+    molblock = getattr(pose, "rdkit_molblock", None)
+    if molblock and ref_mol is not None:
+        probe = Chem.MolFromMolBlock(molblock, removeHs=True, sanitize=True)
+        if probe is not None and probe.GetNumConformers() > 0:
+            rmsd = _robust_heavy_rmsd(probe, ref_mol)
+            if rmsd is not None:
+                return rmsd
+
+    # LEGACY FALLBACK (exact-count, template + SMILES-order probe). Only
+    # reached when no molblock is available or the robust path failed;
+    # requires the counts to line up.
     if template is None:
         return None
-    template = Chem.RemoveHs(template)
     n_heavy = template.GetNumAtoms()
-    if n_heavy != len(pose_heavy):
+    if (len(pose_heavy) != len(ref_heavy_atoms)
+            or n_heavy != len(pose_heavy)):
         logger.debug(
-            "smiles heavy=%d pose heavy=%d; topology mismatch",
-            n_heavy, len(pose_heavy))
+            "count mismatch (pose=%d ref=%d smiles=%d); no RMSD",
+            len(pose_heavy), len(ref_heavy_atoms), n_heavy)
         return None
-
-    # --- Reference: load from the original PDB if given (preferred,
-    # keeps CONECT records), else build a minimal PDB snippet from the
-    # HETATM coordinate list and let RDKit infer bonds by distance.
-    ref_mol = None
-    if reference_pdb is not None and reference_resname is not None:
-        try:
-            full_mol = Chem.MolFromPDBFile(
-                str(reference_pdb), sanitize=False, removeHs=True)
-            if full_mol is not None:
-                # Extract only atoms of the target residue.
-                keep = [a.GetIdx() for a in full_mol.GetAtoms()
-                        if a.GetPDBResidueInfo() and
-                        a.GetPDBResidueInfo().GetResidueName().strip()
-                        == reference_resname]
-                if keep:
-                    edit = Chem.RWMol(full_mol)
-                    # Delete atoms not in keep, in reverse order.
-                    for idx in sorted(
-                            set(range(full_mol.GetNumAtoms())) - set(keep),
-                            reverse=True):
-                        edit.RemoveAtom(idx)
-                    ref_mol = edit.GetMol()
-        except Exception as e:
-            logger.debug("PDB ref extraction failed: %s", e)
-
     if ref_mol is None or ref_mol.GetNumAtoms() != n_heavy:
-        # Minimal fallback: build ref from the HETATM snippet.
-        lines = ["HEADER    ref"]
-        for i, row in enumerate(ref_heavy_atoms, 1):
-            lines.append(
-                f"HETATM{i:5d}  {row['elem']:<3s} LIG A   1    "
-                f"{row['x']:8.3f}{row['y']:8.3f}{row['z']:8.3f}"
-                f"  1.00  0.00           {row['elem']:>2s}")
-        lines.append("END")
-        ref_mol = Chem.MolFromPDBBlock(
-            "\n".join(lines), sanitize=False, removeHs=True)
-    if ref_mol is None or ref_mol.GetNumAtoms() != n_heavy:
-        logger.debug("ref build failed; using naive centroid RMSD")
         import numpy as np
         pose_arr = np.array([xyz for _, xyz in pose_heavy], dtype=float)
         ref_arr = np.array([[r["x"], r["y"], r["z"]]
@@ -168,34 +256,17 @@ def pose_rmsd_symmetry_aware(
         c1 = pose_arr.mean(axis=0); c2 = ref_arr.mean(axis=0)
         d = (pose_arr - c1) - (ref_arr - c2)
         return float(np.sqrt((d * d).sum(axis=1).mean()))
-
-    # Assign correct bond orders from the template so the
-    # substructure match inside GetBestRMS can find an atom map.
-    try:
-        ref_mol = AllChem.AssignBondOrdersFromTemplate(template, ref_mol)
-    except Exception as e:
-        logger.debug("AssignBondOrdersFromTemplate failed: %s", e)
-
-    # Probe: template + pose coords assigned in SMILES order.
     probe = Chem.Mol(template)
     conf = Chem.Conformer(n_heavy)
     for i, (_, xyz) in enumerate(pose_heavy):
         conf.SetAtomPosition(i, (float(xyz[0]), float(xyz[1]),
                                  float(xyz[2])))
     probe.AddConformer(conf, assignId=True)
-
     try:
-        rmsd = rdMolAlign.GetBestRMS(probe, ref_mol)
+        return float(rdMolAlign.GetBestRMS(probe, ref_mol))
     except Exception as e:
-        logger.debug("GetBestRMS failed: %s; naive fallback", e)
-        import numpy as np
-        pose_arr = np.array([xyz for _, xyz in pose_heavy], dtype=float)
-        ref_arr = np.array([[r["x"], r["y"], r["z"]]
-                            for r in ref_heavy_atoms], dtype=float)
-        c1 = pose_arr.mean(axis=0); c2 = ref_arr.mean(axis=0)
-        d = (pose_arr - c1) - (ref_arr - c2)
-        return float(np.sqrt((d * d).sum(axis=1).mean()))
-    return float(rmsd)
+        logger.debug("legacy GetBestRMS failed: %s", e)
+        return None
 
 
 def attach_crystal_rmsd(
@@ -206,7 +277,8 @@ def attach_crystal_rmsd(
     cocrystal ligand. Sets `best_rmsd_vs_reference_A` to the top
     pose's RMSD (conventional metric).
     """
-    ref_heavy = extract_hetatm_ligand(crystal_pdb, ligand_resname)
+    ref_heavy = extract_hetatm_ligand(
+        crystal_pdb, ligand_resname, first_copy_only=True)
     if not ref_heavy:
         raise RuntimeError(
             f"no HETATM rows for resname {ligand_resname} in {crystal_pdb}")

@@ -38,17 +38,32 @@ logger = logging.getLogger(__name__)
 
 
 def _build_pose_mol(pose: DockingPose, smiles: str):
-    """Build a 3D RDKit mol for a pose (heavy atoms only).
+    """Build a chemically-correct 3D RDKit mol for a pose.
 
-    Keeps bond orders from the SMILES template and assigns heavy-atom
-    coordinates from Vina's parsed pose (in SMILES order, preserved
-    by Meeko). Hydrogens are then added in geometry by RDKit so all
-    atoms have real positions — PoseBusters' steric-clash tests need
-    that, otherwise the hydrogens sit on top of each other at the
-    origin and every pose fails.
+    Preferred path: the pose's `rdkit_molblock`, reconstructed via
+    Meeko's reverse conversion, which carries the TRUE atom mapping +
+    hydrogens. This is required for correctness — Meeko reorders atoms
+    during prep, so the legacy template path below (which assumes the
+    pose coords are in SMILES order) builds a topologically scrambled
+    molecule and every geometry test fails. The template path is kept
+    only as a degraded fallback for poses lacking a molblock.
     """
     from rdkit import Chem
     from rdkit.Chem import AllChem
+
+    molblock = getattr(pose, "rdkit_molblock", None)
+    if molblock:
+        m = Chem.MolFromMolBlock(molblock, removeHs=False, sanitize=True)
+        if m is not None and m.GetNumConformers() > 0:
+            # Meeko's reconstruction already includes hydrogens with
+            # geometry; only add them if somehow absent.
+            if not any(a.GetAtomicNum() == 1 for a in m.GetAtoms()):
+                try:
+                    m = Chem.AddHs(m, addCoords=True)
+                except Exception:
+                    pass
+            return m
+        logger.debug("MolFromMolBlock failed; falling back to template")
 
     tpl = Chem.MolFromSmiles(smiles)
     if tpl is None:
