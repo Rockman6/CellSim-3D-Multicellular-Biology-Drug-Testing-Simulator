@@ -25,9 +25,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.dock import off_target_screen  # noqa: E402
-from src.dock.off_target import write_csv  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.dock import off_target_screen  # noqa: E402
+from cellsim.dock.off_target import write_csv  # noqa: E402
 
 
 LIGAND = "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12"   # biotin

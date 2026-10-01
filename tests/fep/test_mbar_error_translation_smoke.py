@@ -1,5 +1,5 @@
 """Regression tests for the biologist-readable MBAR-failure
-translator in src/fep/sampling.py.
+translator in cellsim/fep/sampling.py.
 
 The underlying problem: pymbar's built-in error strings ("Column
 sum W_nk = 0 for state 3 and 8 other columns") are meaningful to
@@ -18,7 +18,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from src.fep.sampling import _biologist_reason_for_mbar_error
+from cellsim.fep.sampling import _biologist_reason_for_mbar_error
 
 
 def _msg(exc_text: str, **kwargs) -> str:

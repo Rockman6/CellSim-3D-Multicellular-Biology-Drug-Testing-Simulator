@@ -41,7 +41,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.chem import parametrize_smiles  # noqa: E402
+from cellsim.chem import parametrize_smiles  # noqa: E402
 
 
 def load_smi(path: Path, max_n: int | None = None) -> list[tuple[str, str]]:

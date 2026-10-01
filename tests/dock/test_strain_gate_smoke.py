@@ -25,7 +25,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock import strain as strain_mod  # noqa: E402
+from cellsim.dock import strain as strain_mod  # noqa: E402
 
 
 @dataclass
@@ -43,7 +43,7 @@ def _make_strain(ok=True, band="good", ratio=1.2, kcal=5.0):
 
 
 def _simulate_promotion(pose_bands, gate=True):
-    """Mirror the gate logic in src.dock.batch._worker for testing.
+    """Mirror the gate logic in cellsim.dock.batch._worker for testing.
 
     Returns (chosen_rank_1indexed, promoted_from_1indexed_or_None)."""
     # pose_bands is a list of band strings per pose.

@@ -47,7 +47,7 @@ PARAMS = dict(
 
 
 def main() -> int:
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
 
     print("=" * 70)
     print("Milestone A hydration sign/magnitude diagnostic")

@@ -1,6 +1,6 @@
 """Layer 1.6 MC-dock smoke — 4 seeds on 1STP biotin.
 
-Runs src.uq.monte_carlo_dock over 4 Vina seeds and sanity-checks
+Runs cellsim.uq.monte_carlo_dock over 4 Vina seeds and sanity-checks
 the output:
   - ok=True with n_ok >= 3 (at least 3/4 seeds produce a valid pose)
   - ΔG mean in [-10, -4] kcal/mol (reasonable range for biotin-
@@ -26,7 +26,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.uq import monte_carlo_dock  # noqa: E402
+from cellsim.uq import monte_carlo_dock  # noqa: E402
 
 
 RECEPTOR = REPO_ROOT / "benchmarks" / "dock" / "1stp.pdb"

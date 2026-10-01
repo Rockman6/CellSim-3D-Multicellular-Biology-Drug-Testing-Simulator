@@ -64,7 +64,7 @@ def main() -> int:
 
     for y in yamls:
         r = subprocess.run(
-            ["python", "-m", "src.fep.binding", "validate", str(y)],
+            ["python", "-m", "cellsim.fep.binding", "validate", str(y)],
             cwd=REPO_ROOT,
             capture_output=True, text=True,
         )

@@ -36,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 def test_methane_hydration_pipeline_runs():
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     r = compute_hydration_dg(
         "C", n_windows=5,
         n_production_steps=200, n_equilibration_steps=50,
@@ -46,9 +46,13 @@ def test_methane_hydration_pipeline_runs():
     assert r.dG_hydration_kcalmol is not None
     assert math.isfinite(r.dG_hydration_kcalmol)
     assert math.isfinite(r.uncertainty_kcalmol)
-    assert r.wall_seconds is not None and r.wall_seconds < 180, (
-        f"pipeline wall = {r.wall_seconds:.1f}s; "
-        "expected < 3 min at smoke params.")
+    # Wall-clock bound. On CI this measures the runner, not the code, so
+    # it is set well above the observed CI time: it exists to catch a
+    # severe performance regression, not to benchmark the machine.
+    # Observed on a 2-core GitHub runner: ~118 s.
+    assert r.wall_seconds is not None and r.wall_seconds < 600, (
+        f"pipeline wall = {r.wall_seconds:.1f}s; expected well under "
+        "10 min at smoke params — suspect a performance regression.")
     # Vacuum decoupling for neutral methane must be ≈ 0 — no
     # λ-dependent self-interaction change. This is the load-
     # bearing physics sanity the sampling gate is also pinning.
@@ -84,7 +88,7 @@ def test_methane_hydration_composition_formula_pinned():
     # sampling: ΔG_ann_vac = 0, ΔG_ann_water ≈ -2 (favorable to
     # annihilate, because phantom-in-water has more entropy than
     # caged-real-in-water). The CORRECT formula returns +2.
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     import inspect
     src = inspect.getsource(compute_hydration_dg)
     # Pin: the composition line must have the leading minus.
@@ -103,7 +107,7 @@ def test_methane_hydration_finite_at_smoke_params():
     """Pure pipeline-runs check: ΔG_hyd is finite and uncertainty
     is finite at smoke params. Does NOT assert sign or magnitude
     (smoke sampling is biased, see post-mortem above)."""
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     r = compute_hydration_dg(
         "C", n_windows=7,
         n_production_steps=500, n_equilibration_steps=100,

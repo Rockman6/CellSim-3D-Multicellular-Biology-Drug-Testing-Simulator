@@ -1,0 +1,36 @@
+{
+  "receptor": "benchmarks/dock/3ptb.pdb",
+  "smiles": "c1ccc(cc1)C(=N)N",
+  "n_base": 32,
+  "n_runs": 256,
+  "dG_spread": {
+    "n": 160,
+    "mean": -6.074449999999997,
+    "std": 0.03571340784635373,
+    "min": -6.104,
+    "max": -5.878,
+    "range": 0.22599999999999998
+  },
+  "indices": [
+    {
+      "input": "exhaustiveness",
+      "S1": -0.06200244170889086,
+      "ST": 0.6914565673458234,
+      "ST_conf": 0.3933842060663772
+    },
+    {
+      "input": "box_scale",
+      "S1": 0.004758245335481611,
+      "ST": 0.6257237253034237,
+      "ST_conf": 0.3869885248987227
+    },
+    {
+      "input": "center_jitter_A",
+      "S1": -0.027711809110107323,
+      "ST": 0.5554486700187684,
+      "ST_conf": 0.3640016707007473
+    }
+  ],
+  "dominant_input": "exhaustiveness",
+  "indices_reliable": false
+}
