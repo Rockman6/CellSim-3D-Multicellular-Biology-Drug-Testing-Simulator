@@ -1,72 +1,148 @@
 {
   "gains": [
     0.0,
+    0.05,
     0.1,
     0.25,
     0.5,
-    1.0,
-    2.0
+    1.0
   ],
   "n_cells_per_dose": 32,
   "bisection_steps": 12,
+  "mutant_lines": [
+    "HT-29",
+    "MDA-MB-231",
+    "MDA-MB-468",
+    "MIA-PaCa-2",
+    "T47D"
+  ],
   "per_gain_rmse": {
     "0.0": {
       "HT-29": 0.38801378843325124,
       "MDA-MB-231": 0.5235672184470497,
-      "HeLa": 0.2700248281756096
+      "MDA-MB-468": 0.9795754718422438,
+      "MIA-PaCa-2": 1.0998642721658536,
+      "T47D": 0.2147764847449441
+    },
+    "0.05": {
+      "HT-29": 0.3260198435558267,
+      "MDA-MB-231": 0.3182080905344077,
+      "MDA-MB-468": 0.3433806429157477,
+      "MIA-PaCa-2": 0.5901026690583533,
+      "T47D": 0.6748351754126084
     },
     "0.1": {
       "HT-29": 0.33226307261832555,
       "MDA-MB-231": 0.3182080905344077,
-      "HeLa": 0.27795494625123607
+      "MDA-MB-468": 0.3459297938702627,
+      "MIA-PaCa-2": 0.5744325335184822,
+      "T47D": 0.6975847351218482
     },
     "0.25": {
       "HT-29": 0.33226307261832555,
       "MDA-MB-231": 0.3247788215257367,
-      "HeLa": 0.27795494625123607
+      "MDA-MB-468": 0.33624720445353506,
+      "MIA-PaCa-2": 0.5530225975959895,
+      "T47D": 0.7043840333470792
     },
     "0.5": {
       "HT-29": 0.33226307261832555,
       "MDA-MB-231": 0.3247788215257367,
-      "HeLa": 0.2750284430715764
+      "MDA-MB-468": 0.3365143387259836,
+      "MIA-PaCa-2": 0.53730211554821,
+      "T47D": 0.7159205836608256
     },
     "1.0": {
       "HT-29": 0.33226307261832555,
       "MDA-MB-231": 0.3310095069172021,
-      "HeLa": 0.27795494625123607
-    },
-    "2.0": {
-      "HT-29": 0.33226307261832555,
-      "MDA-MB-231": 0.3310095069172021,
-      "HeLa": 0.2750284430715764
+      "MDA-MB-468": 0.3365143387259836,
+      "MIA-PaCa-2": 0.53730211554821,
+      "T47D": 0.7159205836608256
     }
   },
   "null_rmse": {
     "HT-29": 0.41039818774535625,
     "MDA-MB-231": 0.4049423850116704,
-    "HeLa": 0.2109593415188142
+    "MDA-MB-468": 0.32086756958965373,
+    "MIA-PaCa-2": 0.42188112686746154,
+    "T47D": 0.739376604975123
   },
   "folds": [
     {
-      "train": "HT-29",
+      "train": [
+        "MDA-MB-231",
+        "MDA-MB-468",
+        "MIA-PaCa-2",
+        "T47D"
+      ],
+      "test": "HT-29",
+      "chosen_gain": 0.5,
+      "test_rmse_with_route": 0.33226307261832555,
+      "test_rmse_p53_only": 0.38801378843325124,
+      "test_rmse_null": 0.41039818774535625,
+      "route_helps": true,
+      "beats_null": true
+    },
+    {
+      "train": [
+        "HT-29",
+        "MDA-MB-468",
+        "MIA-PaCa-2",
+        "T47D"
+      ],
       "test": "MDA-MB-231",
-      "chosen_gain": 0.1,
-      "test_rmse_with_route": 0.3182080905344077,
+      "chosen_gain": 0.5,
+      "test_rmse_with_route": 0.3247788215257367,
       "test_rmse_p53_only": 0.5235672184470497,
       "test_rmse_null": 0.4049423850116704,
       "route_helps": true,
       "beats_null": true
     },
     {
-      "train": "MDA-MB-231",
-      "test": "HT-29",
-      "chosen_gain": 0.1,
-      "test_rmse_with_route": 0.33226307261832555,
-      "test_rmse_p53_only": 0.38801378843325124,
-      "test_rmse_null": 0.41039818774535625,
+      "train": [
+        "HT-29",
+        "MDA-MB-231",
+        "MIA-PaCa-2",
+        "T47D"
+      ],
+      "test": "MDA-MB-468",
+      "chosen_gain": 0.5,
+      "test_rmse_with_route": 0.3365143387259836,
+      "test_rmse_p53_only": 0.9795754718422438,
+      "test_rmse_null": 0.32086756958965373,
       "route_helps": true,
+      "beats_null": false
+    },
+    {
+      "train": [
+        "HT-29",
+        "MDA-MB-231",
+        "MDA-MB-468",
+        "T47D"
+      ],
+      "test": "MIA-PaCa-2",
+      "chosen_gain": 0.05,
+      "test_rmse_with_route": 0.5901026690583533,
+      "test_rmse_p53_only": 1.0998642721658536,
+      "test_rmse_null": 0.42188112686746154,
+      "route_helps": true,
+      "beats_null": false
+    },
+    {
+      "train": [
+        "HT-29",
+        "MDA-MB-231",
+        "MDA-MB-468",
+        "MIA-PaCa-2"
+      ],
+      "test": "T47D",
+      "chosen_gain": 0.5,
+      "test_rmse_with_route": 0.7159205836608256,
+      "test_rmse_p53_only": 0.2147764847449441,
+      "test_rmse_null": 0.739376604975123,
+      "route_helps": false,
       "beats_null": true
     }
   ],
-  "verdict": "route improves out-of-sample prediction in both folds and beats the null"
+  "verdict": "route does not improve out-of-sample prediction in both folds"
 }

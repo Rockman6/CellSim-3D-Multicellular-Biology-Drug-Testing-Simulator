@@ -145,6 +145,17 @@ def spearman(a: list[float], b: list[float]) -> float:
 
 
 # ── validation run ────────────────────────────────────────────────────
+def sign_test_p(wins: int, losses: int) -> float:
+    """Two-sided exact sign test. Comparing two RMSE numbers hides whether
+    the difference is noise; this asks the paired question line by line."""
+    n = wins + losses
+    if n == 0:
+        return float("nan")
+    k = min(wins, losses)
+    tail = sum(math.comb(n, i) for i in range(0, k + 1))
+    return min(1.0, 2 * tail / 2 ** n)
+
+
 def _rmse(pred: list[float], ref: list[float]) -> float:
     if not ref:
         return math.nan
@@ -246,21 +257,47 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
             f"null {d['null_pass']}/{d['n']}")
 
     held = [r for r in rows if r["role"] == "held-out"]
+    # Paired per-line comparison against the null. This is the exit gate:
+    # comparing two RMSE numbers passed on a 0.01 difference once, which
+    # was noise, so the gate now asks whether the engine beats the null on
+    # MORE LINES than it loses on, and whether that could be chance.
+    wins = losses = 0
+    for r in held:
+        if r["reference_kind"] != "value" or r["predicted_ic50_uM"] == "inf":
+            continue
+        ref = float(r["reference_ic50_uM"])
+        e_model = abs(math.log10(float(r["predicted_ic50_uM"]) / ref))
+        e_null = abs(math.log10(float(r["null_ic50_uM"]) / ref))
+        if e_model < e_null:
+            wins += 1
+        elif e_null < e_model:
+            losses += 1
+    p_value = sign_test_p(wins, losses)
+    discriminates = wins > losses and p_value < 0.05
     beats = [name for name, d in summary["drugs"].items()
              if d.get("gain") and d["n_heldout_in_range"] > 0
              and d["log10_rmse_model_heldout"] < d["log10_rmse_null_heldout"]]
     summary.update({
+        "paired_vs_null_wins": wins, "paired_vs_null_losses": losses,
+        "paired_vs_null_p": p_value, "discriminates_lines": discriminates,
         "held_out_pass": sum(r["pass"] for r in held),
         "held_out_null_pass": sum(r["null_pass"] for r in held),
         "held_out_n": len(held),
         "drugs_beating_null_heldout": beats,
-        "exit_gate_met": len(beats) >= 2,
+        "exit_gate_met": discriminates,
         "wall_s": round(time.time() - t_start, 1)})
     say(f"\nheld-out predictions inside the GDSC span: engine "
         f"{summary['held_out_pass']}/{len(held)}, constant-IC50 null "
         f"{summary['held_out_null_pass']}/{len(held)}   ({summary['wall_s']:.0f} s)")
-    say(f"Phase-1 exit gate (beat the null's held-out log10 RMSE for >= 2 of 3 drugs): "
-        f"{'MET' if summary['exit_gate_met'] else 'not met'}  (beating: {beats or 'none'})")
+    say(f"\nPaired per-line test vs the constant-IC50 null, held-out lines only:")
+    say(f"  engine closer on {wins} lines, null closer on {losses}  ->  sign-test p = {p_value:.3f}")
+    say(f"Phase-1 exit gate (engine beats the null on more held-out lines than it "
+        f"loses on, p < 0.05): {'MET' if discriminates else 'NOT MET'}")
+    if not discriminates:
+        say("  i.e. the engine reproduces each drug's potency scale but does not yet "
+            "tell cell lines apart better than a single constant.")
+    say(f"  (per-drug RMSE comparison, which is not the gate: {beats or 'none'} "
+        f"had the lower held-out RMSE)")
     return rows, summary
 
 
@@ -289,8 +326,8 @@ def main(argv: list[str] | None = None) -> int:
         params=params, n_cells=a.cells or (16 if a.quick else 32),
         iters=8 if a.quick else 12,
         drug_names=tuple(d.strip() for d in a.drugs.split(",") if d.strip()))
-    print("The span gate is at least 9x wide, so it checks the potency scale, not whether "
-          "the engine tells lines apart; the exit gate compares log10 RMSE with the null.")
+    print("The span check is at least 9x wide, so it tests the potency scale, not "
+          "line-to-line discrimination; the paired sign test above is the exit gate.")
     if not a.no_write and rows:
         with RESULTS_CSV.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))

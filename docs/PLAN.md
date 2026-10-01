@@ -115,13 +115,25 @@ No UI work until this exists.
    **The Phase-1 exit gate is therefore: beat the null's log10 RMSE on
    held-out lines for at least two of the three drugs.**
 
-   *Met, October 2026*, once the p53-independent (p73) death route was
-   added: 10/10 held-out IC50s in span against the null's 9/10, and the
-   engine wins on log error for doxorubicin and paclitaxel. Read the
-   caveat in `VALIDATION.md` first — the route's parameter was chosen
-   using the same two mutant lines, so a third mutant line is needed to
-   call it clean. Then: line-specific inputs from CCLE/DepMap expression
-   (ABCB1, BCL2 family, repair genes); a shallower death response.
+   *Status, October 2026: NOT met, and now measured properly.* On ten
+   lines (five TP53 wild-type, five mutant, fitted on two) the engine is
+   closer than a constant-IC50 null on 10 held-out lines and further on
+   11, sign-test p = 1.0. An earlier five-line run appeared to pass, but
+   the gate then compared two RMSE numbers and the winning margin was
+   0.45 vs 0.46 — noise. The gate is now a paired per-line sign test.
+
+   What IS established: each drug's potency scale, from one fitted
+   constant, with 22 of 25 held-out predictions inside GDSC's replicate
+   span against the null's 18.
+
+   What the measurement says is missing: per-line information. The only
+   line-specific inputs are doubling time and TP53 status, and the
+   reference data shows TP53 status predicts sensitivity for just one of
+   the three drugs. So the next step is not more mechanism, it is
+   line-specific inputs from CCLE/DepMap expression (ABCB1, BCL2 family,
+   repair genes) mapped onto the per-cell multipliers the engine
+   already has.
+
 5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
    population under a piecewise-constant dosing schedule (wash-outs
    included) and emits per-tick JSON Lines, schema
