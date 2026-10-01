@@ -76,17 +76,40 @@ def test_damage_executes_death_not_just_commitment():
     assert res.final.Y[:, IX["C3"]].max() > 0.5, "caspase-3 never crossed commitment"
 
 
-def test_mutant_p53_resists_damage_induced_death():
-    """TP53 loss-of-function removes transactivation, so the PUMA-driven
-    intrinsic route is lost and the same damage kills far fewer cells."""
+def test_mutant_p53_resists_damage_induced_death_when_only_p53_can_kill():
+    """With the p53-independent route OFF, TP53 loss of function removes
+    transactivation, so the PUMA-driven intrinsic route is lost and the
+    same damage kills far fewer cells. This pins the p53 axis wiring."""
+    p53_only = Params(p73_gain=0.0)
     wt = simulate(A549, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02,
-                  k_cyc=K_A549, forced_D=0.60)
+                  k_cyc=K_A549, forced_D=0.60, p=p53_only)
     mut_line = get_line("HT-29")
     mut = simulate(mut_line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02,
-                   k_cyc=calibrate_cycle_scale(mut_line), forced_D=0.60)
+                   k_cyc=calibrate_cycle_scale(mut_line, p53_only), forced_D=0.60, p=p53_only)
     assert mut.deaths[-1, 0] < 0.5 * wt.deaths[-1, 0], (
         f"p53-mutant deaths {mut.deaths[-1, 0]:.1f} not lower than wild-type "
         f"{wt.deaths[-1, 0]:.1f}")
+
+
+def test_default_route_removes_p53_protection_under_sustained_damage():
+    """Consequence of the fitted route, pinned so it cannot change silently.
+
+    At the default gain the p53-independent route is strong enough that
+    sustained damage kills a TP53-mutant line outright, i.e. p53 status
+    confers no protection against a damage index held constant. That is
+    what lets the mutant lines match GDSC, where they are about as
+    cisplatin-sensitive as wild-type, but it is stronger than the
+    literature's partial resistance. Recorded in docs/VALIDATION.md.
+    """
+    mut_line = get_line("HT-29")
+    k = calibrate_cycle_scale(mut_line)
+    ctl = simulate(mut_line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k)
+    dmg = simulate(mut_line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k,
+                   forced_D=0.30)
+    surviving = dmg.alive_weight[-1, 0] / max(ctl.alive_weight[-1, 0], 1e-9)
+    assert surviving < 0.05, (
+        f"p53-mutant surviving fraction {surviving:.3f} under sustained damage; "
+        "the default p73 route should remove p53 protection")
 
 
 def test_dose_response_is_monotone_and_yields_a_finite_ic50():
@@ -156,14 +179,16 @@ def test_variability_widens_the_kill_transition():
 
 def test_p73_route_kills_p53_mutant_cells_but_spares_untreated_ones():
     """ATM/c-Abl -> p73 -> PUMA (Gong 1999, Agami 1999) is p53-independent:
-    with it on, heavy damage kills a TP53-mutant line that the p53-only
-    model leaves alive, and untreated cells are untouched because the
-    route only engages once ATM is genuinely activated."""
+    switching it on kills a TP53-mutant line that the p53-only model
+    leaves alive, and untreated cells are untouched because the route
+    only engages once ATM is genuinely activated."""
     ht29 = get_line("HT-29")
-    k = calibrate_cycle_scale(ht29)
-    on = Params(p73_gain=1.0)
-    off_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, forced_D=0.6)
-    on_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, forced_D=0.6, p=on)
+    off, on = Params(p73_gain=0.0), Params(p73_gain=1.0)
+    k = calibrate_cycle_scale(ht29, off)
+    off_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k,
+                       forced_D=0.6, p=off)
+    on_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k,
+                      forced_D=0.6, p=on)
     on_ctl = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, p=on)
     assert off_dmg.deaths[-1, 0] == 0, "p53-only model should leave HT-29 alive"
     assert on_dmg.deaths[-1, 0] > 0, "p73 route did not kill damaged p53-mutant cells"
