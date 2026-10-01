@@ -47,6 +47,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,6 +63,11 @@ class ConformalBounds:
     n_cal: int = 0
     cal_residuals: list = field(default_factory=list)
     cal_metadata: dict = field(default_factory=dict)
+    # Set by calibrate(). True => n_cal was below (1-alpha)/alpha, so the
+    # requested level was unreachable, q collapsed to the max residual,
+    # and the "interval" has NO coverage guarantee.
+    level_saturated: bool = False
+    n_min_for_alpha: int = 0
 
     def calibrate(
         self, predictions: list, truths: list, *,
@@ -89,6 +97,24 @@ class ConformalBounds:
         import math
         k = max(1, min(n, math.ceil(n * level)))
         self.q = float(sorted(residuals)[k - 1])
+
+        # A split-conformal (1-alpha) quantile only EXISTS when
+        # (1-alpha)(1 + 1/n) <= 1, i.e. n >= (1-alpha)/alpha
+        # (n >= 19 for alpha=0.05). Below that the level saturates at
+        # 1.0 and q silently degrades to "the largest residual we
+        # happened to see" — which carries NO coverage guarantee and
+        # is driven entirely by the worst outlier. Flag it loudly
+        # instead of returning it dressed up as a 95 % interval.
+        n_min = math.ceil((1.0 - self.alpha) / self.alpha)
+        self.level_saturated = bool(level >= 1.0 or n < n_min)
+        self.n_min_for_alpha = n_min
+        if self.level_saturated:
+            logger.warning(
+                "conformal: n_cal=%d < %d needed for a genuine %.0f%% "
+                "interval at alpha=%.2f — q=%.2f is just the MAXIMUM "
+                "residual and has no coverage guarantee. Widen alpha or "
+                "add calibration points before quoting this as a CI.",
+                n, n_min, 100 * (1 - self.alpha), self.alpha, self.q)
         self.n_cal = n
         self.cal_residuals = residuals
         self.cal_metadata = metadata or {}
@@ -99,6 +125,10 @@ class ConformalBounds:
             "cal_residuals_mean": float(np.mean(residuals)),
             "cal_residuals_max": float(np.max(residuals)),
             "k_quantile_index": k,
+            # True => n_cal was too small for the requested alpha, so
+            # q is the max residual and carries NO coverage guarantee.
+            "level_saturated": self.level_saturated,
+            "n_min_for_alpha": self.n_min_for_alpha,
         }
 
     def interval(self, prediction: float) -> tuple[float, float]:

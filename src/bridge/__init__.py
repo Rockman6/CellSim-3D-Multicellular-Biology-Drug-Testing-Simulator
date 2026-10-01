@@ -23,6 +23,11 @@ Provenance dataclass (`RateLawPrior`) carries:
   - the parameter values + CI (95%)
   - source ('FEP', 'phenomenological', 'literature')
   - method tag ('amber14-DDM-MBAR' or whatever produced the input)
+  - ACCURACY: a measured target-class error + a `trust` verdict, so the
+    CI reflects how RIGHT the calculation is (accuracy), not merely how
+    REPRODUCIBLE it is (precision). The two diverge badly — a ±0.29
+    kcal/mol biotin seed bar hid an ~11.8 kcal/mol true error — and a
+    cell model must not inherit a tight bar on a wrong rate.
   - timestamp
 
 Why a thin module: Campaign-2's signalling ODEs read these
@@ -67,18 +72,75 @@ class RateLawPrior:
     source: str                     # 'FEP' | 'phenomenological' | 'literature'
     method: str                     # e.g. 'amber14-DDM-MBAR'
     temperature_K: float
+    # ACCURACY, not just precision. The CI above is driven by the LARGER
+    # of the input reproducibility σ and the measured target-class error
+    # (see `_resolve_accuracy`), so a Campaign-2 cell model never inherits
+    # a bar tighter than the calculation is actually known to be right —
+    # the precision≠accuracy trap fixed one layer down in docking.
+    accuracy_kcalmol: Optional[float] = None   # measured accuracy σ, or None
+    accuracy_basis: str = "unknown"            # where accuracy came from
+    trust: str = "uncalibrated"                # verdict for the consumer
     timestamp_iso: str = field(
         default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                 time.gmtime()))
     notes: str = ""
 
+    @property
+    def accuracy_known(self) -> bool:
+        """True only when a MEASURED accuracy backs the CI.
+
+        When False the CI reflects reproducibility (or nothing) and the
+        true error is unknown — a Campaign-2 consumer must treat the rate
+        as rank-order-only, not as a calibrated absolute value.
+        """
+        return self.accuracy_kcalmol is not None
+
     def summary(self) -> str:
         """One-line summary suitable for Campaign-2 config logs."""
         params = ", ".join(
             f"{k}={v}" for k, v in self.parameters.items())
+        acc = (f"±{self.accuracy_kcalmol:.1f}kcal/mol"
+               if self.accuracy_known else "accuracy=UNKNOWN")
         return (f"[{self.type}] {params}  "
                 f"src={self.source}/{self.method}  "
-                f"T={self.temperature_K:.1f}K")
+                f"T={self.temperature_K:.1f}K  "
+                f"trust={self.trust} ({acc})")
+
+
+def _resolve_accuracy(method: str, receptor):
+    """Return (accuracy_kcalmol, basis, trust) for a binding ΔG.
+
+    Accuracy is the MEASURED absolute error of the source calculation —
+    distinct from the input reproducibility σ. Rules (NEVER GUESS, same
+    as `src/uq/reliability`):
+
+    * FEP-sourced ΔG uses a different, more accurate method than docking,
+      so the docking reliability table does NOT apply to it. CellSim's
+      absolute FEP binding ΔG is not yet GPU-validated, so an FEP rate
+      law is currently `uncalibrated` for accuracy — flagged, not faked.
+    * Docking-sourced ΔG uses the measured target-class error from
+      `reliability_table.yaml` when the receptor is known and in the
+      table; an unknown receptor stays `uncalibrated`.
+
+    We never let the input precision masquerade as accuracy: if accuracy
+    cannot be established we return None, and the caller's CI will carry
+    a `trust` flag saying so.
+    """
+    m = (method or "").lower()
+    if m.startswith("fep") or "ddm" in m or "mbar" in m:
+        return None, "fep-unvalidated", "uncalibrated"
+    if receptor is not None:
+        try:
+            from src.uq.reliability import reliability_for
+            rel = reliability_for(receptor)
+        except Exception:  # noqa: BLE001 — accuracy is optional, never fatal
+            rel = None
+        if rel is not None and rel.calibrated:
+            return (rel.mean_abs_err_kcalmol,
+                    f"docking-target-class:{rel.target_class}",
+                    rel.verdict)
+        return None, "docking-uncalibrated-target", "uncalibrated"
+    return None, "unknown", "uncalibrated"
 
 
 def binding_to_hill(
@@ -87,6 +149,7 @@ def binding_to_hill(
     T_K: float = 298.15,
     n_hill: float = 1.0,
     uncertainty_kcalmol: Optional[float] = None,
+    receptor=None,
     method: str = "FEP-DDM-MBAR",
 ) -> RateLawPrior:
     """Absolute binding ΔG → Hill-equation rate-law prior.
@@ -126,12 +189,35 @@ def binding_to_hill(
     Kd_M = math.exp(dG_kcalmol / RT)
 
     parameters = {"Kd_M": Kd_M, "n_hill": float(n_hill)}
+
+    # Precision (input reproducibility σ) vs accuracy (measured
+    # target-class error). The CI must reflect the LARGER of the two so a
+    # Campaign-2 model never gets a bar tighter than the calculation is
+    # known to be correct — the biotin case where a ±0.29 seed bar hid an
+    # ~11.8 kcal/mol true error must not propagate up as a tight K_d.
+    precision_sigma = (uncertainty_kcalmol
+                       if uncertainty_kcalmol and uncertainty_kcalmol > 0
+                       else None)
+    accuracy_sigma, accuracy_basis, trust = _resolve_accuracy(method,
+                                                              receptor)
+    candidate_sigmas = [s for s in (precision_sigma, accuracy_sigma) if s]
+    sigma_eff = max(candidate_sigmas) if candidate_sigmas else None
+
     parameter_ci95: dict = {}
-    if uncertainty_kcalmol is not None and uncertainty_kcalmol > 0:
-        sigma_ln_Kd = uncertainty_kcalmol / RT
+    if sigma_eff is not None:
+        sigma_ln_Kd = sigma_eff / RT
         Kd_lo = Kd_M * math.exp(-1.96 * sigma_ln_Kd)
         Kd_hi = Kd_M * math.exp(+1.96 * sigma_ln_Kd)
         parameter_ci95 = {"Kd_M": (Kd_lo, Kd_hi)}
+
+    notes = ""
+    if trust == "uncalibrated":
+        notes = ("accuracy UNKNOWN for this source — CI reflects "
+                 "reproducibility only; treat as rank-order, not a "
+                 "calibrated absolute K_d")
+    elif accuracy_sigma and precision_sigma and accuracy_sigma > precision_sigma:
+        notes = (f"CI widened from input σ={precision_sigma:.2f} to measured "
+                 f"accuracy σ={accuracy_sigma:.2f} kcal/mol ({accuracy_basis})")
 
     return RateLawPrior(
         type="hill",
@@ -140,6 +226,10 @@ def binding_to_hill(
         source="FEP" if method.startswith("FEP") else "phenomenological",
         method=method,
         temperature_K=T_K,
+        accuracy_kcalmol=accuracy_sigma,
+        accuracy_basis=accuracy_basis,
+        trust=trust,
+        notes=notes,
     )
 
 

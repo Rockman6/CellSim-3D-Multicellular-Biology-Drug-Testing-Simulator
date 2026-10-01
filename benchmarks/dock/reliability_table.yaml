@@ -1,0 +1,104 @@
+# CellSim target-class reliability table (TUTORIAL.md §8).
+#
+# WHY THIS EXISTS
+# ---------------
+# The uncertainty CellSim showed users came from Monte-Carlo over Vina
+# seeds — that measures PRECISION ("does Vina agree with itself when
+# re-run?"), not ACCURACY ("is Vina right?"). Those are different, and
+# conflating them is dangerous. Measured on biotin/streptavidin:
+#
+#     seed-scatter bar shown to user : -7.28 +/- 0.29  (95% CI width 0.67)
+#     true error vs experiment       : 11.82 kcal/mol
+#     => the displayed bar understated the real error by ~41x
+#
+# Vina reproducibly gives the same wrong answer. A tight error bar on a
+# wrong number is worse than no error bar, because it invites trust.
+#
+# This table records the MEASURED absolute error of CellSim's docking
+# dG against experiment, per target class, so a prediction can carry an
+# accuracy estimate instead of only a reproducibility estimate.
+#
+# HOW IT WAS MEASURED
+# -------------------
+# scripts/run_uq_coverage.py docks every compound in the calibration
+# bundles and compares to published experimental dG. Numbers below are
+# absolute error |predicted - experimental| in kcal/mol.
+#
+# HONESTY LIMITS (read before quoting)
+# ------------------------------------
+# * n is 4-6 per class — small. These are EMPIRICAL errors, not
+#   guaranteed conformal intervals: a genuine 95% split-conformal
+#   quantile needs n >= (1-alpha)/alpha = 19 per class, which no class
+#   reaches. Treat as "typical error seen so far", not a bound.
+# * A target NOT in this table is UNCALIBRATED. Its accuracy is
+#   unknown. Do not borrow a neighbouring class's number — a new
+#   kinase is not guaranteed to behave like EGFR.
+# * Errors are for ABSOLUTE dG. Rank-ordering within a congeneric
+#   series can be usable even where absolute dG is not.
+
+# Verdict thresholds on mean absolute error (kcal/mol):
+#   <= 1.5  trustworthy_absolute  — absolute dG usable for decisions
+#   <= 3.0  rank_order_only       — ordering usable, absolute is not
+#    > 3.0  do_not_trust_absolute — absolute dG is not meaningful
+#
+# Provenance of these thresholds (not magic numbers):
+#  * 1.5 kcal/mol ~ one order of magnitude in K_d: at 298 K,
+#    RT*ln(10) = 0.5925 * 2.3026 = 1.36 kcal/mol changes K_d 10x. So
+#    "<= ~1.5 kcal/mol" means the predicted K_d is within ~1 log unit
+#    of experiment — the accepted bar for a free-energy method to be
+#    decision-useful. It matches the ~1-1.5 kcal/mol RMSE that
+#    validated FEP achieves and is quoted as the success target
+#    (Wang et al 2015, J Am Chem Soc 137:2695 — FEP+ benchmark).
+#  * 3.0 kcal/mol ~ two orders of magnitude in K_d (2 x 1.36): beyond
+#    this the absolute number is not usable, though rank-ordering of a
+#    congeneric series can survive a constant offset.
+thresholds:
+  trustworthy_absolute_max: 1.5   # ~1 log K_d; FEP success target (Wang 2015 JACS 137:2695)
+  rank_order_only_max: 3.0        # ~2 log K_d
+
+classes:
+  - target_class: trypsin_like
+    receptor_pdb_ids: [3ptb]
+    description: >
+      Serine-protease S1 pocket, benzamidine-like ligands. Well-behaved:
+      rigid pocket, moderate affinities inside Vina's calibrated range.
+    n: 6
+    mean_abs_err_kcalmol: 0.91
+    median_abs_err_kcalmol: 0.77
+    worst_abs_err_kcalmol: 1.94
+    worst_compound: 4-aminobenzamidine
+    verdict: trustworthy_absolute
+    note: >
+      Best-behaved class measured. Absolute dG is usable for triage
+      decisions here.
+
+  - target_class: kinase_atp_site
+    receptor_pdb_ids: [1m17]
+    description: >
+      EGFR ATP-competitive inhibitors (erlotinib, gefitinib, lapatinib).
+    n: 6
+    mean_abs_err_kcalmol: 2.16
+    median_abs_err_kcalmol: 1.77
+    worst_abs_err_kcalmol: 4.63
+    worst_compound: erlotinib
+    verdict: rank_order_only
+    note: >
+      Vina underestimates potent ATP-site binders. Rank-ordering within
+      a congeneric kinase series is ALSO weak here (see the EGFR
+      calibration bundle's negative Spearman) — prefer FEP ddG for
+      kinase ranking.
+
+  - target_class: ultra_tight_binder
+    receptor_pdb_ids: [1stp]
+    description: >
+      Streptavidin/biotin and analogues; Kd down to ~1e-14 M.
+    n: 4
+    mean_abs_err_kcalmol: 4.98
+    median_abs_err_kcalmol: 4.12
+    worst_abs_err_kcalmol: 11.62
+    worst_compound: biotin
+    verdict: do_not_trust_absolute
+    note: >
+      Vina's scoring function saturates around -11 to -12 kcal/mol and
+      cannot represent binding this strong (biotin: experiment -19.1,
+      predicted ~-7.3). Absolute dG is meaningless here; use FEP.
