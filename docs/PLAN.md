@@ -73,9 +73,34 @@ No UI work until this exists.
    efflux, binding sink) feeding occupancy at the target, then fate.
    Affinity and ADME from a small curated table with provenance
    (ChEMBL / BindingDB / literature), docking as a flagged fallback.
-4. Validation harness: GDSC2 fitted dose-response for cisplatin,
-   doxorubicin and paclitaxel on two lines. Report IC50 within 3× and
-   the shape of the curve. Publish the table, including misses.
+4. Validation harness against GDSC2 fitted dose-response.
+
+   *Revised October 2026 after pulling the data* (`scripts/gdsc_reference.py`,
+   extract in `benchmarks/cell/gdsc_reference.csv`). The original plan named
+   cisplatin, doxorubicin and paclitaxel. What the public data actually
+   supports:
+
+   - **Paclitaxel is the quantitative target.** IC50 0.011–0.089 µM across
+     our five lines, all inside the tested range, AUC 0.72–0.97. Gate:
+     predicted IC50 within 3× on each line, and the correct ordering of
+     the most and least sensitive line.
+   - **Cisplatin cannot be a quantitative target.** In GDSC2 it is tested
+     to 8 µM, and every one of our lines has a fitted IC50 *above* the top
+     dose (20–122 µM) with AUC 0.92–0.99, i.e. the screen never reached
+     50 % kill. Those IC50s are extrapolations. Gate it only on direction
+     and rank: cisplatin must kill far less than paclitaxel at its tested
+     range, and the model must not produce a sub-µM cisplatin IC50.
+   - **Doxorubicin is not in GDSC2** for these lines; it is in GDSC1,
+     which is a different assay generation. Either use GDSC1 explicitly
+     and say so, or substitute **camptothecin** (in GDSC2, also a
+     replication-coupled DNA-damage agent, so the same S-phase mechanism).
+   - **The p53 split is not clean in this data** and must not be assumed:
+     cisplatin IC50 is higher in p53-mutant HT-29 (122 µM) than in
+     wild-type A549 (20 µM), as expected, but p53-mutant MDA-MB-231
+     (43 µM) is *more* sensitive than wild-type MCF7 (100 µM). Report the
+     p53 effect as a measured outcome, never as a gate that assumes it.
+
+   Publish the table including every miss.
 5. Headless API: `engine.run(schedule) -> per-tick state records`
    (JSON or Arrow). Any UI is a renderer of this stream.
 6. A Colab notebook that reproduces the validation figure from a clean

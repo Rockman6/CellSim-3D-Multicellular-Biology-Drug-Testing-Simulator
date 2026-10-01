@@ -1,0 +1,11 @@
+drug,cell_line,p53_functional,ic50_uM,auc,max_conc_uM,assay_hours,dataset,drug_id
+cisplatin,A549,True,20.2525,0.9239,8.0,72.0,GDSC2,1005
+cisplatin,HT-29,False,122.0772,0.9734,8.0,72.0,GDSC2,1005
+cisplatin,HeLa,True,67.7538,0.9894,8.0,72.0,GDSC2,1005
+cisplatin,MCF7,True,100.3618,0.9645,8.0,72.0,GDSC2,1005
+cisplatin,MDA-MB-231,False,43.147,0.9658,8.0,72.0,GDSC2,1005
+paclitaxel,A549,True,0.0115,0.86,0.1,72.0,GDSC2,1080
+paclitaxel,HT-29,False,0.0107,0.7245,0.1,72.0,GDSC2,1080
+paclitaxel,HeLa,True,0.0378,0.968,0.1,72.0,GDSC2,1080
+paclitaxel,MCF7,True,0.0678,0.8562,0.1,72.0,GDSC2,1080
+paclitaxel,MDA-MB-231,False,0.0888,0.8967,0.1,72.0,GDSC2,1080
