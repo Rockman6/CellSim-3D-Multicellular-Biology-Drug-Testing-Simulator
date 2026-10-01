@@ -2,8 +2,15 @@
 
 Gate:
     - Every compound that parametrised in Layer 1.1 must also
-      integrate for 5 000 × 2 fs = 10 ps without NaN, with final
-      temperature within 50 K of 300 K setpoint and RMSD < 10 Å.
+      integrate for 5 000 × 2 fs = 10 ps without NaN, with RMSD < 10 Å
+      and a thermostat that holds: the TIME-AVERAGED temperature must
+      sit within 3 standard errors of the 300 K setpoint.
+
+      The average matters. A single frame's kinetic temperature of a
+      ~25-atom molecule has a standard deviation of ~50 K by
+      equipartition, so the old "final frame within 50 K" gate failed a
+      correctly thermostatted run about a third of the time, and the
+      three-compound CI step passed only about a third of the time.
 
 Defaults: full 10-compound set with a ≥ 8 pass gate. CI uses a
 smaller subset (`--max 3 --gate 2`) so the run fits into the PR
