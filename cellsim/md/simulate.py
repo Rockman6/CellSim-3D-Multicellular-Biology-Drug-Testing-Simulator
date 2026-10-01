@@ -321,10 +321,26 @@ def simulate_ligand(
     if any(math.isnan(v) or math.isinf(v) for v in pes + temps + rmsds):
         ok = False
         reason = "NaN / inf in telemetry"
-    elif temps and abs(temps[-1] - temperature_K) > 50.0:
-        ok = False
-        reason = (f"final T {temps[-1]:.1f} K > 50 K from setpoint "
-                  f"{temperature_K}")
+    elif temps:
+        # Equilibration check. The INSTANTANEOUS kinetic temperature of a
+        # small molecule fluctuates hugely: by equipartition its relative
+        # standard deviation is sqrt(2/Ndof), which for a ~25-atom drug in
+        # vacuum is ~50 K at a 300 K setpoint. Gating the final frame
+        # against a fixed ±50 K therefore rejects a perfectly thermostatted
+        # run about a third of the time — which is what it was doing in CI.
+        # Gate the time-average instead, whose standard error shrinks with
+        # the number of frames, and scale the tolerance to the system so
+        # bigger molecules are held to a tighter bound.
+        sample = temps[1:] or temps          # drop t=0 (post-minimisation)
+        mean_T = sum(sample) / len(sample)
+        n_dof = max(1, 3 * system.getNumParticles() - system.getNumConstraints())
+        sd_inst = temperature_K * math.sqrt(2.0 / n_dof)
+        tol = max(3.0 * sd_inst / math.sqrt(len(sample)), 10.0)
+        if abs(mean_T - temperature_K) > tol:
+            ok = False
+            reason = (f"mean T {mean_T:.1f} K over {len(sample)} frames is "
+                      f"> {tol:.1f} K from setpoint {temperature_K} "
+                      f"(3 sigma of the mean; instantaneous sd {sd_inst:.0f} K)")
     elif rmsds and rmsds[-1] > 10.0:
         ok = False
         reason = f"RMSD blow-up {rmsds[-1]:.2f} Å"

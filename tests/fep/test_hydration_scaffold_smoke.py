@@ -47,10 +47,13 @@ def test_hydration_scaffold_builds():
             f"{smi}: expected {expected_atoms} atoms; "
             f"got {r.n_alchemical_atoms}")
         assert r.wall_seconds is not None
-        assert r.wall_seconds < 180, (
-            f"{smi}: scaffold took {r.wall_seconds:.1f}s; "
-            "should be under 3 min (solvation via packmol adds "
-            "to Phase-1 vacuum-only wall).")
+        # Wall-clock bound. On CI this measures the runner, not the code, so
+        # it is set well above the observed CI time: it exists to catch a
+        # severe performance regression, not to benchmark the machine.
+        assert r.wall_seconds < 600, (
+            f"{smi}: scaffold took {r.wall_seconds:.1f}s; should be well "
+            "under 10 min (solvation via packmol adds to the vacuum-only "
+            "wall) — suspect a performance regression.")
         # Phase 2 hasn't shipped — these must still be None.
         assert r.dG_hydration_kcalmol is None
         assert r.dG_hydration_ci95_kcalmol is None
