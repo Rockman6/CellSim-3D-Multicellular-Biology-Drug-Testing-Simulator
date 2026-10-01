@@ -173,30 +173,48 @@ mean of the per-line fits) and applied unchanged to every line. HeLa and
 both TP53-mutant lines are held out. Results in
 `benchmarks/cell/gdsc_validation_results.csv` and `…_summary.json`.
 
-| Drug | Fitted constant | Engine in span | Constant-IC50 null in span | log10 RMSE engine | log10 RMSE null | Spearman |
-|---|---|:-:|:-:|:-:|:-:|:-:|
-| cisplatin | `k_damage_per_uM_h` = 0.000997 | 5/5 | 5/5 | 0.22 | **0.11** | n/a (2 lines in range) |
-| doxorubicin | `k_damage_per_uM_h` = 0.00842 | 4/5 | 5/5 | 0.41 | **0.31** | 0.30 |
-| paclitaxel | `partition` = 0.153 | 5/5 | 4/5 | **0.32** | 0.38 | 0.70 |
-| **held-out lines** | | **9/10** | **9/10** | | | |
+| Drug | Fitted constant | Engine in span | Null in span | log10 RMSE engine (held-out) | log10 RMSE null (held-out) |
+|---|---|:-:|:-:|:-:|:-:|
+| cisplatin | `k_damage_per_uM_h` = 0.000951 | 5/5 | 5/5 | 0.31 (n=1) | **0.15** |
+| doxorubicin | `k_damage_per_uM_h` = 0.00794 | 5/5 | 5/5 | **0.29** | 0.33 |
+| paclitaxel | `partition` = 0.153 | 5/5 | 4/5 | **0.32** | 0.38 |
+| **held-out lines** | | **10/10** | 9/10 | | |
+
+**Exit gate: met.** The engine beats the constant-IC50 null on held-out
+log error for two of the three drugs. Cisplatin still loses, on a single
+in-range held-out line (HeLa); its other lines have only lower bounds,
+so there is almost nothing to score it on.
 
 The null predicts one IC50 for every line: the geometric mean of the two
 fit lines' references. RMSE is over lines with an in-range reference.
 
-**What this shows.** From one fitted constant per drug, the engine puts
-every line's IC50 on the right scale: nine of ten held-out predictions
-fall inside GDSC's own replicate span, and the A549 cisplatin IC50
-comes out at 9.1 µM against 9.8 measured.
+**What this shows.** From one fitted constant per drug, every held-out
+line's IC50 lands inside GDSC's own replicate span, and on log error the
+engine now beats a constant for two drugs of three. The A549 cisplatin
+IC50 comes out at 10.1 µM against 9.8 measured.
 
-**What it does not show.** The engine does not yet tell cell lines apart
-better than a constant. The span gate is at least 9× wide, so a constant
-passes it as often, and on log error the engine wins only for
-paclitaxel, where its line-to-line differences come from doubling time
-alone. For cisplatin and doxorubicin it loses, mainly because it makes
-the TP53-mutant lines too resistant: doxorubicin on MDA-MB-231 is
-predicted at 0.49 µM against 0.11 measured. In GDSC those lines are
-about as sensitive as the wild-type ones, so DNA-damage death in these
-cells does not run only through p53.
+**The honest caveat on the gate.** What made the difference is the
+p53-independent death route below, and its one parameter was chosen
+using these same two TP53-mutant lines (leave-one-out across them). So
+the gate result is not fully out-of-sample with respect to that choice.
+The clean out-of-sample evidence is the leave-one-out table itself,
+where each fold's gain never sees the line it is scored on. A third
+mutant line would settle it; that is the first thing to add.
+
+**What is still not shown.** Curve shape (above) is unrealistic, and
+cisplatin's line-to-line behaviour is untested because the public data
+gives mostly lower bounds for it.
+
+**A side effect of the fitted route, pinned by a test.** At the default
+gain the p53-independent route is strong enough that a damage index held
+constant kills a TP53-mutant line outright, so p53 status confers no
+protection against sustained damage. That is what lets the mutant lines
+match GDSC, where they are about as cisplatin-sensitive as wild-type,
+but it is stronger than the literature's partial resistance. The gain
+was picked from a coarse grid whose smallest non-zero value was 0.1, so
+a finer scan may find a value that keeps the GDSC improvement while
+leaving some p53 dependence. Tracked in
+`tests/cell/test_engine_smoke.py` so it cannot change silently.
 
 **A p53-independent death route closes part of the gap.** ATM/c-Abl →
 p73 → PUMA is the documented route by which TP53-mutant cells still die
@@ -218,7 +236,8 @@ engages once ATM is genuinely activated. Default stays 0 until the
 drug constants are refitted with it on, which is the next run.
 
 **Still to do, in order.**
-1. Refit with the route on and re-check the exit gate.
+1. A third TP53-mutant line, to test the route's parameter against a
+   line that played no part in choosing it.
 2. Line-specific inputs from measured data rather than doubling time
    only, e.g. CCLE/DepMap expression of ABCB1 (efflux), the BCL2 family
    (apoptotic priming) and repair genes, mapped onto the engine's

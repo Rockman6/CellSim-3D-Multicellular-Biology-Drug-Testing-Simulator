@@ -36,12 +36,18 @@
   a headline claim and a CI gate. Documented in `docs/VALIDATION.md` and
   filed as issue #14 rather than changed unilaterally.
 
-### Validation result
-- 9/10 held-out IC50s inside GDSC's replicate span, A549 cisplatin
-  9.1 µM vs 9.8 measured. But a constant IC50 also passes 9/10, and on
-  log error the engine beats it only for paclitaxel: TP53-mutant lines
-  come out too resistant to DNA damage. New Phase-1 exit gate: beat the
-  null's log10 RMSE for at least two of three drugs.
+### Validation result — Phase-1 exit gate met
+- **10/10** held-out IC50s inside GDSC's replicate span (constant-IC50
+  null: 9/10), A549 cisplatin 10.1 µM vs 9.8 measured, and the engine
+  beats the null on held-out log error for doxorubicin (0.29 vs 0.33)
+  and paclitaxel (0.32 vs 0.38). Cisplatin still loses (0.31 vs 0.15)
+  on the single in-range held-out line it has.
+- Before the p53-independent route the engine beat the null for
+  paclitaxel only, because TP53-mutant lines came out too resistant.
+- Caveat recorded in `docs/VALIDATION.md`: the route's one parameter was
+  chosen using these same two mutant lines, so the gate is not fully
+  out-of-sample with respect to it. The clean evidence is the
+  leave-one-out table; a third mutant line is the next thing to add.
 
 ### Changed
 - `cellsim/cell/library.py`: placeholder potencies replaced by the fitted

@@ -133,8 +133,12 @@ class Params:
     # transactivates PUMA without p53 (Gong et al. 1999 Nature 399:806;
     # Agami et al. 1999 Nature 399:809, both with cisplatin). Engages only
     # once ATM is genuinely activated (> 0.5; basal ATM sits at 0.12-0.27).
-    # 0 = off, which is the p53-only model.
-    p73_gain: float = 0.0
+    # 0 = off (p53-only). Default 0.1: chosen by a leave-one-mutant-out
+    # test (scripts/experiment_p73.py) in which the gain is fitted on one
+    # TP53-mutant line and scored on the other. Both folds independently
+    # picked 0.1, and in both it improved the held-out line over the
+    # p53-only model and over a constant-IC50 null.
+    p73_gain: float = 0.1
     p73_atm_on: float = 0.5
 
 

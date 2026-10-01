@@ -113,10 +113,15 @@ No UI work until this exists.
    log error the engine beats the null only for paclitaxel. So the
    potency scale is right and cross-line discrimination is not yet.
    **The Phase-1 exit gate is therefore: beat the null's log10 RMSE on
-   held-out lines for at least two of the three drugs.** Next, in
-   order: a p53-independent damage-death route; line-specific inputs
-   from CCLE/DepMap expression (ABCB1, BCL2 family, repair genes);
-   a shallower death response.
+   held-out lines for at least two of the three drugs.**
+
+   *Met, October 2026*, once the p53-independent (p73) death route was
+   added: 10/10 held-out IC50s in span against the null's 9/10, and the
+   engine wins on log error for doxorubicin and paclitaxel. Read the
+   caveat in `VALIDATION.md` first — the route's parameter was chosen
+   using the same two mutant lines, so a third mutant line is needed to
+   call it clean. Then: line-specific inputs from CCLE/DepMap expression
+   (ABCB1, BCL2 family, repair genes); a shallower death response.
 5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
    population under a piecewise-constant dosing schedule (wash-outs
    included) and emits per-tick JSON Lines, schema

@@ -5,64 +5,126 @@
     "A549",
     "MCF7"
   ],
+  "params": {
+    "atm_threshold": 0.1,
+    "atm_gain": 20.0,
+    "atm_tau_h": 0.1,
+    "p53_Kd": 0.1,
+    "p53_k_basal": 1.0,
+    "p53_k_deg": 10.0,
+    "atm_shield": 0.7,
+    "mdm2_K_hill": 0.18,
+    "mdm2_k_basal": 0.315,
+    "mdm2_k_max": 3.0,
+    "mdm2_k_mrna_deg": 1.5,
+    "mdm2_k_translate": 1.5,
+    "mdm2_k_prot_deg": 1.5,
+    "p53_time_scale": 0.5509090909090909,
+    "p21_K_hill": 0.18,
+    "p21_k_max": 0.15,
+    "chk_damage_threshold": 0.2,
+    "chk_gain": 0.008,
+    "p53_act_lo": 0.12,
+    "p53_act_hi": 0.35,
+    "puma_k_on": 1.0,
+    "puma_k_off": 0.3,
+    "bax_k": 0.5,
+    "bax_puma_gain": 0.3,
+    "bcl2_block": 3.0,
+    "bcl2_neutralised_by_puma": 0.2,
+    "momp_k": 10.0,
+    "momp_K": 0.5,
+    "momp_n": 6.0,
+    "release_k": 20.0,
+    "xiap_total": 0.3,
+    "smac_total": 1.0,
+    "c9_k": 5.0,
+    "c9_xiap_block": 10.0,
+    "c3_k": 6.0,
+    "exec_k": 2.0,
+    "c3_commit": 0.5,
+    "m_duration_h": 1.0,
+    "g2m_damage_block": 0.5,
+    "slippage_h": 24.0,
+    "slippage_damage": 0.3,
+    "mitotic_death_lag_h": 2.0,
+    "het_sigma": 0.3,
+    "p73_gain": 0.1,
+    "p73_atm_on": 0.5
+  },
   "drugs": {
     "cisplatin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.0009966221868136912,
+      "gain": 0.0009536768051337109,
       "per_line_gain": {
-        "A549": 0.0009966221868136912
+        "A549": 0.0009536768051337112
       },
       "fit_on": [
         "A549"
       ],
       "spearman_vs_reference": NaN,
-      "log10_rmse_model": 0.21634195357792915,
-      "log10_rmse_null": 0.10825076808286964,
       "null_ic50_uM": 9.7673,
+      "log10_rmse_model": 0.21634199266946047,
+      "log10_rmse_null": 0.1082507680828697,
+      "log10_rmse_model_heldout": 0.30370378854566527,
+      "log10_rmse_null_heldout": 0.1530897043600989,
+      "n_heldout_in_range": 1,
       "pass": 5,
       "null_pass": 5,
       "n": 5
     },
     "doxorubicin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.008419539983741533,
+      "gain": 0.007940000000000003,
       "per_line_gain": {
-        "A549": 0.0046137907601706855,
-        "MCF7": 0.015364514175584312
+        "A549": 0.004363256424345974,
+        "MCF7": 0.014448749710934053
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
       "spearman_vs_reference": 0.3,
-      "log10_rmse_model": 0.4098127661079021,
-      "log10_rmse_null": 0.3106265304067811,
       "null_ic50_uM": 0.05742796304794019,
-      "pass": 4,
+      "log10_rmse_model": 0.2904775729833831,
+      "log10_rmse_null": 0.31064117056548013,
+      "log10_rmse_model_heldout": 0.2892980978430384,
+      "log10_rmse_null_heldout": 0.3324658621010314,
+      "n_heldout_in_range": 3,
+      "pass": 5,
       "null_pass": 5,
       "n": 5
     },
     "paclitaxel": {
       "fit_target": "partition",
-      "gain": 0.1533878696145881,
+      "gain": 0.1534306531918588,
       "per_line_gain": {
-        "A549": 0.37919047696114666,
-        "MCF7": 0.06204754595488598
+        "A549": 0.3792962423330248,
+        "MCF7": 0.062064852512330765
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
       "spearman_vs_reference": 0.7,
-      "log10_rmse_model": 0.32400109337893246,
-      "log10_rmse_null": 0.38474754758523483,
       "null_ic50_uM": 0.02792310870945425,
+      "log10_rmse_model": 0.32401311371239694,
+      "log10_rmse_null": 0.38474754758523483,
+      "log10_rmse_model_heldout": 0.3198520755422128,
+      "log10_rmse_null_heldout": 0.38440157310848116,
+      "n_heldout_in_range": 3,
       "pass": 5,
       "null_pass": 4,
       "n": 5
     }
   },
-  "held_out_pass": 9,
+  "held_out_pass": 10,
   "held_out_null_pass": 9,
-  "held_out_n": 10
+  "held_out_n": 10,
+  "drugs_beating_null_heldout": [
+    "doxorubicin",
+    "paclitaxel"
+  ],
+  "exit_gate_met": true,
+  "wall_s": 1396.2
 }

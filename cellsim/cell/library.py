@@ -4,7 +4,8 @@ Every number here is an *input with provenance*, not a fitted value.
 The only fitted quantities in Phase 1 are the per-drug constants named
 by `fit_target` (values below, marked FITTED). `scripts/validate_gdsc.py`
 fits each on the clean TP53 wild-type lines A549 and MCF7 against GDSC
-release 8.4 and applies it unchanged to every other line, so HeLa and
+release 8.4 (with the engine's default parameters, including the p73
+route) and applies it unchanged to every other line, so HeLa and
 both TP53-mutant lines are genuine out-of-sample tests. Re-running the
 script reproduces these values to within 1 %.
 
@@ -73,7 +74,7 @@ CELL_LINES: dict[str, CellLine] = {
 DRUGS: dict[str, Drug] = {
     "cisplatin": Drug(
         "cisplatin", "dna_adduct",
-        k_damage_per_uM_h=0.000997,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
+        k_damage_per_uM_h=0.000951,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
         tau_uptake_h=0.5,             # slow uptake (CTR1 + passive), hours
         partition=1.0,
         fit_target="k_damage_per_uM_h",
@@ -81,7 +82,7 @@ DRUGS: dict[str, Drug] = {
                "Chem Rev 99:2467); adduct repair t1/2 of hours (NER) sets repair_rate"),
     "doxorubicin": Drug(
         "doxorubicin", "topo2",
-        k_damage_per_uM_h=0.00842,    # FITTED: geo-mean of A549 + MCF7 fits to GDSC1 (validate_gdsc.py)
+        k_damage_per_uM_h=0.00794,    # FITTED: geo-mean of A549 + MCF7 fits to GDSC1 (validate_gdsc.py)
         s_phase_factor=3.0,           # TopII poison: DSBs mostly during replication
         tau_uptake_h=0.5,
         partition=10.0,               # weak base + DNA intercalation: high intracellular accumulation
