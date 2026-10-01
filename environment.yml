@@ -17,7 +17,9 @@ name: cellsim
 channels:
   - conda-forge
   - bioconda
-  - omnia
+  # `omnia` removed 2026-10: the legacy OpenMM channel supplies none of
+  # these packages (everything resolves from conda-forge / bioconda), and
+  # a timeout fetching its index failed CI before any test ran.
 dependencies:
   - python=3.11
   - pip
