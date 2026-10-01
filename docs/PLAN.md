@@ -126,13 +126,26 @@ No UI work until this exists.
    constant, with 22 of 25 held-out predictions inside GDSC's replicate
    span against the null's 18.
 
-   What the measurement says is missing: per-line information. The only
-   line-specific inputs are doubling time and TP53 status, and the
-   reference data shows TP53 status predicts sensitivity for just one of
-   the three drugs. So the next step is not more mechanism, it is
-   line-specific inputs from CCLE/DepMap expression (ABCB1, BCL2 family,
-   repair genes) mapped onto the per-cell multipliers the engine
-   already has.
+   What the measurement says is missing, now pinned down: the engine has
+   no channel through which lines can differ. Sweeping each per-line
+   field across its full observed range moves the predicted IC50 by
+   1.0x for doubling time, 1.1x for the Bcl-2 reserve, and 7-9x only
+   for DNA repair rate (and not at all for paclitaxel, whose IC50 is
+   set by a drug-intrinsic arrest threshold). Lines differ by 8-51x in
+   reality. So the engine can produce at most two answers per drug, and
+   tying a constant is arithmetic, not bad luck.
+
+   Also established: DepMap 24Q4 expression for all ten lines and
+   sixteen candidate genes correlates with sensitivity no better than
+   chance once corrected for the search (family-wise p 0.25-0.86), and
+   DepMap's CRISPR growth rate does not match curated doubling times
+   (rho -0.15). Building a mapping now would fit noise.
+
+   So the next step is NOT more mechanism and NOT an omics mapping. It
+   is more cell lines, because nothing can be validated at ten. Then
+   per-line repair capacity for the DNA-damage drugs (the one channel
+   with leverage), and a per-line efflux channel so paclitaxel has any
+   line-specific behaviour at all.
 
 5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
    population under a piecewise-constant dosing schedule (wash-outs

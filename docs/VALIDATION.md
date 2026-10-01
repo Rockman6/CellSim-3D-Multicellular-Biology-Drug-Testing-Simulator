@@ -241,18 +241,70 @@ is resistant, because what separates them is not p53 at all. The earlier
 two-mutant version of this table looked like a clean win and was simply
 too small.
 
-**Still to do, in order.** The measurement above says what is missing:
-information that separates one line from another.
+### Why it cannot discriminate lines: measured, not guessed
 
-1. **Line-specific inputs from measured data.** CCLE/DepMap expression
-   of ABCB1 (efflux), the BCL2 family (apoptotic priming) and repair
-   genes, mapped onto the per-cell multipliers the engine already has.
-   This is the one change that could move the paired test, because it
-   is the only one that adds per-line information.
-2. **Better doubling times**, or treat them as uncertain inputs. They
-   disagree by up to 1.6× between sources and are currently one of only
-   two line-specific numbers.
-3. A shallower death response (curve shape above).
+The sign-test tie is not a calibration problem. The engine has no
+channel through which cell lines can differ enough to matter. Measured
+by sweeping each per-line field across its full observed range and
+recording how far the predicted IC50 moves:
+
+| Per-line field | swept over | cisplatin | doxorubicin | paclitaxel |
+|---|---|:-:|:-:|:-:|
+| doubling time | 18–38 h | 1.0× | 1.1× | 1.0× |
+| Bcl-2 reserve | 0.5–4× | 1.1× | 1.2× | 1.0× |
+| DNA repair rate | t½ 32 h–2 h | **9.1×** | **7.4×** | 1.0× |
+| *observed between lines* | | *10.4×* | *51.3×* | *8.6×* |
+
+Three things follow.
+
+1. **Doubling time, the engine's main line-specific input, has no
+   leverage at all.** Sweeping the entire range of the ten lines moves
+   the IC50 by 1.0×. Since TP53 status is the only other per-line input
+   and it is binary, the engine can produce at most two distinct
+   answers per drug. Tying with a single constant is the expected
+   result, not a surprise.
+2. **DNA repair rate is the one channel that works**, and it nearly
+   spans what cisplatin needs (9.1× against 10.4×). This is where
+   per-line information should enter for DNA-damage drugs — ERCC1 and
+   the rest of the NER machinery, not proliferation rate.
+3. **Paclitaxel has no line-specific channel whatsoever.** Every field
+   gives 1.0×, because its IC50 is set by the tubulin-occupancy arrest
+   threshold, which is a property of the drug and not of the line. To
+   make it line-specific the engine needs per-line efflux (ABCB1 acting
+   on intracellular drug), which it does not currently model.
+
+### And the data cannot yet validate such a mapping
+
+DepMap 24Q4 expression was pulled for all ten lines and sixteen
+candidate genes (efflux, BCL2 family, repair, target). Correlating each
+against measured IC50 and then correcting for having searched sixteen
+genes, by permutation:
+
+| Drug | n lines | best \|ρ\| | family-wise p |
+|---|:-:|:-:|:-:|
+| cisplatin | 6 | 0.71 | 0.86 |
+| doxorubicin | 10 | 0.75 | 0.25 |
+| paclitaxel | 10 | 0.65 | 0.54 |
+
+Nothing survives. The top hit for both cisplatin and doxorubicin is
+TUBB3, which has no mechanism for either, a reliable sign of noise.
+DepMap's CRISPR-inferred growth rate was also checked as a scalable
+substitute for doubling time and does not agree with the curated values
+(ρ = −0.15), so it cannot be used to expand the panel cheaply.
+
+**So building an expression mapping now would be fitting noise** — the
+same error that produced the retracted gate above. The blocking
+constraint is the number of cell lines, not the model.
+
+**Still to do, in order.**
+1. **More cell lines.** Everything else is blocked on this. Validating
+   any per-line mapping needs tens of lines, not ten, and each needs a
+   trustworthy doubling time, which is the scarce input.
+2. **Per-line repair capacity** for the DNA-damage drugs, once there
+   are enough lines to test it. This is the channel with leverage.
+3. **A per-line efflux channel** so paclitaxel has any line-specific
+   behaviour at all.
+4. A shallower death response (curve shape above).
 
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign
 test, not the RMSE table.
