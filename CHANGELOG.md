@@ -1,5 +1,55 @@
 # CellSim — Changelog
 
+## v1.4 — 2026-10-01 — Phase 0: one identity, green CI, July fixes merged
+
+The project is refocused on one product: a validated, interactive
+cell and drug-response simulator. See `docs/PLAN.md`.
+
+### Merged
+- PR #11 — Meeko atom-order scramble fix. Docked poses are now
+  reconstructed via Meeko's reverse conversion; every earlier
+  pose-recovery number was computed on scrambled molecules
+  (biotin/1STP reported 2.02 Å, real value 0.56–0.69 Å). New
+  15-cocrystal blind set, RCSB-fetched: top-1 73 %, top-3 87 %,
+  PoseBusters 100 %.
+- PR #12 — CYP3A4 SoM ranks C–H bonds only; `src/cell` (20 PK/PD
+  modules), `src/uq/reliability.py` target-class accuracy table,
+  Sobol and coverage artifacts.
+- PR #10 — all 13 BUG_AUDIT fixes in the FEP binding path
+  (standard-state sign, leg force-field mismatch, restraint
+  geometry, seed plumbing, stereo).
+
+### CI
+- The 29 test files added by those PRs are now gated (54 CI steps).
+- Root cause of the red badge since 2026-05-30: the 1STP re-dock
+  gate sat on the 2.0 Å noise boundary because of the scramble bug.
+  Fixed by PR #11; the gate now reads 0.56 Å.
+
+### Repository
+- README rewritten around the single product identity; GitHub
+  description and topics corrected (no longer "C++20/Metal").
+- `LICENSE` is pure MIT again; attributions moved to
+  `THIRD_PARTY_NOTICES.md` so GitHub detects the license.
+- Campaign-era planning docs (GOAL, MISSION, ROADMAP, BENCHMARKS,
+  campaign scope/status/close-out, professor debrief, friend
+  handoff) moved to `docs/archive/campaign1/` with the FreeSolv
+  pilot-3 report. `TUTORIAL.md` → `docs/docking_tutorial.md`.
+  OLD-specific references (`UNITS.md`, LaTeX reference) moved under
+  `OLD/`.
+- Removed: prof-email / csv_tldr / finalize_run handoff tooling and
+  their tests, committed `run/` logs, the retired Metal-UI
+  screenshots, and the empty `src/cg`, `src/core`, `src/render`,
+  `src/viewer` scaffolds.
+
+### Known, documented limits carried forward
+- Hydration FEP runs NVT on a packmol box with no barostat; the
+  FreeSolv-12 "PASS" (MAE 1.42 on 10/12) hides a size-dependent
+  bias (toluene −3.7 kcal/mol). Binding FEP has never produced a
+  number on a real binder. Both are experimental, not product paths.
+- SoM is advisory (2/3; blind to N-dealkylation).
+- `OLD/` biology: cells never execute death under cisplatin
+  (caspase-3 clamped), p53 period 3.0 h vs 5.5 h literature.
+
 ## v1.3 — 2026-05-23 — Milestone A passes (FreeSolv hydration FEP gate)
 
 **The chemistry-axis half of the professor's "closed ontology /
