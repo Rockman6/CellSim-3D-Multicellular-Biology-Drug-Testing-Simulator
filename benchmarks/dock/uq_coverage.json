@@ -1,0 +1,58 @@
+{
+  "n_total": 16,
+  "n_cal": 8,
+  "n_test": 8,
+  "alpha": 0.05,
+  "nominal_coverage": 0.95,
+  "empirical_coverage": 1.0,
+  "coverage_wilson95": [
+    0.6755843804891231,
+    1.0
+  ],
+  "calibration_error": 0.050000000000000044,
+  "calibration_error_gate": 0.1,
+  "q_kcalmol": 11.619000000000002,
+  "interval_width_kcalmol": 23.238000000000003,
+  "test_names": [
+    "4-hydroxybenzamidine",
+    "gefitinib",
+    "tyrphostin_AG-494",
+    "2-iminobiotin",
+    "AG-1478",
+    "lapatinib",
+    "guanidine",
+    "4-aminobenzamidine"
+  ],
+  "per_target_class": [
+    {
+      "target_class": "egfr",
+      "n": 6,
+      "mean_abs_err": 2.1649999999999996,
+      "median_abs_err": 1.7670000000000003,
+      "worst_abs_err": 4.632999999999999,
+      "worst_compound": "erlotinib",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    },
+    {
+      "target_class": "streptavidin",
+      "n": 4,
+      "mean_abs_err": 4.9807500000000005,
+      "median_abs_err": 4.1205,
+      "worst_abs_err": 11.619000000000002,
+      "worst_compound": "biotin",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    },
+    {
+      "target_class": "trypsin",
+      "n": 6,
+      "mean_abs_err": 0.9071666666666668,
+      "median_abs_err": 0.7709999999999999,
+      "worst_abs_err": 1.9440000000000008,
+      "worst_compound": "4-aminobenzamidine",
+      "conformal_valid": false,
+      "n_min_for_alpha": 19
+    }
+  ]
+}

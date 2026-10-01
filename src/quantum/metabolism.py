@@ -189,7 +189,7 @@ def _build_xyz_text(title: str, elements: list, positions: list) -> str:
 def predict_cyp_som_bde(
     smiles: str,
     *,
-    include_elements: tuple = ("C", "N", "O", "S", "P"),
+    include_elements: tuple = ("C",),
     top_k: int = 5,
     seed: int = 1,
     timeout_s: int = 120,
@@ -202,9 +202,15 @@ def predict_cyp_som_bde(
     smiles : str
         Input compound.
     include_elements : tuple
-        Heavy-atom elements whose X-H bonds are considered. Default
-        covers CYP-relevant C/N/O/S/P-H. For CYP3A4 specifically,
-        carbon C-H dominates.
+        Heavy-atom elements whose X-H bonds are ranked. Defaults to
+        carbon only, because CYP3A4's ferryl species abstracts H from
+        C-H bonds — a heteroatom X-H (e.g. a carboxylic O-H) is not a
+        site of metabolism in this mechanism, and including them
+        corrupts the ranking: with the previous ("C","N","O","S","P")
+        default, aspirin's rank-1 "SoM" was the carboxylic OXYGEN
+        rather than the acetyl methyl that literature reports (and
+        that C-only correctly returns). Pass a wider tuple explicitly
+        if you want heteroatom X-H scored for a different enzyme.
     top_k : int
         Return ranks 1..top_k candidates.
     seed : int

@@ -21,8 +21,16 @@ from .calibration import (
     run_calibration,
 )
 from .calibration_viewer import render_calibration_result
+from .reliability import (
+    Reliability,
+    reliability_for,
+    annotate_result,
+)
 
 __all__ = [
+    "Reliability",
+    "reliability_for",
+    "annotate_result",
     "DockingMCResult",
     "monte_carlo_dock",
     "SobolResult",
