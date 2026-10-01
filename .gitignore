@@ -33,9 +33,6 @@ MBoC7_project_gap_audit.txt
 *.mov
 *.mp4
 *.gif
-# but keep docs screenshots that ship with README:
-!docs/cellsim-dense-colony-drug-test.png
-!docs/cellsim-early-colony.png
 # CellSim Campaign-1 bundled validation PNGs (see BENCHMARKS.md).
 !docs/images/*.png
 

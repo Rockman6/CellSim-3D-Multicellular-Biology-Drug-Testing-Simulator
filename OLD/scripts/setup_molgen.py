@@ -4,7 +4,7 @@ setup_molgen.py — Create a Python virtualenv with ESMFold and RDKit
 for molecular structure generation in CellSim.
 
 Usage:
-    python3 scripts/setup_molgen.py
+    python3 OLD/scripts/setup_molgen.py
 """
 
 import subprocess
@@ -12,7 +12,7 @@ import sys
 import os
 import shutil
 
-VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".molgen_venv")
+VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".molgen_venv")
 VENV_DIR = os.path.normpath(VENV_DIR)
 
 def find_python():
@@ -43,8 +43,8 @@ def main():
 
     print(f"[setup_molgen] Done. Virtualenv ready at {VENV_DIR}")
     print(f"[setup_molgen] Generate molecules with:")
-    print(f"  {VENV_DIR}/bin/python scripts/generate_molecule.py <SMILES>")
-    print(f"  {VENV_DIR}/bin/python scripts/generate_protein.py <sequence>")
+    print(f"  {VENV_DIR}/bin/python OLD/scripts/generate_molecule.py <SMILES>")
+    print(f"  {VENV_DIR}/bin/python OLD/scripts/generate_protein.py <sequence>")
 
 if __name__ == "__main__":
     main()

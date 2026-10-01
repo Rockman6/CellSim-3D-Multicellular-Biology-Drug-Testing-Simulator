@@ -15,8 +15,8 @@ What a biologist actually wants to look at after a docking run:
            pose, so "which poses are trustworthy" is obvious in one
            glance.
 
-This is the Layer-1.3 stopgap using matplotlib — the Metal viewer
-lands when cellsim/render/ is wired up.
+This is the Layer-1.3 view using matplotlib; the planned web interface
+(docs/PLAN.md, Phase 2) will take over rendering.
 
 Run:
     conda activate cellsim

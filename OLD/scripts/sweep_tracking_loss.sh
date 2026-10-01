@@ -4,7 +4,7 @@
 # should fall below 7.5 % mean |rel_err|.
 set -e
 cd "$(dirname "$0")/.."
-CONSTS="cellsim/core/Constants.h"
+CONSTS="OLD/src/core/Constants.h"
 
 apply_rate() {
     local rate=$1

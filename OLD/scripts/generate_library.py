@@ -108,7 +108,7 @@ def generate_all(output_dir: str):
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    default_dir = os.path.join(script_dir, "..", "assets", "molecules")
+    default_dir = os.path.join(script_dir, "..", "..", "assets", "molecules")
     output_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.normpath(default_dir)
     generate_all(output_dir)
 

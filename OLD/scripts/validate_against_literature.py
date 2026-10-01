@@ -13,7 +13,7 @@ Writes a comparison summary to logs/export/validation_report.txt
 import csv, os, sys, math
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SCRIPT_DIR)
+ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # repo root
 SIM_CSV  = os.path.join(ROOT, "logs/export/cellsim_timeseries.csv")
 REF_CSV  = os.path.join(ROOT, "data/reference/hela_reference.csv")
 GC_DIR   = os.path.join(ROOT, "data/reference/growth_curves")

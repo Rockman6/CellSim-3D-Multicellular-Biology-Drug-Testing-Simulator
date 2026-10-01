@@ -6,10 +6,10 @@
 #  from the upstream GitHub repo and rebuilds. No full re-clone needed.
 #
 #  Usage:
-#      scripts/update.sh                # update + rebuild
-#      scripts/update.sh --constants    # only refresh Constants.h + tuning,
+#      OLD/scripts/update.sh                # update + rebuild
+#      OLD/scripts/update.sh --constants    # only refresh Constants.h + tuning,
 #                                       # then rebuild
-#      scripts/update.sh --check        # dry-run: show what would change
+#      OLD/scripts/update.sh --check        # dry-run: show what would change
 #
 #  Designed so frequent constant tweaks (rate calibrations, biology tunes,
 #  thresholds) ship as a tiny patch — no need to re-download GLB assets,
@@ -39,12 +39,12 @@ case "$MODE" in
         # else (assets, GLBs, shaders) stays local — these are the small
         # files that change most often during calibration.
         git checkout "origin/$BRANCH" -- \
-            cellsim/core/Constants.h \
-            src/simulation/Simulation.h \
-            src/simulation/CentralDogma.h \
-            src/simulation/CellCycleProgram.h \
-            src/simulation/MediumField.h \
-            src/simulation/TelemetryLog.h
+            OLD/src/core/Constants.h \
+            OLD/src/simulation/Simulation.h \
+            OLD/src/simulation/CentralDogma.h \
+            OLD/src/simulation/CellCycleProgram.h \
+            OLD/src/simulation/MediumField.h \
+            OLD/src/simulation/TelemetryLog.h
         ;;
     --check)
         echo "[update] dry-run — files that would change:"
@@ -63,5 +63,5 @@ echo "[update] rebuilding (incremental)..."
 cmake --build build -j
 
 echo ""
-echo "[update] done. Launch with: ./build/CellSim"
+echo "[update] done. Launch with: ./build/CellSimOLD"
 echo "         or run validation: ./build/cellsim_headless 48 60"

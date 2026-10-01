@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-CONSTS="cellsim/core/Constants.h"
+CONSTS="OLD/src/core/Constants.h"
 BACKUP="$CONSTS.bak"
 [ -f "$BACKUP" ] || cp "$CONSTS" "$BACKUP"
 
@@ -55,4 +55,4 @@ apply_knobs "$best_slow" "$best_mech"
 cmake --build build -j > /dev/null 2>&1
 echo
 echo "Verifying across all datasets..."
-./scripts/validate_unseen.sh 2>&1 | grep -E "==|rel_err\s*=|doubling_time sim|doubling_time ref|\+[0-9]"
+./OLD/scripts/validate_unseen.sh 2>&1 | grep -E "==|rel_err\s*=|doubling_time sim|doubling_time ref|\+[0-9]"

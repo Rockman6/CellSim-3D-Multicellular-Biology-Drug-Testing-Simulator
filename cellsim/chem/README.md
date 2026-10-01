@@ -24,8 +24,8 @@ AM1-BCC (fast) or xTB (accurate) partial charges.
   Every result carries method + tool versions + failure reason;
   never raises on recoverable errors.
 - `viewer.py` — matplotlib 3D ball-and-stick with per-atom charge
-  colouring (blue = negative, red = positive). Stopgap until the
-  Metal viewer is rewired in `cellsim/render/` + `cellsim/viewer/`.
+  colouring (blue = negative, red = positive). Stays until the planned
+  web interface takes over rendering (`docs/PLAN.md`, Phase 2).
 - `__init__.py` — package marker re-exporting the public API.
 
 ## Quickstart

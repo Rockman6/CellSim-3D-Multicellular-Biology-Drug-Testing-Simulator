@@ -5,9 +5,9 @@ covalent radius (roughly), atoms are coloured by AM1-BCC partial
 charge (blue = negative, red = positive, white = neutral), and
 bonds draw as line segments with thickness ∝ bond order.
 
-This is the stopgap until cellsim/render/ + cellsim/viewer/ wire up the
-Metal pipeline from the OLD/ tree. The point is to have a visual
-gate NOW so Layer 1.1's output can be eye-checked.
+This matplotlib view stays until the planned web interface (see
+docs/PLAN.md, Phase 2) takes over rendering. The point is to have a
+visual gate now so Layer 1.1's output can be eye-checked.
 
 Run:
     python -m cellsim.chem.viewer "aspirin" \\

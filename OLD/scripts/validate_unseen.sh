@@ -15,7 +15,7 @@ run_one() {
     printf "\n== %s ==\n" "$label"
     printf "   init=%d, bio_h=%d, schema=%s\n" "$init" "$bh" "$schema"
     ./build/cellsim_headless "$bh" 60 "$init" /dev/null 2>&1 | tail -1
-    python3 scripts/compare_against.py logs/headless_doubling.csv "$ref" "$schema" \
+    python3 OLD/scripts/compare_against.py logs/headless_doubling.csv "$ref" "$schema" \
         2>&1 | grep -E "doubling_time|rel_err|Δ" || true
 }
 
