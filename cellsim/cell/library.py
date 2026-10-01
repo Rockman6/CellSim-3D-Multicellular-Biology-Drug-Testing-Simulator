@@ -65,6 +65,27 @@ CELL_LINES: dict[str, CellLine] = {
     "HeLa": CellLine("HeLa", 20.0, True, "cervix",
                      source="CTC Fluo-N2DL-HeLa ~20 h; TP53 wild-type but HPV18 E6-degraded "
                             "(functionally hypomorphic; modelled as functional, flagged)"),
+
+    # ── Added 2026-10 to test the p53-independent death route against
+    # lines that played no part in choosing its parameter. Doubling
+    # times are the ONLY line-specific input the engine has, so where
+    # sources disagree the spread is recorded: it bounds how well any
+    # line-to-line prediction can do.
+    "U-2-OS": CellLine("U-2-OS", 27.0, True, "osteosarcoma",
+                       source="DSMZ ACC 785 25-30 h; TP53 wild-type, the standard "
+                              "p53-functional positive control (CVCL_0042)"),
+    "HT-1080": CellLine("HT-1080", 26.0, True, "fibrosarcoma",
+                        source="DSMZ ACC 315 ~26 h; TP53 wild-type (CVCL_0317)"),
+    "T47D": CellLine("T47D", 32.0, False, "breast (ER+)",
+                     source="ATCC HTB-133 ~32 h; TP53 p.L194F (CVCL_0553)"),
+    "MDA-MB-468": CellLine("MDA-MB-468", 38.0, False, "breast (TNBC)",
+                           source="TP53 p.R273H (CVCL_0419). Doubling time is poorly "
+                                  "agreed: DSMZ 30-40 h, others 40.6 h, NCI-DCTD 62 h; "
+                                  "38 h used, uncertainty ~1.6x"),
+    "MIA-PaCa-2": CellLine("MIA-PaCa-2", 30.0, False, "pancreas",
+                           source="TP53 p.R248W homozygous (CVCL_0428). Doubling time "
+                                  "reported 26 h to 40 h depending on conditions; 30 h "
+                                  "used, uncertainty ~1.5x"),
 }
 
 

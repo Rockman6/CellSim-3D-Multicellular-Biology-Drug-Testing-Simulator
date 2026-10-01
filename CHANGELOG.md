@@ -36,18 +36,24 @@
   a headline claim and a CI gate. Documented in `docs/VALIDATION.md` and
   filed as issue #14 rather than changed unilaterally.
 
-### Validation result — Phase-1 exit gate met
-- **10/10** held-out IC50s inside GDSC's replicate span (constant-IC50
-  null: 9/10), A549 cisplatin 10.1 µM vs 9.8 measured, and the engine
-  beats the null on held-out log error for doxorubicin (0.29 vs 0.33)
-  and paclitaxel (0.32 vs 0.38). Cisplatin still loses (0.31 vs 0.15)
-  on the single in-range held-out line it has.
-- Before the p53-independent route the engine beat the null for
-  paclitaxel only, because TP53-mutant lines came out too resistant.
-- Caveat recorded in `docs/VALIDATION.md`: the route's one parameter was
-  chosen using these same two mutant lines, so the gate is not fully
-  out-of-sample with respect to it. The clean evidence is the
-  leave-one-out table; a third mutant line is the next thing to add.
+### Validation result — exit gate NOT met, and now measured properly
+- Expanded to **ten** cell lines (five TP53 wild-type, five mutant),
+  fitted on two, so eight are held out.
+- **Established:** each drug's potency scale from one fitted constant.
+  22/25 held-out predictions inside GDSC's replicate span vs the
+  constant-IC50 null's 18/25; A549 cisplatin 9.0 µM vs 9.8 measured.
+- **Not established:** line-to-line discrimination. Paired per-line
+  sign test on held-out lines — engine closer on 10, null closer on 11,
+  p = 1.0.
+- **Corrects an earlier entry in this file.** A five-line run appeared
+  to meet the gate; the gate then compared two RMSE numbers and the
+  margin that passed it (0.45 vs 0.46) was inside the noise. The gate
+  is now a paired sign test that cannot pass on a difference that small.
+- The p53-independent route still earns its place: it is a large
+  improvement over the p53-only model on four of five mutants (which
+  that model misses by up to 12×), but it beats the null on only two and
+  hurts T47D, the one genuinely resistant mutant. Recorded in
+  `docs/VALIDATION.md`.
 
 ### Changed
 - `cellsim/cell/library.py`: placeholder potencies replaced by the fitted
