@@ -115,6 +115,12 @@ class BindingDGResult:
     dG_dec_solvent_kcalmol: Optional[float] = None
     dG_restraint_correction_kcalmol: Optional[float] = None
     dG_standard_state_kcalmol: Optional[float] = None
+    # ΔG to switch the CoM restraint ON at the fully-coupled bound
+    # endpoint (BUG_AUDIT.md #4). When None the DDM cycle assumes it is
+    # ≈ 0 (see restraint_on_real_included); absolute ΔG_bind is then
+    # provisional. ΔΔG cancels this term.
+    dG_restraint_on_real_kcalmol: Optional[float] = None
+    restraint_on_real_included: bool = False
     uncertainty_kcalmol: Optional[float] = None
     restraint_k_kJ_per_nm2: Optional[float] = None
     restraint_r0_nm: Optional[float] = None
@@ -142,11 +148,17 @@ class BindingDGResult:
                     f"prot_atoms={self.n_protein_atoms}  "
                     f"complex={self.n_total_atoms_complex}  "
                     f"wall={self.wall_seconds:.1f}s")
+        provisional = (
+            "  [PROVISIONAL: restraint-on-real leg (#4) omitted; "
+            "absolute value only, ΔΔG unaffected]"
+            if (self.dG_bind_kcalmol is not None
+                and not self.restraint_on_real_included)
+            else "")
         return (f"[OK]   ΔG_bind {self.smiles} / "
                 f"{self.receptor}  "
                 f"{self.dG_bind_kcalmol:+.2f} ± "
                 f"{self.uncertainty_kcalmol:.2f} kcal/mol  "
-                f"wall={self.wall_seconds:.1f}s")
+                f"wall={self.wall_seconds:.1f}s{provisional}")
 
 
 @dataclass
@@ -451,33 +463,105 @@ def _add_harmonic_com_restraint(system, ligand_indices,
     return force
 
 
-def _harmonic_restraint_free_energy_kcalmol(
-        k_kJ_per_nm2, temperature_K=298.15):
-    """Analytical free-energy of a 3D isotropic harmonic restraint
-    relative to the 1 M standard state.
+def _restraint_r0_from_geometry(prot_positions_nm, anchor_indices,
+                                placement_center_nm):
+    """Rest length r0 for the CoM restraint = distance between the
+    ligand placement target (binding-site centre) and the anchor
+    (Cα-shell) centroid.
 
-    For a harmonic well U = (k/2) r² (we use r0 > 0 but the Gaussian
-    integral is centred on r0; the factor below is independent of r0):
+    The restraint pulls the ligand CoM toward the anchor-group CoM, but
+    the ligand is *placed* at the binding-site centre — a different
+    point. With r0 = 0 the restraint minimum sits at the anchor
+    centroid, so the placed ligand starts ~0.5 nm up the harmonic wall
+    (≈125 kcal/mol at the default k) and gets yanked out of the pose
+    (BUG_AUDIT.md #7). Setting r0 to the placement→anchor distance puts
+    the restraint minimum at the placed pose, so the ligand stays where
+    it was docked and the restraint only resists drift.
+    """
+    import numpy as np
 
-        ΔG_R→std  =  −kT · ln[ V_std / V_harmonic ]
+    anchor_centroid = np.asarray(
+        prot_positions_nm)[anchor_indices].mean(axis=0)
+    return float(np.linalg.norm(
+        np.asarray(placement_center_nm, dtype=float) - anchor_centroid))
 
-    with V_harmonic = (2π·kT/k)^(3/2) and V_std = 1660 Å³ (the volume
-    per molecule at 1 M standard state).
 
-    Returns the correction added to ΔG_bind to go from 'restrained
-    decoupled' to '1 M standard state' — this is the classic
-    Hamelberg–Gilson / Boresch-style correction for CoM restraints.
+def _harmonic_restraint_volume_nm3(
+        k_kJ_per_nm2, r0_nm=0.0, temperature_K=298.15):
+    """Configurational volume (nm³) accessible to a ligand CoM under a
+    radial harmonic restraint U(r) = ½·k·(r − r0)², where r is the
+    distance between the ligand CoM and the anchor CoM:
+
+        V_harm = ∫₀^∞ 4π r² · exp(−β·½·k·(r − r0)²) dr
+
+    Closed form (a ≡ βk/2):
+
+        V_harm = 4π [ (r0/2a)·e^(−a·r0²)
+                      + (√π / 2√a)·(1 + erf(r0·√a))·(r0² + 1/2a) ]
+
+    At r0 = 0 this reduces exactly to the isotropic-Gaussian volume
+    (2π·kT/k)^(3/2). For r0 > 0 the accessible region is a spherical
+    shell of radius r0 and the volume is larger — the r0 = 0 Gaussian
+    formula (used previously) undercounts it, biasing the standard-state
+    correction (BUG_AUDIT.md #9/#10). Verified against numerical
+    integration to machine precision for r0 ∈ [0, 0.8] nm.
     """
     import math
 
-    # kT in kJ/mol at T
     kT_kJ = 0.0083144626 * temperature_K
-    # Gaussian volume in nm^3: (2π·kT/k)^(3/2)
-    v_harm_nm3 = (2.0 * math.pi * kT_kJ / k_kJ_per_nm2) ** 1.5
+    a = k_kJ_per_nm2 / (2.0 * kT_kJ)          # nm^-2
+    sqrt_a = math.sqrt(a)
+    term_exp = (r0_nm / (2.0 * a)) * math.exp(-a * r0_nm * r0_nm)
+    term_erf = (
+        (math.sqrt(math.pi) / (2.0 * sqrt_a))
+        * (1.0 + math.erf(r0_nm * sqrt_a))
+        * (r0_nm * r0_nm + 1.0 / (2.0 * a)))
+    return 4.0 * math.pi * (term_exp + term_erf)
+
+
+def _harmonic_restraint_free_energy_kcalmol(
+        k_kJ_per_nm2, r0_nm=0.0, temperature_K=298.15):
+    """Standard-state / restraint correction to ADD to ΔG_bind, in
+    kcal/mol, for a radial harmonic CoM restraint with rest length r0.
+
+    In the double-decoupling cycle the ligand is decoupled while a
+    harmonic CoM restraint confines it near the site. To connect the
+    'decoupled + restrained' state to the 1 M standard state we account
+    for the work of confining a *non-interacting* ligand from the
+    standard-state volume V_std into the restraint volume V_harm(r0):
+
+        ΔG_corr  =  +kT · ln[ V_std / V_harm(r0) ]        (POSITIVE)
+
+    with V_harm from `_harmonic_restraint_volume_nm3` and V_std =
+    1.66 nm³ (volume per molecule at 1 M). The term is positive —
+    localising a ligand from dilute solution into the site volume costs
+    configurational entropy, which correctly penalises binding.
+
+    Sign convention vs openmmtools: at r0 = 0 this returns the NEGATIVE
+    of ``openmmtools.forces.HarmonicRestraintForce.compute_standard_
+    state_correction`` (which reports −kT·ln(V_std/V_harm), the free
+    energy of *releasing* the restraint out to standard state). The DDM
+    composition in ``compute_absolute_binding_dg`` adds the confinement
+    work, so the correct additive term is −(openmmtools SSC). See
+    BUG_AUDIT.md #1/#3: the previous code returned the release value
+    (negative) and added it, biasing every absolute ΔG_bind ≈ +10.5
+    kcal/mol toward over-binding.
+
+    r0-aware (BUG_AUDIT.md #9/#10): larger r0 → larger accessible shell
+    → smaller positive correction. The restraint the builders install
+    uses r0 = ‖placement − anchor centroid‖ (BUG_AUDIT.md #7), so this
+    must be called with that same r0, not 0.
+    """
+    import math
+
+    kT_kJ = 0.0083144626 * temperature_K
+    v_harm_nm3 = _harmonic_restraint_volume_nm3(
+        k_kJ_per_nm2, r0_nm=r0_nm, temperature_K=temperature_K)
     # Standard-state volume: 1 M = 1 molecule per 1660.54 Å³ = 1.66054 nm³
     v_std_nm3 = 1.66054
-    # ΔG = -kT ln(V_std / V_harm) → convert kJ → kcal (÷ 4.184)
-    dG_kJ = -kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
+    # +kT ln(V_std / V_harm): confinement work to ADD to ΔG_bind
+    # (kJ → kcal via ÷ 4.184).
+    dG_kJ = kT_kJ * math.log(v_std_nm3 / v_harm_nm3)
     return dG_kJ / 4.184
 
 
@@ -636,6 +720,13 @@ def _build_complex_alchemical_system(
     anchor_indices = _find_ca_indices_near(
         prot_positions_nm, binding_site_center_nm,
         anchor_radius_nm, ca_candidate_indices)
+    # r0 = placement→anchor-centroid distance so the restraint minimum
+    # coincides with the placed pose (BUG_AUDIT.md #7). Explicit
+    # positive r0 overrides.
+    effective_r0_nm = (
+        restraint_r0_nm if (restraint_r0_nm and restraint_r0_nm > 0)
+        else _restraint_r0_from_geometry(
+            prot_positions_nm, anchor_indices, binding_site_center_nm))
 
     # 8) Make the alchemical region cover the ligand.
     region = alchemy.AlchemicalRegion(
@@ -654,7 +745,7 @@ def _build_complex_alchemical_system(
     _add_harmonic_com_restraint(
         alch_system, ligand_indices, anchor_indices,
         k_kJ_per_nm2=restraint_k_kJ_per_nm2,
-        r0_nm=restraint_r0_nm)
+        r0_nm=effective_r0_nm)
 
     # Positions for the alchemical system must carry OpenMM units.
     positions = complex_positions_nm * ommunit.nanometer
@@ -666,7 +757,7 @@ def _build_complex_alchemical_system(
         "ligand_indices": ligand_indices,
         "anchor_indices": anchor_indices,
         "restraint_k_kJ_per_nm2": restraint_k_kJ_per_nm2,
-        "restraint_r0_nm": restraint_r0_nm,
+        "restraint_r0_nm": effective_r0_nm,
         "n_ligand_atoms": n_ligand_atoms,
         "n_protein_atoms": n_protein_atoms,
         "n_total_atoms": complex_system.getNumParticles(),
@@ -810,6 +901,13 @@ def _build_complex_alchemical_system_amber14(
     anchor_indices = _find_ca_indices_near(
         prot_positions_nm, binding_site_center_nm,
         anchor_radius_nm, ca_candidate_indices)
+    # r0 = distance between the placed pose and the anchor centroid, so
+    # the restraint minimum coincides with the pose (BUG_AUDIT.md #7).
+    # An explicitly-passed positive r0 overrides the geometry pick.
+    effective_r0_nm = (
+        restraint_r0_nm if (restraint_r0_nm and restraint_r0_nm > 0)
+        else _restraint_r0_from_geometry(
+            prot_positions_nm, anchor_indices, binding_site_center_nm))
 
     # 10) Alchemical factory + restraint (same as sibling).
     region = alchemy.AlchemicalRegion(
@@ -822,7 +920,7 @@ def _build_complex_alchemical_system_amber14(
     _add_harmonic_com_restraint(
         alch_system, ligand_indices, anchor_indices,
         k_kJ_per_nm2=restraint_k_kJ_per_nm2,
-        r0_nm=restraint_r0_nm)
+        r0_nm=effective_r0_nm)
 
     positions = complex_positions_nm * ommunit.nanometer
 
@@ -833,12 +931,105 @@ def _build_complex_alchemical_system_amber14(
         "ligand_indices": ligand_indices,
         "anchor_indices": anchor_indices,
         "restraint_k_kJ_per_nm2": restraint_k_kJ_per_nm2,
-        "restraint_r0_nm": restraint_r0_nm,
+        "restraint_r0_nm": effective_r0_nm,
         "n_ligand_atoms": n_ligand_atoms,
         "n_protein_atoms": n_protein_atoms,
         "n_total_atoms": complex_system.getNumParticles(),
         "ff_stack": "amber14-all + tip3pfb + SMIRNOFF-lig",
     }
+
+
+def _build_solvent_alchemical_system_amber14(
+    smiles: str,
+    *,
+    padding_nm: float = 1.2,
+    softcore_alpha: float = 0.5,
+):
+    """Solvent-leg alchemical system built with the SAME force-field
+    stack as the amber14 complex leg: amber14/tip3pfb water at a 1.0 nm
+    PME cutoff with HBond constraints + rigid water, ligand via
+    SMIRNOFFTemplateGenerator (OpenFF Sage 2.1.0 + AM1-BCC).
+
+    Mirrors `_build_complex_alchemical_system_amber14` minus the
+    protein. The double-decoupling ΔG_bind subtracts the solvent leg
+    from the complex leg; unless BOTH legs decouple the ligand from an
+    identical water model at an identical cutoff, the bulk-water
+    contribution does NOT cancel and leaves a systematic 1-3 kcal/mol
+    offset on every absolute ΔG_bind (BUG_AUDIT.md #5). The previous
+    code routed the solvent leg through the pure-SMIRNOFF
+    `_build_alchemical_legs` (tip3p.offxml at Sage's 0.9 nm switched
+    cutoff), mismatching the complex leg on both water model and
+    cutoff.
+
+    Returns (solv_alch, solv_top_omm, solv_positions, n_ligand_atoms).
+    """
+    import numpy as np
+    from openff.toolkit.topology import Molecule
+    from openff.units import unit as offunit
+    from openmm import app as _app
+    from openmm import unit as ommunit
+    from openmmforcefields.generators import (
+        SMIRNOFFTemplateGenerator,
+    )
+    from openmmtools import alchemy
+
+    # Ligand: identical build to the complex leg (Sage + AM1-BCC,
+    # allow_undefined_stereo so C=N inputs don't diverge between legs).
+    lig = Molecule.from_smiles(smiles, allow_undefined_stereo=True)
+    lig.generate_conformers(n_conformers=1)
+    lig.assign_partial_charges("am1bcc")
+    n_ligand_atoms = lig.n_atoms
+
+    gen = SMIRNOFFTemplateGenerator(
+        molecules=[lig], forcefield=_LIGAND_FF)
+    ff = _app.ForceField("amber14-all.xml", "amber14/tip3pfb.xml")
+    ff.registerTemplateGenerator(gen.generator)
+
+    lig_top_omm = lig.to_topology().to_openmm()
+    lig_pos_nm = np.asarray(
+        lig.conformers[0].m_as(offunit.nanometer), dtype=float)
+    modeller = _app.Modeller(
+        lig_top_omm, lig_pos_nm * ommunit.nanometer)
+    modeller.topology.setPeriodicBoxVectors(None)
+    # The 1.0 nm PME cutoff (matched to the complex leg) needs every
+    # box vector > 2.0 nm. A small ligand at tight padding — e.g.
+    # methane at 0.8 nm gives a ~1.9 nm box — violates that and OpenMM
+    # raises "cutoff cannot be greater than half the box". The complex
+    # leg never hits this because the protein makes the box large; the
+    # solvent-leg box is ligand+padding only. Floor the solvent padding
+    # at 1.2 nm (box ≥ 2.4 nm). Box size does not affect a neutral
+    # ligand's decoupling ΔG, so the DDM cancellation with the complex
+    # leg is unaffected — only the water model + cutoff must match
+    # (BUG_AUDIT.md #5).
+    solvent_padding_nm = max(padding_nm, 1.2)
+    modeller.addSolvent(
+        ff, padding=solvent_padding_nm * ommunit.nanometer,
+        model="tip3p",
+        ionicStrength=0.0 * ommunit.molar)
+
+    solv_system = ff.createSystem(
+        modeller.topology,
+        nonbondedMethod=_app.PME,
+        nonbondedCutoff=1.0 * ommunit.nanometer,
+        constraints=_app.HBonds,
+        rigidWater=True)
+
+    # Modeller was seeded from the ligand, so ligand atoms are the
+    # first n_ligand_atoms; waters follow.
+    ligand_indices = list(range(n_ligand_atoms))
+    region = alchemy.AlchemicalRegion(
+        alchemical_atoms=ligand_indices,
+        softcore_alpha=softcore_alpha)
+    factory = alchemy.AbsoluteAlchemicalFactory()
+    solv_alch = factory.create_alchemical_system(
+        reference_system=solv_system,
+        alchemical_regions=region)
+
+    solv_positions_nm = np.asarray(
+        modeller.positions.value_in_unit(ommunit.nanometer),
+        dtype=float)
+    solv_positions = solv_positions_nm * ommunit.nanometer
+    return solv_alch, modeller.topology, solv_positions, n_ligand_atoms
 
 
 def compute_absolute_binding_dg(
@@ -859,6 +1050,8 @@ def compute_absolute_binding_dg(
     seed: int = 1,
     force_field_path: str = "amber14",
     use_replica_exchange: bool = False,
+    include_restraint_on_real_leg: bool = False,
+    deterministic: bool = False,
 ) -> BindingDGResult:
     """
     `force_field_path` selects the protein-ligand parametrisation
@@ -895,6 +1088,13 @@ def compute_absolute_binding_dg(
         restraint_r0_nm=restraint_r0_nm,
     )
 
+    if n_windows < 3:
+        result.reason = (
+            f"n_windows must be >= 3 (need decoupled + midpoint + "
+            f"coupled states); got {n_windows}")
+        result.wall_seconds = time.time() - t0
+        return result
+
     # Complex leg.
     if force_field_path == "amber14":
         _builder = _build_complex_alchemical_system_amber14
@@ -924,18 +1124,33 @@ def compute_absolute_binding_dg(
     result.n_ligand_atoms = cx["n_ligand_atoms"]
     result.n_protein_atoms = cx["n_protein_atoms"]
     result.n_total_atoms_complex = cx["n_total_atoms"]
+    # The builder derives r0 from geometry (placement→anchor distance,
+    # BUG_AUDIT.md #7); record the actual value so the standard-state
+    # correction below uses the SAME r0 the restraint was built with.
+    result.restraint_r0_nm = cx["restraint_r0_nm"]
 
-    # Solvent leg — reuse the validated hydration builder. ΔG for
-    # decoupling in pure water is the same quantity as the solvent
-    # half of ΔG_hyd, so `_build_alchemical_legs` is the exact right
-    # primitive.
+    # Solvent leg. For DDM the solvent leg MUST use the same water
+    # model + nonbonded cutoff as the complex leg, or the bulk-water
+    # decoupling contribution won't cancel in the subtraction
+    # (BUG_AUDIT.md #5). So route by force_field_path:
+    #   amber14  → _build_solvent_alchemical_system_amber14 (tip3pfb,
+    #              1.0 nm PME) — mirrors the amber14 complex leg.
+    #   smirnoff → _build_alchemical_legs (tip3p.offxml, Sage cutoff)
+    #              — matches the pure-SMIRNOFF complex leg and the
+    #              validated hydration solvent leg.
     try:
-        from src.fep import _build_alchemical_legs
+        if force_field_path == "amber14":
+            (solv_alch, solv_top, solv_pos, _n) = (
+                _build_solvent_alchemical_system_amber14(
+                    smiles, padding_nm=padding_nm,
+                    softcore_alpha=softcore_alpha))
+        else:
+            from src.fep import _build_alchemical_legs
 
-        (_vac_alch, solv_alch,
-         _vac_top, solv_top,
-         _vac_pos, solv_pos, _n) = _build_alchemical_legs(
-            smiles, softcore_alpha=softcore_alpha)
+            (_vac_alch, solv_alch,
+             _vac_top, solv_top,
+             _vac_pos, solv_pos, _n) = _build_alchemical_legs(
+                smiles, softcore_alpha=softcore_alpha)
     except Exception as e:
         # Complex leg is still valid → report partial progress
         # rather than claiming total failure. Matches the pattern
@@ -967,7 +1182,8 @@ def compute_absolute_binding_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not cx_r.ok:
             result.reason = f"complex leg sample failed: {cx_r.reason}"
             result.wall_seconds = time.time() - t0
@@ -979,28 +1195,62 @@ def compute_absolute_binding_dg(
             n_equilibration_steps=n_equilibration_steps,
             n_production_steps=n_production_steps,
             sample_stride=sample_stride, seed=seed,
-            use_replica_exchange=use_replica_exchange)
+            use_replica_exchange=use_replica_exchange,
+            deterministic=deterministic)
         if not sv_r.ok:
             result.reason = f"solvent leg sample failed: {sv_r.reason}"
             result.wall_seconds = time.time() - t0
             return result
+
+        # Optional restraint-on-real-bound leg (BUG_AUDIT.md #4): the
+        # work to switch the CoM restraint ON at the fully-coupled
+        # bound endpoint. Opt-in — its production magnitude needs a GPU
+        # Milestone-B run to validate (k-invariance check); default off
+        # leaves it as an explicit ≈0 approximation rather than a
+        # silent one.
+        rr_r = None
+        if include_restraint_on_real_leg:
+            from src.fep.sampling import sample_restraint_coupling_dg
+            rr_r = sample_restraint_coupling_dg(
+                cx["alch_system"], cx["positions"],
+                n_windows=max(3, n_windows // 2),
+                n_equilibration_steps=n_equilibration_steps,
+                n_production_steps=n_production_steps,
+                sample_stride=sample_stride, seed=seed,
+                deterministic=deterministic)
+            if not rr_r.ok:
+                result.reason = (
+                    f"restraint-coupling leg failed: {rr_r.reason}")
+                result.wall_seconds = time.time() - t0
+                return result
     except Exception as e:
         result.reason = f"binding sampling failed: {str(e)[:200]}"
         result.wall_seconds = time.time() - t0
         return result
 
-    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent) + ΔG_R + ΔG_std
-    # ΔG_R (harmonic restraint → 1 M standard state) is analytical;
-    # ΔG_std is folded into the same correction formula.
+    # Compose: ΔG_bind = −(ΔG_dec_complex − ΔG_dec_solvent)
+    #                    + ΔG_R+std − ΔG_restraint_on_real
+    # ΔG_R+std = +kT·ln(V_std/V_harm(r0)) > 0 is the analytical
+    # confinement / standard-state correction (sign per BUG_AUDIT #1/#3,
+    # r0-aware per #7/#9/#10). ΔG_restraint_on_real is the sampled cost
+    # of imposing the restraint on the real bound ligand (#4); when the
+    # leg is not run it is taken as 0 and `restraint_on_real_included`
+    # is False so downstream knows the absolute value is provisional.
+    # ΔΔG(A→B) cancels both corrections.
     import math
 
     dG_R_plus_std = _harmonic_restraint_free_energy_kcalmol(
-        restraint_k_kJ_per_nm2)
+        restraint_k_kJ_per_nm2, r0_nm=cx["restraint_r0_nm"])
 
-    dG_bind = -(cx_r.dG_kcalmol - sv_r.dG_kcalmol) + dG_R_plus_std
+    dG_restraint_on_real = rr_r.dG_kcalmol if rr_r is not None else None
+    dG_bind = (-(cx_r.dG_kcalmol - sv_r.dG_kcalmol)
+               + dG_R_plus_std
+               - (dG_restraint_on_real or 0.0))
     unc = math.sqrt(
         (cx_r.dG_uncertainty_kcalmol or 0.0) ** 2
-        + (sv_r.dG_uncertainty_kcalmol or 0.0) ** 2)
+        + (sv_r.dG_uncertainty_kcalmol or 0.0) ** 2
+        + ((rr_r.dG_uncertainty_kcalmol or 0.0) ** 2
+           if rr_r is not None else 0.0))
 
     result.ok = True
     result.phase = "sampled"
@@ -1009,6 +1259,12 @@ def compute_absolute_binding_dg(
     result.dG_dec_solvent_kcalmol = sv_r.dG_kcalmol
     result.dG_restraint_correction_kcalmol = dG_R_plus_std
     result.dG_standard_state_kcalmol = 0.0   # folded in above
+    result.dG_restraint_on_real_kcalmol = dG_restraint_on_real
+    result.restraint_on_real_included = dG_restraint_on_real is not None
+    # Provisional status is carried by the `restraint_on_real_included`
+    # flag (machine-readable) and surfaced in summary() (human-readable)
+    # — NOT via `reason`, which is the failure channel and is invisible
+    # on an ok=True result.
     result.uncertainty_kcalmol = unc
     result.ghmc_acceptance_complex = list(cx_r.ghmc_acceptance)
     result.ghmc_acceptance_solvent = list(sv_r.ghmc_acceptance)
@@ -1175,6 +1431,12 @@ def main(argv=None) -> int:
                           "(default 4184 ≈ 10 kcal/mol/Å²)")
     dgp.add_argument("--sample", action="store_true",
                      help="run MD (slow on CPU; intended for GPU)")
+    dgp.add_argument(
+        "--restraint-on-real-leg", action="store_true",
+        help="also sample the restraint-on-real-bound leg (BUG_AUDIT "
+             "#4) so absolute ΔG_bind is a closed cycle. Adds ~50%% "
+             "wall time; needed for trustworthy absolute affinity "
+             "(ΔΔG does not need it).")
     dgp.add_argument("--force-field-path", default="amber14",
                      choices=["amber14", "smirnoff"],
                      help="amber14 (default; fast, AMBER14 protein "
@@ -1265,6 +1527,12 @@ def main(argv=None) -> int:
              "for restarting a crashed multi-hour run without "
              "losing completed compounds.")
     bp.add_argument(
+        "--restraint-on-real-leg", action="store_true",
+        help="also sample the restraint-on-real-bound leg (BUG_AUDIT "
+             "#4) for a closed absolute-ΔG cycle. Adds ~50%% wall "
+             "time; required for trustworthy absolute affinity, not "
+             "for ΔΔG ranking. Enable for the Milestone-B absolute gate.")
+    bp.add_argument(
         "--replica-exchange", action="store_true",
         help="use openmmtools.multistate.ReplicaExchangeSampler "
              "(Hamiltonian replica exchange between adjacent "
@@ -1300,7 +1568,9 @@ def main(argv=None) -> int:
             padding_nm=args.padding,
             restraint_k_kJ_per_nm2=args.restraint_k,
             sample=args.sample,
-            force_field_path=args.force_field_path)
+            force_field_path=args.force_field_path,
+            include_restraint_on_real_leg=getattr(
+                args, "restraint_on_real_leg", False))
     elif args.cmd == "ddg":
         r = compute_relative_binding_ddg(
             args.smiles_a, args.smiles_b, args.receptor_pdb,
@@ -1459,7 +1729,9 @@ def _run_bench(args) -> int:
                 sample_stride=args.sample_stride,
                 force_field_path=args.force_field_path,
                 use_replica_exchange=getattr(
-                    args, "replica_exchange", False))
+                    args, "replica_exchange", False),
+                include_restraint_on_real_leg=getattr(
+                    args, "restraint_on_real_leg", False))
         except KeyboardInterrupt:
             # Graceful exit: the crash-proof CSV (previous commit)
             # already has every completed compound. Just announce
