@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock.to_md import render_markdown  # noqa: E402
+from cellsim.dock.to_md import render_markdown  # noqa: E402
 
 
 def test_render_markdown_small_table():

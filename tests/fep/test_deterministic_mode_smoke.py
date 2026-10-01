@@ -23,9 +23,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 def test_deterministic_flag_is_plumbed_through_entry_points():
-    from src.fep import compute_hydration_dg
-    from src.fep.binding import compute_absolute_binding_dg
-    from src.fep.sampling import (
+    from cellsim.fep import compute_hydration_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.sampling import (
         sample_alchemical_windows, sample_restraint_coupling_dg)
     for fn in (sample_alchemical_windows, sample_restraint_coupling_dg,
                compute_hydration_dg, compute_absolute_binding_dg):
@@ -37,8 +37,8 @@ def test_deterministic_mode_is_bitwise_reproducible():
     """Two deterministic runs of the same input must give bitwise-equal
     ΔG. Before deterministic mode, two seed=1 runs differed by ~1
     kcal/mol on every platform."""
-    from src.fep import _build_alchemical_legs
-    from src.fep.sampling import sample_alchemical_windows
+    from cellsim.fep import _build_alchemical_legs
+    from cellsim.fep.sampling import sample_alchemical_windows
 
     # Use the VACUUM leg of ethanol: 9 atoms, no water box, so the
     # single-threaded Reference platform stays fast (~1 min), yet it has

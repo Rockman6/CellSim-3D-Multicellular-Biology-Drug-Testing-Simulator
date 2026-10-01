@@ -1,6 +1,6 @@
 """Criterion-8 reference scene must render from the real model.
 
-Headless render check: the viewer drives the validated src/cell engine
+Headless render check: the viewer drives the validated cellsim/cell engine
 (not a re-implementation) and produces a non-trivial PNG.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 def test_reference_scene_renders(tmp_path):
     import matplotlib
     matplotlib.use("Agg")
-    from src.cell.viewer import render_disposition_scene
+    from cellsim.cell.viewer import render_disposition_scene
 
     out = tmp_path / "scene.png"
     # Small MC budget keeps the test fast; the physics path is identical.
@@ -29,6 +29,6 @@ def test_committed_reference_scene_exists():
     """The checked-in reference scene is the criterion-8 artifact."""
     png = REPO_ROOT / "docs" / "images" / "cell_disposition_scene.png"
     assert png.exists(), (
-        "run `python src/cell/viewer.py docs/images/"
+        "run `python cellsim/cell/viewer.py docs/images/"
         "cell_disposition_scene.png` to regenerate the reference scene")
     assert png.stat().st_size > 20_000

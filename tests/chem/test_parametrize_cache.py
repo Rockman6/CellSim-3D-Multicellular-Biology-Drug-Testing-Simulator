@@ -24,8 +24,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.chem import parametrize_smiles  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.chem import parametrize_smiles  # noqa: E402
 
 
 def test_parametrize_cache_roundtrip():

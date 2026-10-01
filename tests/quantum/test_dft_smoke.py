@@ -1,6 +1,6 @@
 """Layer 1.4 DFT smoke — PySCF B3LYP/def2-SVP on small molecules.
 
-Verifies src.quantum.dft on a minimal molecule (methane) where
+Verifies cellsim.quantum.dft on a minimal molecule (methane) where
 the DFT numbers are well-known from the literature.
 
 Gates:
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.quantum import dft_single_point  # noqa: E402
+from cellsim.quantum import dft_single_point  # noqa: E402
 
 
 def test_dft_methane():

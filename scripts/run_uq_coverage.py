@@ -58,7 +58,7 @@ def _wilson(k: int, n: int, z: float = 1.96) -> tuple:
 
 def collect_pairs(bundles: list, exhaustiveness: int, cpu: int) -> list:
     """Dock each bundle; return [(name, pred, expt, bundle)] for ok points."""
-    from src.uq import run_calibration
+    from cellsim.uq import run_calibration
 
     pairs = []
     for b in bundles:
@@ -87,7 +87,7 @@ def collect_pairs(bundles: list, exhaustiveness: int, cpu: int) -> list:
 
 def coverage_report(pairs: list, alpha: float, seed: int) -> dict:
     """Split-conformal fit on half, measure coverage on the held-out half."""
-    from src.uq import ConformalBounds
+    from cellsim.uq import ConformalBounds
 
     rng = random.Random(seed)
     shuffled = pairs[:]

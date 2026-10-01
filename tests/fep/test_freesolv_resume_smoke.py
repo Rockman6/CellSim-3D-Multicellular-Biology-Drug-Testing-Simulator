@@ -22,7 +22,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from src.fep.freesolv_validate import (
+from cellsim.fep.freesolv_validate import (
     FreeSolvPoint,
     _CSV_COLS,
     _load_resume_rows,

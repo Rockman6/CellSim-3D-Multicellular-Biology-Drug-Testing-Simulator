@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cell import (  # noqa: E402
+from cellsim.cell import (  # noqa: E402
     Permeability,
     spherical_cell_geometry,
     EffluxPump,
@@ -61,7 +61,7 @@ def test_saturating_dose_overwhelms_the_pump():
 
 
 def test_pump_from_michaelis_prior():
-    from src.bridge import affinity_to_michaelis
+    from cellsim.bridge import affinity_to_michaelis
     prior = affinity_to_michaelis(kcat_per_s=10.0, KM_M=2e-6)
     pump = pump_from_michaelis_prior(prior, pump_copies=1e5,
                                      cell_volume_L=4e-12)

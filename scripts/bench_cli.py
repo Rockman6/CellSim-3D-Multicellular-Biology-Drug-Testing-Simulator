@@ -43,8 +43,8 @@ def _run_mini_bench():
 
 
 def _run_calibrations(exh: int = 32, cache_path: str | None = None):
-    from src.cache import Cache
-    from src.uq import run_calibration
+    from cellsim.cache import Cache
+    from cellsim.uq import run_calibration
 
     print()
     print("=" * 70)

@@ -30,8 +30,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.uq.calibration import run_calibration  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.uq.calibration import run_calibration  # noqa: E402
 
 
 YAML = REPO_ROOT / "benchmarks" / "dock" / "egfr_calibration.yaml"

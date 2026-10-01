@@ -56,7 +56,7 @@ def dg_spread(samples):
 
 
 def main(argv=None) -> int:
-    from src.uq import sobol_dock
+    from cellsim.uq import sobol_dock
 
     ap = argparse.ArgumentParser(description=__doc__)
     # Default: trypsin/benzamidine — the well-behaved, trustworthy class,
@@ -64,7 +64,7 @@ def main(argv=None) -> int:
     ap.add_argument("--receptor", default="benchmarks/dock/3ptb.pdb")
     ap.add_argument("--smiles", default="c1ccc(cc1)C(=N)N")  # benzamidine
     # 3ptb/BEN pocket centroid (benzamidine bounding-box centre),
-    # extracted via src.dock.extract_hetatm_ligand at audit time.
+    # extracted via cellsim.dock.extract_hetatm_ligand at audit time.
     ap.add_argument("--center", nargs=3, type=float,
                     default=[-1.86, 14.37, 16.75])
     ap.add_argument("--box", nargs=3, type=float,

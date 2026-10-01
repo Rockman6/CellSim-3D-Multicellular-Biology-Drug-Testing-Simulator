@@ -1,6 +1,6 @@
 """Layer 1.6 conformal smoke — split-conformal CI on synthetic data.
 
-Verifies src.uq.conformal.ConformalBounds:
+Verifies cellsim.uq.conformal.ConformalBounds:
   - calibrate runs on N=50 synthetic (pred, truth) pairs
   - returned quantile q is positive and finite
   - interval(pred) brackets pred with half-width q
@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.uq import ConformalBounds  # noqa: E402
+from cellsim.uq import ConformalBounds  # noqa: E402
 
 
 def test_conformal_synthetic():

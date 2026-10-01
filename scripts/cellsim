@@ -4,7 +4,7 @@
 # Run `cellsim <subcommand> [--help]` to see per-subcommand options.
 # Activate the cellsim conda env first (conda activate cellsim).
 #
-# This script just dispatches to `python -m src.<pkg>.<module>`
+# This script just dispatches to `python -m cellsim.<pkg>.<module>`
 # with the remaining args. It's intentionally a shell wrapper, not
 # a Python console-script entry point, so it works without
 # pip-installing the package.
@@ -35,90 +35,90 @@ usage: cellsim <subcommand> [args...]
 
   dock        batch docking screen (Layer 1.3)
                 ranked CSV ± MC error bars ± auto-profile PNGs
-                -> src/dock/batch.py
+                -> cellsim/dock/batch.py
 
   dock-one    single-compound dock + biologist viewer
-                -> src/dock/viewer.py
+                -> cellsim/dock/viewer.py
 
   off-target  dock one compound into N receptors (selectivity screen)
-                -> src/dock/off_target.py
+                -> cellsim/dock/off_target.py
 
   triage-png  triage-breakdown PNG dashboard from a batch CSV
-                -> src/dock/triage_viewer.py
+                -> cellsim/dock/triage_viewer.py
 
   shortlist   filter a batch CSV to only follow_up + review rows
-                -> src/dock/shortlist.py
+                -> cellsim/dock/shortlist.py
 
   to-md       batch CSV -> markdown table (lab-notebook paste)
-                -> src/dock/to_md.py
+                -> cellsim/dock/to_md.py
 
   redock      single-pair re-dock with crystal-RMSD
-                -> src/dock/vina.py
+                -> cellsim/dock/vina.py
 
   pocket      fpocket auto binding-site detection
-                -> src/dock/pocket_detect.py
+                -> cellsim/dock/pocket_detect.py
 
   refine      post-dock OpenMM ligand-only minimisation
                 (currently python module only, no CLI yet)
 
   profile     one-page drug profile dashboard
                 (3D + SoM + HOMO/LUMO + ADMET + Ro5 callouts)
-                -> src/chem/profile.py
+                -> cellsim/chem/profile.py
 
   admet       Lipinski / QED / logS / TPSA descriptors
-                -> src/chem/admet.py
+                -> cellsim/chem/admet.py
 
   parametrize SMILES -> parametrised OpenMM system
-                -> src/chem/parametrize.py
+                -> cellsim/chem/parametrize.py
 
   xtb         xTB GFN2 single-point + HOMO/LUMO + charges
-                -> src/quantum/xtb.py
+                -> cellsim/quantum/xtb.py
 
   dft         PySCF B3LYP/def2-SVP single-point (rigorous QM)
-                -> src/quantum/dft.py
+                -> cellsim/quantum/dft.py
 
   som         CYP3A4 site-of-metabolism prediction (BDE)
-                -> src/quantum/metabolism.py
+                -> cellsim/quantum/metabolism.py
 
   som-validate  check SoM predictor against literature sites
-                -> src/quantum/som_validation.py
+                -> cellsim/quantum/som_validation.py
 
   cyp-inhibit  CYP3A4 inhibition / DDI-risk screen (1TQN dock)
-                -> src/dock/cyp_inhibition.py
+                -> cellsim/dock/cyp_inhibition.py
 
   fep-hyd     alchemical hydration ΔG for a single SMILES —
                 scaffold-only primitive; real hydration gate is
                 'cellsim fep-freesolv'
-                -> src/fep/__init__.py
+                -> cellsim/fep/__init__.py
 
   fep-freesolv FreeSolv 12-compound hydration accuracy gate
                 (Milestone A, MAE ≤ 1.5 kcal/mol)
-                -> src/fep/freesolv_validate.py
+                -> cellsim/fep/freesolv_validate.py
 
   fep-report  analyse a FEP run (hydration or binding) — tarball,
                 run dir, or CSV — emit pass/fail verdict +
                 parity PNG + normalised CSV
-                -> src/fep/report.py
+                -> cellsim/fep/report.py
 
   fep-binding absolute or relative binding ΔG (Milestone B; DDM
                 via amber14 + SMIRNOFF-ligand). Subcommands:
                 validate / dg / ddg / bench
-                -> src/fep/binding.py
+                -> cellsim/fep/binding.py
 
   md-ligand   vacuum Langevin MD on a SMILES
-                -> src/md/simulate.py
+                -> cellsim/md/simulate.py
 
   md-protein  PDB -> solvated OpenMM system + short MD
-                -> src/md/protein.py
+                -> cellsim/md/protein.py
 
   md-view     animated protein trajectory viewer
-                -> src/md/protein_viewer.py
+                -> cellsim/md/protein_viewer.py
 
   uq-mc       Monte-Carlo over Vina seeds (ΔG ± CI)
-                -> src/uq/dock_mc.py
+                -> cellsim/uq/dock_mc.py
 
   uq-sobol    Sobol sensitivity over docking inputs
-                -> src/uq/sobol.py
+                -> cellsim/uq/sobol.py
 
   fetch-pdb   download a PDB by ID from RCSB
                 -> scripts/fetch_pdb.py
@@ -205,31 +205,31 @@ case "${1:-}" in
         shift; exec python scripts/calib_cli.py "$@" ;;
     bench)
         shift; exec python scripts/bench_cli.py "$@" ;;
-    dock)        shift; exec python -m src.dock.batch "$@" ;;
-    dock-one)    shift; exec python -m src.dock.viewer "$@" ;;
-    off-target)  shift; exec python -m src.dock.off_target "$@" ;;
-    triage-png)  shift; exec python -m src.dock.triage_viewer "$@" ;;
-    shortlist)   shift; exec python -m src.dock.shortlist "$@" ;;
-    to-md)       shift; exec python -m src.dock.to_md "$@" ;;
-    redock)      shift; exec python -m src.dock.vina "$@" ;;
-    pocket)      shift; exec python -m src.dock.pocket_detect "$@" ;;
-    profile)     shift; exec python -m src.chem.profile "$@" ;;
-    admet)       shift; exec python -m src.chem.admet "$@" ;;
-    parametrize) shift; exec python -m src.chem.parametrize "$@" ;;
-    xtb)         shift; exec python -m src.quantum.xtb "$@" ;;
-    dft)         shift; exec python -m src.quantum.dft "$@" ;;
-    som)         shift; exec python -m src.quantum.metabolism "$@" ;;
-    som-validate) shift; exec python -m src.quantum.som_validation "$@" ;;
-    cyp-inhibit)  shift; exec python -m src.dock.cyp_inhibition "$@" ;;
-    fep-hyd)     shift; exec python -m src.fep "$@" ;;
-    fep-freesolv) shift; exec python -m src.fep.freesolv_validate "$@" ;;
-    fep-report)   shift; exec python -m src.fep.report "$@" ;;
-    fep-binding)  shift; exec python -m src.fep.binding "$@" ;;
-    md-ligand)   shift; exec python -m src.md.simulate "$@" ;;
-    md-protein)  shift; exec python -m src.md.protein "$@" ;;
-    md-view)     shift; exec python -m src.md.protein_viewer "$@" ;;
-    uq-mc)       shift; exec python -m src.uq.dock_mc "$@" ;;
-    uq-sobol)    shift; exec python -m src.uq.sobol "$@" ;;
+    dock)        shift; exec python -m cellsim.dock.batch "$@" ;;
+    dock-one)    shift; exec python -m cellsim.dock.viewer "$@" ;;
+    off-target)  shift; exec python -m cellsim.dock.off_target "$@" ;;
+    triage-png)  shift; exec python -m cellsim.dock.triage_viewer "$@" ;;
+    shortlist)   shift; exec python -m cellsim.dock.shortlist "$@" ;;
+    to-md)       shift; exec python -m cellsim.dock.to_md "$@" ;;
+    redock)      shift; exec python -m cellsim.dock.vina "$@" ;;
+    pocket)      shift; exec python -m cellsim.dock.pocket_detect "$@" ;;
+    profile)     shift; exec python -m cellsim.chem.profile "$@" ;;
+    admet)       shift; exec python -m cellsim.chem.admet "$@" ;;
+    parametrize) shift; exec python -m cellsim.chem.parametrize "$@" ;;
+    xtb)         shift; exec python -m cellsim.quantum.xtb "$@" ;;
+    dft)         shift; exec python -m cellsim.quantum.dft "$@" ;;
+    som)         shift; exec python -m cellsim.quantum.metabolism "$@" ;;
+    som-validate) shift; exec python -m cellsim.quantum.som_validation "$@" ;;
+    cyp-inhibit)  shift; exec python -m cellsim.dock.cyp_inhibition "$@" ;;
+    fep-hyd)     shift; exec python -m cellsim.fep "$@" ;;
+    fep-freesolv) shift; exec python -m cellsim.fep.freesolv_validate "$@" ;;
+    fep-report)   shift; exec python -m cellsim.fep.report "$@" ;;
+    fep-binding)  shift; exec python -m cellsim.fep.binding "$@" ;;
+    md-ligand)   shift; exec python -m cellsim.md.simulate "$@" ;;
+    md-protein)  shift; exec python -m cellsim.md.protein "$@" ;;
+    md-view)     shift; exec python -m cellsim.md.protein_viewer "$@" ;;
+    uq-mc)       shift; exec python -m cellsim.uq.dock_mc "$@" ;;
+    uq-sobol)    shift; exec python -m cellsim.uq.sobol "$@" ;;
     fetch-pdb)    shift; exec python scripts/fetch_pdb.py "$@" ;;
     fetch-chembl) shift; exec python scripts/fetch_chembl_sample.py "$@" ;;
     *)

@@ -1,6 +1,6 @@
 """Layer 1.7 calibration smoke — CellSim vs published K_d.
 
-Runs src.uq.calibration on the bundled streptavidin set (4
+Runs cellsim.uq.calibration on the bundled streptavidin set (4
 published binders with K_d spanning 10^-14 to 10^-5 M).
 
 Gates:
@@ -25,8 +25,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.uq import run_calibration  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.uq import run_calibration  # noqa: E402
 
 
 CAL_YAML = REPO_ROOT / "benchmarks" / "dock" / "streptavidin_calibration.yaml"

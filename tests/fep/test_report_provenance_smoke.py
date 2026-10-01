@@ -19,7 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from src.fep.report import (
+from cellsim.fep.report import (
     _parse_run_log,
     _scan_sibling_logs_for_provenance,
 )

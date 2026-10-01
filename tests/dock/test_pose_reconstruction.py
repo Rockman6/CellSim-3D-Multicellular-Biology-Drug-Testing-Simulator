@@ -27,7 +27,7 @@ BOX = (20.0, 20.0, 20.0)
 
 
 def _dock_top_pose():
-    from src.dock import dock_ligand
+    from cellsim.dock import dock_ligand
     r = dock_ligand(PDB, BIOTIN, center_A=CENTER, box_size_A=BOX,
                     exhaustiveness=8, num_modes=5, seed=1, cpu=2)
     assert r.ok, r.reason
@@ -47,7 +47,7 @@ def test_reconstructed_mol_has_sane_bond_geometry():
     plausible heavy-atom bond lengths (no atom-order scramble)."""
     import numpy as np
     from rdkit import Chem
-    from src.dock.validity import _build_pose_mol
+    from cellsim.dock.validity import _build_pose_mol
 
     pose = _dock_top_pose()
     mol = _build_pose_mol(pose, BIOTIN)

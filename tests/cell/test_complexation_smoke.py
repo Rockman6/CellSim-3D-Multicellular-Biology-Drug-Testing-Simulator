@@ -12,8 +12,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.bridge import binding_to_hill  # noqa: E402
-from src.cell import complex_equilibrium  # noqa: E402
+from cellsim.bridge import binding_to_hill  # noqa: E402
+from cellsim.cell import complex_equilibrium  # noqa: E402
 
 
 def _pair_prior(dG, rec="benchmarks/dock/3ptb.pdb", sigma=0.2):
@@ -62,7 +62,7 @@ def test_trust_rides_through():
 
 
 def test_rejects_non_hill_and_negative():
-    from src.bridge import affinity_to_michaelis
+    from cellsim.bridge import affinity_to_michaelis
     mm = affinity_to_michaelis(kcat_per_s=1.0, KM_M=1e-5)
     try:
         complex_equilibrium(mm, 1e-6, 1e-6)

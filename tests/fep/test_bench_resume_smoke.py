@@ -70,7 +70,7 @@ def test_resume_skips_completed_compounds():
         _seed_csv(csv_path, completed_names=["methane"])
 
         r = subprocess.run(
-            ["python", "-m", "src.fep.binding", "bench",
+            ["python", "-m", "cellsim.fep.binding", "bench",
              str(yaml),
              "--padding", "0.6",
              "--out-csv", str(csv_path),
@@ -132,7 +132,7 @@ def test_ctrl_c_exits_cleanly_with_partial_csv():
         harness = f"""
 import sys
 sys.path.insert(0, "{REPO_ROOT}")
-import src.fep.binding as binding
+import cellsim.fep.binding as binding
 _real = binding.compute_absolute_binding_dg
 _counter = {{"n": 0}}
 def mock(*a, **kw):
@@ -183,7 +183,7 @@ def test_ctrl_c_without_outcsv_warns_data_lost():
         harness = f"""
 import sys
 sys.path.insert(0, "{REPO_ROOT}")
-import src.fep.binding as binding
+import cellsim.fep.binding as binding
 _real = binding.compute_absolute_binding_dg
 _counter = {{"n": 0}}
 def mock(*a, **kw):
@@ -220,7 +220,7 @@ def test_resume_without_flag_overwrites():
         _seed_csv(csv_path, completed_names=["methane"])
 
         r = subprocess.run(
-            ["python", "-m", "src.fep.binding", "bench",
+            ["python", "-m", "cellsim.fep.binding", "bench",
              str(yaml),
              "--padding", "0.6",
              "--out-csv", str(csv_path)],   # no --resume

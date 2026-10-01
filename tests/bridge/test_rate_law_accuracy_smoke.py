@@ -25,7 +25,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.bridge import binding_to_hill  # noqa: E402
+from cellsim.bridge import binding_to_hill  # noqa: E402
 
 RT = 0.0019872041 * 298.15
 

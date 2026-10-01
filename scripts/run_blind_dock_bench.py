@@ -116,7 +116,7 @@ def _center_box(coords: list[dict], pad: float = 8.0,
 
 def run_one(entry: dict, *, exhaustiveness: int, num_modes: int,
             seed: int, cpu: int, refine_poses: bool = False) -> dict:
-    from src.dock import (
+    from cellsim.dock import (
         dock_ligand, attach_crystal_rmsd, attach_posebusters,
         extract_hetatm_ligand, refine_pose_openff)
 

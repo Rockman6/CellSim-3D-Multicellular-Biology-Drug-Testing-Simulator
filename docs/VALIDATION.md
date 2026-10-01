@@ -69,7 +69,7 @@ FreeSolv-12 hydration, 11 windows × 50 ps per leg, CPU, tag
   MBAR error bar, and residuals grow with solute size: methane −0.2,
   ethane −1.6, propane −1.6, benzene −1.9, pyridine −3.1, toluene −3.7.
 - Cause identified 2026-10-01: the solvated system is a packmol box run
-  in NVT; nothing in `src/fep` applies a barostat or equilibrates the
+  in NVT; nothing in `cellsim/fep` applies a barostat or equilibrates the
   density. This is a systematic error, not sampling noise.
 - Binding ΔG (double decoupling) has never produced a sampled number on a
   real binder. PR #10 fixed 13 audited defects, including a ~10 kcal/mol
@@ -98,7 +98,7 @@ cisplatin in every run. Units are "sim units" in several subsystems
 (`OLD/UNITS.md`). Treat `OLD/` as a reference implementation of the
 pathway topology and the citations, not as a validated predictor.
 
-## Cell-level modules (`src/cell`)
+## Cell-level modules (`cellsim/cell`)
 
 22 standalone tests, each asserting an analytic limit (steady state
 reduces to each component, transient converges to steady state, mass

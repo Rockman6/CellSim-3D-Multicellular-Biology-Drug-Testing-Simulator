@@ -19,8 +19,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.bridge import binding_to_hill  # noqa: E402
-from src.cell import (  # noqa: E402
+from cellsim.bridge import binding_to_hill  # noqa: E402
+from cellsim.cell import (  # noqa: E402
     Permeability,
     spherical_cell_geometry,
     occupancy_from_prior,

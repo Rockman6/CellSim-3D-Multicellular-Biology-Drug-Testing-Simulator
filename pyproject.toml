@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cellsim"
+version = "1.4.0"
+description = "Physics-first, uncertainty-honest in-silico cell and drug-response simulator"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Henry" }]
+keywords = ["systems-biology", "pharmacology", "docking", "pkpd", "cell-simulation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+# The scientific stack (RDKit, OpenMM, OpenFF, AutoDock Vina, xTB, fpocket,
+# AmberTools, PoseBusters, ...) is conda-only or conda-first, so it is
+# declared in environment.yml, not here. Workflow:
+#     mamba env create -f environment.yml && conda activate cellsim
+#     pip install -e .          # registers the package + the `cellsim` command
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator"
+Changelog = "https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/blob/main/CHANGELOG.md"
+
+[project.scripts]
+cellsim = "cellsim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cellsim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-q"

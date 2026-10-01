@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fep.binding import (  # noqa: E402
+from cellsim.fep.binding import (  # noqa: E402
     _harmonic_restraint_free_energy_kcalmol,
     _build_complex_alchemical_system,
     _build_complex_alchemical_system_amber14,
@@ -175,7 +175,7 @@ def test_restraint_correction_is_r0_aware():
     r0-aware restraint volume. At r0=0 it equals the Gaussian value;
     for r0>0 the accessible shell is larger so the positive correction
     shrinks monotonically."""
-    from src.fep.binding import (
+    from cellsim.fep.binding import (
         _harmonic_restraint_free_energy_kcalmol as corr,
         _harmonic_restraint_volume_nm3 as vol,
     )
@@ -196,7 +196,7 @@ def test_restraint_correction_is_r0_aware():
 
 
 def test_restraint_r0_from_geometry_is_placement_to_anchor_distance():
-    from src.fep.binding import _restraint_r0_from_geometry
+    from cellsim.fep.binding import _restraint_r0_from_geometry
     import numpy as np
     # Three anchor atoms with centroid at origin; placement 0.3 nm away.
     pos = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
@@ -236,7 +236,7 @@ def test_restraint_on_real_leg_defaults_provisional():
     (not silent) approximation. A fresh result carries the field as
     None with restraint_on_real_included=False so downstream can tell
     the absolute ΔG_bind is provisional."""
-    from src.fep.binding import BindingDGResult
+    from cellsim.fep.binding import BindingDGResult
     r = BindingDGResult(smiles="C", receptor="x.pdb", ok=True)
     assert r.dG_restraint_on_real_kcalmol is None
     assert r.restraint_on_real_included is False
@@ -244,7 +244,7 @@ def test_restraint_on_real_leg_defaults_provisional():
 
 def test_compute_absolute_binding_dg_exposes_restraint_leg_flag():
     import inspect
-    from src.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
     sig = inspect.signature(compute_absolute_binding_dg)
     p = sig.parameters.get("include_restraint_on_real_leg")
     assert p is not None and p.default is False
@@ -329,7 +329,7 @@ def test_terminal_missing_residue_filter():
 def test_compute_absolute_binding_dg_force_field_path_flag():
     """Verify the force_field_path kwarg dispatches to the right
     builder. Both should scaffold_both_legs ok; timing differs."""
-    from src.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
     pdb = REPO_ROOT / "benchmarks/md/1ubq.pdb"
 
     r_amber = compute_absolute_binding_dg(

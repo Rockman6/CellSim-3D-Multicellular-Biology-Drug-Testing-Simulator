@@ -1,4 +1,4 @@
-"""Regression tests for src.fep.binding.estimate_sampling_wall_hours.
+"""Regression tests for cellsim.fep.binding.estimate_sampling_wall_hours.
 
 Purpose: prevent wasted GPU runs. Biologists about to spend 6-48
 hours of GPU time on a binding FEP benefit from a cost preview;
@@ -26,7 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from src.fep.binding import (
+from cellsim.fep.binding import (
     estimate_sampling_wall_hours,
     format_wall_estimate_block,
 )

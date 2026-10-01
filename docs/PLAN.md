@@ -25,7 +25,7 @@ What was verified before writing this plan (details in
 - The legacy simulator builds headless and passes its 8 benchmarks at
   two seeds, but cells never execute death under cisplatin and the p53
   period is 3.0 h against 5.5 h in the literature.
-- `src/cell` is 20 sound textbook PK/PD modules with no shared state and
+- `cellsim/cell` is 20 sound textbook PK/PD modules with no shared state and
   demo inputs typed by hand.
 - 204 000 words of documentation for 25 000 lines of Python.
 
@@ -61,7 +61,7 @@ re-implementing free-energy codes.
 
 No UI work until this exists.
 
-1. `src/cell/engine.py`: one `CellState` dataclass, one integrator
+1. `cellsim/cell/engine.py`: one `CellState` dataclass, one integrator
    (SciPy LSODA or a fixed-step RK4 with sub-stepping), one `step(dt)`.
    Modules plug into it instead of being free functions.
 2. Port from `OLD/`: Novak-Tyson cycle, ATM → p53 ⇄ MDM2 (3-variable
@@ -69,7 +69,7 @@ No UI work until this exists.
    the published rate constants already cited there. Re-tune the p53
    period to 5.5 h. Fix the XIAP/Smac balance so caspase-3 execution
    actually kills the cell.
-3. Drug input: PK/disposition from `src/cell` (permeation, pH trapping,
+3. Drug input: PK/disposition from `cellsim/cell` (permeation, pH trapping,
    efflux, binding sink) feeding occupancy at the target, then fate.
    Affinity and ADME from a small curated table with provenance
    (ChEMBL / BindingDB / literature), docking as a flagged fallback.
@@ -80,14 +80,14 @@ No UI work until this exists.
    (JSON or Arrow). Any UI is a renderer of this stream.
 6. A Colab notebook that reproduces the validation figure from a clean
    environment.
-7. Packaging: `pyproject.toml`, console script, pytest collection; the
-   `src` package becomes `cellsim`.
+7. Packaging (done in Phase 0): `pyproject.toml`, the `cellsim` console
+   script, pytest collection; the `src` package is now `cellsim`.
 
 ### Phase 2, the dish (target April 2027)
 
 - Space: lattice or off-lattice agents, diffusion of oxygen, glucose
   and drug, a vessel source, contact inhibition. Reuse
-  `src/cell/tissue.py` and `agents.py`.
+  `cellsim/cell/tissue.py` and `agents.py`.
 - Validate on spheroid growth curves from the literature and on the
   Cell Tracking Challenge HeLa counts already in the repository.
 - New UI, web first (three.js or WebGPU) so it runs anywhere, reading
@@ -105,8 +105,8 @@ No UI work until this exists.
 ## Keep / kill
 
 **Keep.** Novak-Tyson and p53 biology from `OLD/` (as source material),
-the six headless validators as regression tests, `src/cell`,
-`src/bridge`, ADMET descriptors, the cache, docking as a plugin with its
+the six headless validators as regression tests, `cellsim/cell`,
+`cellsim/bridge`, ADMET descriptors, the cache, docking as a plugin with its
 reliability table, the docking blind set and calibration bundles.
 
 **Kill or freeze.** Hand-rolled binding FEP as a product path (frozen as

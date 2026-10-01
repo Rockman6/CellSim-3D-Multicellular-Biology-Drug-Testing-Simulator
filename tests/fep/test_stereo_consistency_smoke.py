@@ -27,7 +27,7 @@ def test_build_alchemical_legs_accepts_undefined_stereo():
     """`_build_alchemical_legs` is the production solvent/vacuum leg
     for both binding (smirnoff path) and hydration. It must not raise
     on an undefined-stereo ligand."""
-    from src.fep import _build_alchemical_legs
+    from cellsim.fep import _build_alchemical_legs
     out = _build_alchemical_legs(UNDEF_STEREO_SMILES)
     # (vac_alch, solv_alch, vac_top, solv_top, vac_pos, solv_pos, n)
     assert len(out) == 7
@@ -40,7 +40,7 @@ def test_build_alchemical_legs_accepts_undefined_stereo():
 def test_hydration_scaffold_accepts_undefined_stereo():
     """The Phase-1 hydration scaffold must also accept undefined
     stereo (same fix site, __init__.py:219)."""
-    from src.fep import ligand_hydration_fep
+    from cellsim.fep import ligand_hydration_fep
     r = ligand_hydration_fep(UNDEF_STEREO_SMILES)
     assert r.ok, f"scaffold failed on undefined-stereo ligand: {r.reason}"
     assert "both_legs" in (r.phase or "") or r.phase == "scaffolded", (

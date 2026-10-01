@@ -263,7 +263,7 @@ def test_fail_case_fixture_hydration():
         tmp = Path(tmp)
         # Generate report via fep-report on the bundled fixture.
         r = subprocess.run(
-            ["python", "-m", "src.fep.report",
+            ["python", "-m", "cellsim.fep.report",
              "tests/fep/fixtures/fail_case",
              "--yaml", "benchmarks/fep/freesolv_12.yaml",
              "--out-dir", str(tmp),

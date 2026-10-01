@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cell import (  # noqa: E402
+from cellsim.cell import (  # noqa: E402
     CellCycle, DrugAction, ScheduleBlock,
     growth_rate_per_h, stable_phase_fractions, evaluate_schedule,
     simulate_schedule_transient, best_second_dose_delay,
