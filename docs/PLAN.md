@@ -106,8 +106,22 @@ No UI work until this exists.
    Fit the one potency gain per drug on the p53 wild-type lines; predict
    the mutant lines with nothing re-tuned. Publish the table including
    every miss.
-5. Headless API: `engine.run(schedule) -> per-tick state records`
-   (JSON or Arrow). Any UI is a renderer of this stream.
+
+   *First cycle done* (`scripts/validate_gdsc.py`, results in
+   `docs/VALIDATION.md`). Nine of ten held-out IC50s land inside the
+   GDSC span, but a constant-IC50 null does equally well there, and on
+   log error the engine beats the null only for paclitaxel. So the
+   potency scale is right and cross-line discrimination is not yet.
+   **The Phase-1 exit gate is therefore: beat the null's log10 RMSE on
+   held-out lines for at least two of the three drugs.** Next, in
+   order: a p53-independent damage-death route; line-specific inputs
+   from CCLE/DepMap expression (ABCB1, BCL2 family, repair genes);
+   a shallower death response.
+5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
+   population under a piecewise-constant dosing schedule (wash-outs
+   included) and emits per-tick JSON Lines, schema
+   `cellsim.cell.stream/v1` (`cellsim cell-stream`). Any UI is a
+   renderer of this stream.
 6. A Colab notebook that reproduces the validation figure from a clean
    environment.
 7. Packaging (done in Phase 0): `pyproject.toml`, the `cellsim` console

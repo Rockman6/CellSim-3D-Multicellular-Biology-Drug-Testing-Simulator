@@ -1,5 +1,42 @@
 # CellSim — Changelog
 
+## Unreleased — Phase 1, first validation cycle
+
+### Added
+- `cellsim/cell/engine.py`, the single-cell drug-response engine: the
+  CDK/cyclin cycle, ATM → p53 ⇄ MDM2 → p21 / PUMA → BAX → MOMP → caspase,
+  ported from `OLD/` with cited constants. Cells now actually die (the
+  prototype's caspase-3 was clamped at 0.04) and the p53 pulse period is
+  4.9 h (published 5.5 h; prototype 3.0 h).
+- Cell-to-cell variability: log-normal (σ 0.3) multipliers on each cell's
+  Bcl-2 reserve and drug uptake (Spencer 2009). Widens the 85→15 %
+  viability window from 1.2× to about 2×; still far steeper than a Hill
+  slope of 1, documented as open.
+- Dosing schedules and a UI contract: `cellsim/cell/stream.py` emits
+  per-tick JSON Lines (schema `cellsim.cell.stream/v1`) for a population
+  under a piecewise-constant schedule, wash-outs included.
+  `cellsim cell-stream`; also `cellsim cell-sim` for a dose-response.
+- `scripts/gdsc_reference.py` (30 GDSC1/GDSC2 screens, replicate spread)
+  and `scripts/validate_gdsc.py` (`cellsim validate-gdsc`): fit one
+  constant per drug on A549 + MCF7, predict every line, compare with a
+  constant-IC50 null.
+
+### Validation result
+- 9/10 held-out IC50s inside GDSC's replicate span, A549 cisplatin
+  9.1 µM vs 9.8 measured. But a constant IC50 also passes 9/10, and on
+  log error the engine beats it only for paclitaxel: TP53-mutant lines
+  come out too resistant to DNA damage. New Phase-1 exit gate: beat the
+  null's log10 RMSE for at least two of three drugs.
+
+### Changed
+- `cellsim/cell/library.py`: placeholder potencies replaced by the fitted
+  values (refitting reproduces them within 0.3 %). Paclitaxel's fitted
+  constant is now its effective intracellular accumulation, because the
+  mitotic-arrest threshold, not the death rate, sets its 72 h IC50.
+
+### Fixed
+- `cellsim cell-sim` crashed on a wrong result-field name.
+
 ## v1.4 — 2026-10-01 — Phase 0: one identity, green CI, July fixes merged
 
 The project is refocused on one product: a validated, interactive

@@ -1,0 +1,16 @@
+drug,cell_line,p53_functional,role,reference_kind,reference_ic50_uM,accept_lo_uM,accept_hi_uM,n_screens,predicted_ic50_uM,fold_error,pass,null_pass
+cisplatin,A549,True,fit,value,9.7673,3.25577,29.3019,1,8.96887,0.918,True,True
+cisplatin,HT-29,False,held-out,lower_bound,10.0,3.33333,inf,3,74.32093,,True,True
+cisplatin,HeLa,True,held-out,value,6.8657,2.28857,20.5971,1,13.8162,2.012,True,True
+cisplatin,MCF7,True,held-out,lower_bound,10.0,3.33333,inf,3,9.30572,,True,True
+cisplatin,MDA-MB-231,False,held-out,lower_bound,10.0,3.33333,inf,3,78.92167,,True,True
+doxorubicin,A549,True,fit,value,0.10809,0.03603,0.32426,2,0.05669,0.524,True,True
+doxorubicin,HT-29,False,held-out,value,0.14565,0.04855,0.43694,2,0.3706,2.545,True,True
+doxorubicin,HeLa,True,held-out,value,0.1158,0.0386,0.34739,2,0.06138,0.53,True,True
+doxorubicin,MCF7,True,fit,value,0.03051,0.01,0.0931,2,0.0614,2.012,True,True
+doxorubicin,MDA-MB-231,False,held-out,value,0.1081,0.03603,0.3243,1,0.48795,4.514,False,True
+paclitaxel,A549,True,fit,value,0.0115,0.00383,0.0345,1,0.0267,2.322,True,True
+paclitaxel,HT-29,False,held-out,value,0.0107,0.00357,0.0321,1,0.02506,2.342,True,True
+paclitaxel,HeLa,True,held-out,value,0.0378,0.0126,0.1134,1,0.02253,0.596,True,True
+paclitaxel,MCF7,True,fit,value,0.0678,0.0226,0.2034,1,0.03476,0.513,True,True
+paclitaxel,MDA-MB-231,False,held-out,value,0.0888,0.0296,0.2664,1,0.04002,0.451,True,False

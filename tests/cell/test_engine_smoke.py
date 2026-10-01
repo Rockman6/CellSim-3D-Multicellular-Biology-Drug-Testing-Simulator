@@ -96,7 +96,10 @@ def test_dose_response_is_monotone_and_yields_a_finite_ic50():
                             n_cells_per_conc=24, k_cyc=K_A549)
     assert abs(viab[0] - 1.0) < 1e-9, "control viability must be 1 by construction"
     treated = viab[1:]
-    assert np.all(np.diff(treated) <= 1e-9), f"viability not monotone: {treated}"
+    # 24 representative cells per dose give a few percent of sampling noise
+    # below the kill threshold; monotone up to that noise, and a real fall.
+    assert np.all(np.diff(treated) <= 0.15), f"viability rises with dose: {treated}"
+    assert treated[0] > 0.8 and treated[-1] < 0.2, f"no real fall across the range: {treated}"
     ic50 = ic50_from_curve(conc, treated)
     assert np.isfinite(ic50) and ic50 > 0, f"IC50 not finite: {ic50}"
 
@@ -114,6 +117,41 @@ def test_state_stays_bounded_and_finite():
     Y = res.final.Y
     assert np.all(np.isfinite(Y)), "non-finite state"
     assert np.all(Y >= -1e-9), "negative concentration"
+
+
+def test_zero_variability_gives_identical_cells():
+    from cellsim.cell.engine import make_population
+    pop = make_population(64, 1.0, np.random.default_rng(3), het_sigma=0.0)
+    assert np.all(pop.het_bcl2 == 1.0) and np.all(pop.het_uptake == 1.0)
+    pop = make_population(4096, 1.0, np.random.default_rng(3), het_sigma=0.3)
+    assert abs(pop.het_bcl2.mean() - 1.0) < 0.03, "multipliers must average 1"
+    assert 0.2 < np.log(pop.het_bcl2).std() < 0.4
+
+
+def _crossing(c, v, level):
+    for i in range(1, len(c)):
+        if v[i] <= level < v[i - 1]:
+            f = (v[i - 1] - level) / max(v[i - 1] - v[i], 1e-12)
+            return float(np.exp(np.log(c[i - 1]) + f * (np.log(c[i]) - np.log(c[i - 1]))))
+    return float("nan")
+
+
+def test_variability_widens_the_kill_transition():
+    """Fractional killing (Spencer 2009): identical cells flip from alive
+    to dead within a ~1.2x dose window; protein-level variability widens
+    it (measured ~2x at sigma 0.4). Still far steeper than a Hill slope
+    of 1 (~32x) — see docs/VALIDATION.md, curve shape is an open item."""
+    conc = np.logspace(-2, 0, 21)                     # 10 points per decade
+    import dataclasses
+    drug = dataclasses.replace(get_drug("doxorubicin"), k_damage_per_uM_h=0.0087)
+
+    def width(sigma):
+        viab, _ = dose_response(A549, drug, conc, n_cells_per_conc=48, k_cyc=K_A549,
+                                p=Params(het_sigma=sigma))
+        return _crossing(conc, viab[1:], 0.15) / _crossing(conc, viab[1:], 0.85)
+
+    w0, w4 = width(0.0), width(0.4)
+    assert w4 > 1.4 * w0, f"85%->15% width {w0:.2f}x -> {w4:.2f}x; variability did not widen it"
 
 
 def test_cycle_scale_tracks_the_doubling_time():
