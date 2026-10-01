@@ -125,18 +125,38 @@ Not yet calibrated: the per-drug potency gains in `cellsim/cell/library.py`
 are placeholders, so absolute IC50s are not meaningful yet. Fitting them
 against the reference table below is the next step.
 
-## GDSC2 reference data (the Phase-1 validation target)
+## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
-`benchmarks/cell/gdsc_reference.csv` from the public GDSC2 fitted
-dose-response release 8.4. The raw file is not vendored; the script
-prints the one-line download.
+`benchmarks/cell/gdsc_reference.csv` from the public GDSC1 and GDSC2
+fitted dose-response tables, release 8.4: 30 screens across the three
+drugs and five of the curated lines (HCT116 and SW480 have no screens
+for these drugs). The raw files are not vendored; the script's docstring
+has the two-line download.
 
-| Drug | Lines | Published IC50 range | Usable as a quantitative target? |
-|---|:-:|---|---|
-| paclitaxel | 5 | 0.011–0.089 µM, all within the tested range | **Yes** |
-| cisplatin | 5 | 20–122 µM, all **above** the 8 µM top dose, AUC 0.92–0.99 | **No** — the screen never reached 50 % kill, so those IC50s are extrapolations. Gate on direction and rank only. |
-| doxorubicin | 0 | absent from GDSC2 | Use GDSC1 explicitly, or substitute camptothecin (in GDSC2, same replication-coupled damage mechanism) |
+| Drug | Source | Screens | In tested range | IC50 | Quantitative target? |
+|---|---|:-:|:-:|---|---|
+| paclitaxel | GDSC2 | 5 | 5 | 0.011–0.089 µM | **Yes** |
+| doxorubicin | GDSC1 | 10 | 9 | 0.010–0.37 µM | **Yes**, with the replicate spread below |
+| cisplatin | GDSC1 + GDSC2 | 15 | 2 | 6.9 and 9.8 µM where measured; the rest extrapolated up to 122 µM | **No.** Direction and rank only. |
+
+Camptothecin is not a usable stand-in for doxorubicin: in GDSC2 four of
+five lines have IC50 above its 0.1 µM top dose.
+
+**Replicate spread sets the gate.** GDSC1 screened doxorubicin twice per
+line. The two in-range IC50s of the same line differ by:
+
+| Line | Spread |
+|---|:-:|
+| HeLa | 1.5× |
+| A549 | 4.9× |
+| HT-29 | 6.3× |
+| MCF7 | 9.3× |
+
+Median 5.6×. A model cannot be held to "within 3×" when the reference
+data disagrees with itself by more than that, so the Phase-1 gate is the
+replicate span (at least 3× either side of the geometric mean where
+there is one screen) plus the correct most/least-sensitive ordering.
 
 The p53 split is **not** clean in this data and must not be assumed:
 cisplatin is less potent in p53-mutant HT-29 (122 µM) than in wild-type
@@ -152,17 +172,6 @@ conserved, Monte-Carlo agrees with interval arithmetic). No calibration
 against cell-line data yet; that is Phase 1 of `PLAN.md`.
 
 ## CI
-
-**Known CI cost problem.** `tests/fep/test_binding_scaffold_smoke.py`
-takes **35 minutes on a cold cache** on an Apple-silicon laptop (37 s
-warm). PR #10 expanded it to 14 tests, several of which build full
-solvated protein-ligand complexes (streptavidin, ubiquitin) with
-AM1-BCC charges. It is scaffold-only (`sample=False`, no MD), so the
-cost is parametrisation and solvation, not sampling. On a 2-core
-GitHub runner with no warm cache this will dominate the job and may
-exceed sensible limits. Fix before relying on CI: cache the built
-systems as fixtures, or move the heavy builders to `workflow_dispatch`
-and keep the cheap assertions always-on.
 
 `smoke.yml`: 54 always-on steps. The 51 that existed before the October
 wiring were replayed locally on the merged tree: 51 pass, 0 fail, 14 min.

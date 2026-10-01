@@ -61,46 +61,51 @@ re-implementing free-energy codes.
 
 No UI work until this exists.
 
-1. `cellsim/cell/engine.py`: one `CellState` dataclass, one integrator
-   (SciPy LSODA or a fixed-step RK4 with sub-stepping), one `step(dt)`.
-   Modules plug into it instead of being free functions.
-2. Port from `OLD/`: Novak-Tyson cycle, ATM → p53 ⇄ MDM2 (3-variable
-   delay oscillator) → p21 and PUMA → BAX → MOMP, with real units and
-   the published rate constants already cited there. Re-tune the p53
-   period to 5.5 h. Fix the XIAP/Smac balance so caspase-3 execution
-   actually kills the cell.
+1. *Done.* `cellsim/cell/engine.py`: one state array, one RK4
+   integrator, one `simulate`. A population is weighted representative
+   cells, so a whole dose-response is one run.
+2. *Done.* Ported from `OLD/`: the CDK/cyclin cycle, ATM → p53 ⇄ MDM2
+   (3-variable delay oscillator) → p21 and PUMA → BAX → MOMP. The p53
+   period is now 4.9 h (published 5.5, prototype 3.0) and caspase-3
+   execution actually kills cells. Ten phenotype gates pass
+   (`tests/cell/test_engine_smoke.py`).
 3. Drug input: PK/disposition from `cellsim/cell` (permeation, pH trapping,
    efflux, binding sink) feeding occupancy at the target, then fate.
    Affinity and ADME from a small curated table with provenance
    (ChEMBL / BindingDB / literature), docking as a flagged fallback.
-4. Validation harness against GDSC2 fitted dose-response.
+4. Validation harness against GDSC fitted dose-response.
 
-   *Revised October 2026 after pulling the data* (`scripts/gdsc_reference.py`,
-   extract in `benchmarks/cell/gdsc_reference.csv`). The original plan named
-   cisplatin, doxorubicin and paclitaxel. What the public data actually
-   supports:
+   *Revised October 2026 after pulling the data* (`scripts/gdsc_reference.py`
+   reads GDSC1 and GDSC2 release 8.4; 30 screens extracted to
+   `benchmarks/cell/gdsc_reference.csv`). The original plan named
+   cisplatin, doxorubicin and paclitaxel with a "within 3×" gate. What
+   the public data actually supports:
 
-   - **Paclitaxel is the quantitative target.** IC50 0.011–0.089 µM across
-     our five lines, all inside the tested range, AUC 0.72–0.97. Gate:
-     predicted IC50 within 3× on each line, and the correct ordering of
-     the most and least sensitive line.
-   - **Cisplatin cannot be a quantitative target.** In GDSC2 it is tested
-     to 8 µM, and every one of our lines has a fitted IC50 *above* the top
-     dose (20–122 µM) with AUC 0.92–0.99, i.e. the screen never reached
-     50 % kill. Those IC50s are extrapolations. Gate it only on direction
-     and rank: cisplatin must kill far less than paclitaxel at its tested
-     range, and the model must not produce a sub-µM cisplatin IC50.
-   - **Doxorubicin is not in GDSC2** for these lines; it is in GDSC1,
-     which is a different assay generation. Either use GDSC1 explicitly
-     and say so, or substitute **camptothecin** (in GDSC2, also a
-     replication-coupled DNA-damage agent, so the same S-phase mechanism).
-   - **The p53 split is not clean in this data** and must not be assumed:
-     cisplatin IC50 is higher in p53-mutant HT-29 (122 µM) than in
-     wild-type A549 (20 µM), as expected, but p53-mutant MDA-MB-231
-     (43 µM) is *more* sensitive than wild-type MCF7 (100 µM). Report the
-     p53 effect as a measured outcome, never as a gate that assumes it.
+   - **The gate cannot be tighter than the data's own replicates.** GDSC1
+     screened doxorubicin twice per line, and the two in-range IC50s of
+     the same line disagree by 1.5× to 9.3× (median 5.6×). So the
+     quantitative gate is: predicted IC50 inside the span of the
+     replicate screens, widened to at least 3× either side of the
+     geometric mean when there is only one screen; plus the correct
+     ordering of the most and least sensitive line.
+   - **Paclitaxel (GDSC2) and doxorubicin (GDSC1) are the quantitative
+     targets.** Paclitaxel 0.011–0.089 µM, one screen per line, all in
+     range. Doxorubicin 0.010–0.37 µM, nine of ten screens in range.
+   - **Cisplatin cannot be a quantitative target.** Only 2 of its 15
+     screens reached 50 % kill below their top dose (A549 9.8 µM and
+     HeLa 6.9 µM, GDSC1 at 10 µM top). The rest are extrapolations up to
+     122 µM. Gate it on direction and rank only: weak, high-µM, never
+     sub-µM.
+   - **Camptothecin is not a usable substitute**: four of five lines sit
+     above its 0.1 µM top dose in GDSC2.
+   - **The p53 split is not clean** and must not be assumed. Cisplatin is
+     less potent in p53-mutant HT-29 than in wild-type A549, as expected,
+     but p53-mutant MDA-MB-231 is more sensitive than wild-type MCF7.
+     Report the p53 effect as a measured outcome, never as a gate.
 
-   Publish the table including every miss.
+   Fit the one potency gain per drug on the p53 wild-type lines; predict
+   the mutant lines with nothing re-tuned. Publish the table including
+   every miss.
 5. Headless API: `engine.run(schedule) -> per-tick state records`
    (JSON or Arrow). Any UI is a renderer of this stream.
 6. A Colab notebook that reproduces the validation figure from a clean
