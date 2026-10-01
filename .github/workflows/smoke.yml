@@ -23,6 +23,11 @@ on:
       - "benchmarks/dock/**"
       - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
+      - "benchmarks/pdbbind/**"
+      - "src/cell/**"
+      - "src/bridge/**"
+      - "tests/cell/**"
+      - "tests/bridge/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
@@ -46,6 +51,11 @@ on:
       - "benchmarks/dock/**"
       - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
+      - "benchmarks/pdbbind/**"
+      - "src/cell/**"
+      - "src/bridge/**"
+      - "tests/cell/**"
+      - "tests/bridge/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -257,6 +267,32 @@ jobs:
 
       - name: cache smoke (content-addressed SQLite store)
         run: python -u tests/cache/test_cache_smoke.py
+
+      # ── Gates added by PRs #10 / #11 / #12 (merged together) ──────────
+      - name: dock pose reconstruction (PR #11 — Meeko atom-order regression)
+        run: python -u tests/dock/test_pose_reconstruction.py
+
+      - name: fep binding audit regressions (PR #10 — deterministic mode, seed/n_windows guards, stereo)
+        run: |
+          python -u tests/fep/test_deterministic_mode_smoke.py
+          python -u tests/fep/test_seed_and_nwindows_smoke.py
+          python -u tests/fep/test_stereo_consistency_smoke.py
+
+      - name: UQ reliability table + Sobol artifact (PR #12)
+        run: |
+          python -u tests/uq/test_reliability_smoke.py
+          python -u tests/uq/test_sobol_sensitivity_smoke.py
+
+      - name: bridge rate-law accuracy (PR #12)
+        run: python -u tests/bridge/test_rate_law_accuracy_smoke.py
+
+      - name: cell module smoke (PR #12 — every tests/cell/test_*.py, seconds each)
+        run: |
+          set -e
+          for t in tests/cell/test_*.py; do
+            echo "== $t"
+            python -u "$t"
+          done
 
   scale:
     name: scale (workflow_dispatch only)
