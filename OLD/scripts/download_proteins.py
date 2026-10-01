@@ -125,7 +125,7 @@ def extract_backbone(raw_pdb_path: str, output_path: str, atom_filter: str = "CA
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.normpath(os.path.join(script_dir, "..", "assets", "proteins"))
+    output_dir = os.path.normpath(os.path.join(script_dir, "..", "..", "assets", "proteins"))
     raw_dir = os.path.join(output_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)

@@ -87,7 +87,7 @@ benchmarks/  every input needed to reproduce a number in docs/VALIDATION.md
 tests/       one folder per src/ module; each file is a standalone gate
 scripts/     the `cellsim` CLI dispatcher, fetchers, benchmark runners, doctor
 docs/        plan, validation, docking tutorial, archive of the 2026 campaign docs
-OLD/         frozen 2026 C++/Metal prototype + its 6 headless validators
+OLD/         frozen 2026 C++/Metal prototype, its 6 headless validators and scripts (see OLD/README.md)
 ```
 
 ## Validation and CI

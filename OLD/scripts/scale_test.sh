@@ -3,7 +3,7 @@
 # bio_hours) combinations and reports wall-time / final-cells / deaths
 # so you can pick a run size for the 64GB machine.
 #
-# Usage: ./scripts/scale_test.sh
+# Usage: ./OLD/scripts/scale_test.sh
 set -e
 cd "$(dirname "$0")/.."
 

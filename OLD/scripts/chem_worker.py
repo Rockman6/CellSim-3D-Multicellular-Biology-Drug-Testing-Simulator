@@ -8,7 +8,7 @@ The worker consumes tiers in order, writing each tier's output into
 directory and picks up new results without blocking.
 
 Usage:
-    python scripts/chem_worker.py [--data-dir data/bioagents]
+    python OLD/scripts/chem_worker.py [--data-dir data/bioagents]
                                   [--gpu mps|cuda|cpu]
                                   [--interval 2]
 
@@ -129,7 +129,7 @@ def tier0_rdkit(drug_id: str, smiles: str, ticket: dict, out: Path) -> None:
     (out / "tier0_descriptors.json").write_text(json.dumps(data, indent=2))
 
     # Also write the 3D SDF for the rest of the pipeline to consume.
-    assets = Path(__file__).parent.parent / "assets" / "drugs"
+    assets = Path(__file__).parents[2] / "assets" / "drugs"
     assets.mkdir(parents=True, exist_ok=True)
     writer = Chem.SDWriter(str(assets / f"{drug_id}.sdf"))
     writer.write(molH)

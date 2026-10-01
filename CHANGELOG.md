@@ -38,8 +38,13 @@ cell and drug-response simulator. See `docs/PLAN.md`.
   `OLD/`.
 - Removed: prof-email / csv_tldr / finalize_run handoff tooling and
   their tests, committed `run/` logs, the retired Metal-UI
-  screenshots, and the empty `src/cg`, `src/core`, `src/render`,
-  `src/viewer` scaffolds.
+  screenshots, and the empty `cg`, `core`, `render`, `viewer`
+  scaffolds (`core` was a byte-identical copy of `OLD/src/core`).
+- 18 prototype-era scripts (C++ calibration, validation, window
+  capture, molecule generation) moved from `scripts/` to
+  `OLD/scripts/` with their paths fixed; they had pointed at the
+  pre-restart layout since April. `OLD/README.md` added with the
+  verified headless build.
 
 ### Packaging
 - The `src` package is renamed `cellsim` (every import, `python -m`

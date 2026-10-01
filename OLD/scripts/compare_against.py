@@ -2,7 +2,7 @@
 """Compare a cellsim_headless output CSV against one reference dataset.
 
 Usage:
-    ./scripts/compare_against.py <sim_csv> <ref_csv> <ref_schema>
+    ./OLD/scripts/compare_against.py <sim_csv> <ref_csv> <ref_schema>
 
 ref_schema ∈ {'viability', 'growth_curve', 'single_cell', 'ctc_cellcount'}
 
