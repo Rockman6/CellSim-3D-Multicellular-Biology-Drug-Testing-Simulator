@@ -154,6 +154,22 @@ def test_variability_widens_the_kill_transition():
     assert w4 > 1.4 * w0, f"85%->15% width {w0:.2f}x -> {w4:.2f}x; variability did not widen it"
 
 
+def test_p73_route_kills_p53_mutant_cells_but_spares_untreated_ones():
+    """ATM/c-Abl -> p73 -> PUMA (Gong 1999, Agami 1999) is p53-independent:
+    with it on, heavy damage kills a TP53-mutant line that the p53-only
+    model leaves alive, and untreated cells are untouched because the
+    route only engages once ATM is genuinely activated."""
+    ht29 = get_line("HT-29")
+    k = calibrate_cycle_scale(ht29)
+    on = Params(p73_gain=1.0)
+    off_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, forced_D=0.6)
+    on_dmg = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, forced_D=0.6, p=on)
+    on_ctl = simulate(ht29, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, p=on)
+    assert off_dmg.deaths[-1, 0] == 0, "p53-only model should leave HT-29 alive"
+    assert on_dmg.deaths[-1, 0] > 0, "p73 route did not kill damaged p53-mutant cells"
+    assert on_ctl.deaths[-1, 0] == 0, "p73 route killed untreated cells"
+
+
 def test_cycle_scale_tracks_the_doubling_time():
     """A slower line must get a smaller cycle rate scale."""
     fast, slow = get_line("HCT116"), get_line("MCF7")   # 18 h vs 29 h

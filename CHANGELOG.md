@@ -21,6 +21,21 @@
   constant per drug on A549 + MCF7, predict every line, compare with a
   constant-IC50 null.
 
+### Added (continued)
+- `Params.p73_gain`: the ATM/c-Abl -> p73 -> PUMA route by which
+  TP53-mutant cells still die of DNA damage (Gong 1999, Agami 1999).
+  Default 0 (p53-only). `scripts/experiment_p73.py` tests it
+  leave-one-mutant-out: the gain is chosen on one mutant line and
+  scored on the other, and it improves out-of-sample prediction in
+  both folds while beating the constant-IC50 null in both.
+
+### Found, not fixed
+- `benchmarks/dock/streptavidin_calibration.yaml` lists desthiobiotin at
+  K_d 5e-5 M; the literature value is ~1e-11 M. With the correct value
+  the streptavidin Spearman falls from +0.80 to 0.00, which would break
+  a headline claim and a CI gate. Documented in `docs/VALIDATION.md` and
+  filed as issue #14 rather than changed unilaterally.
+
 ### Validation result
 - 9/10 held-out IC50s inside GDSC's replicate span, A549 cisplatin
   9.1 µM vs 9.8 measured. But a constant IC50 also passes 9/10, and on

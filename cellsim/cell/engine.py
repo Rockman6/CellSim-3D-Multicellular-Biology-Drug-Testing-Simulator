@@ -129,6 +129,13 @@ class Params:
     # what turns an all-or-none population into a graded dose-response.
     # 0 reproduces identical cells exactly.
     het_sigma: float = 0.30
+    # p53-independent damage -> PUMA route: ATM / c-Abl activate p73, which
+    # transactivates PUMA without p53 (Gong et al. 1999 Nature 399:806;
+    # Agami et al. 1999 Nature 399:809, both with cisplatin). Engages only
+    # once ATM is genuinely activated (> 0.5; basal ATM sits at 0.12-0.27).
+    # 0 = off, which is the p53-only model.
+    p73_gain: float = 0.0
+    p73_atm_on: float = 0.5
 
 
 # ── small helpers ─────────────────────────────────────────────────────
@@ -237,7 +244,8 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
 
     # ── apoptosis ──
     p53_act = np.clip((p53 - p.p53_act_lo) / (p.p53_act_hi - p.p53_act_lo), 0, 1) * f53
-    dY[:, 12] = p.puma_k_on * p53_act - p.puma_k_off * Puma
+    p73_act = np.clip((ATM - p.p73_atm_on) / (1.0 - p.p73_atm_on), 0, 1)
+    dY[:, 12] = p.puma_k_on * (p53_act + p.p73_gain * p73_act) - p.puma_k_off * Puma
     mit_drive = np.zeros(len(Y))
     if drug is not None and drug.mechanism == "tubulin":
         mit_drive = drug.k_mitotic_death_per_h * np.maximum(
