@@ -273,58 +273,96 @@ Three things follow.
    make it line-specific the engine needs per-line efflux (ABCB1 acting
    on intracellular drug), which it does not currently model.
 
-### And the data cannot yet validate such a mapping
+### What per-line data actually predicts, at a sample size that can tell
 
-DepMap 24Q4 expression was pulled for all ten lines and sixteen
-candidate genes (efflux, BCL2 family, repair, target). Correlating each
-against measured IC50 and then correcting for having searched sixteen
-genes, by permutation:
+At ten lines nothing could be validated. Repeating the test on every
+GDSC line DepMap has expression for — **156 to 683 lines** rather than
+6 to 10 — with genes **pre-specified by mechanism** before any
+correlation was computed, and Bonferroni-corrected within each drug
+(`scripts/experiment_expression_scale.py`):
 
-| Drug | n lines | best \|ρ\| | family-wise p |
-|---|:-:|:-:|:-:|
-| cisplatin | 6 | 0.71 | 0.86 |
-| doxorubicin | 10 | 0.75 | 0.25 |
-| paclitaxel | 10 | 0.65 | 0.54 |
+| Drug | n lines | Survives correction, in the expected direction |
+|---|:-:|---|
+| doxorubicin | 683 | **BCL2L1** ρ +0.19 (p 5e-06), **ABCB1** ρ +0.17 (p 9e-05) |
+| paclitaxel | 427 | **BCL2L1** ρ +0.31 (p 9e-10), **ABCB1** ρ +0.23 (p 1e-05), **TUBB3** ρ +0.22 (p 3e-05) |
+| cisplatin | 156 | **nothing** |
 
-Nothing survives. The top hit for both cisplatin and doxorubicin is
-TUBB3, which has no mechanism for either, a reliable sign of noise.
-DepMap's CRISPR-inferred growth rate was also checked as a scalable
-substitute for doubling time and does not agree with the curated values
-(ρ = −0.15), so it cannot be used to expand the panel cheaply.
+So real, mechanistically sensible signal does exist once the panel is
+large enough: the anti-apoptotic set-point (Bcl-xL), P-glycoprotein
+efflux, and class III β-tubulin for taxanes, which is the textbook
+taxane-resistance marker. Cisplatin gives nothing at all — and notably
+**the repair genes do not predict cisplatin sensitivity** (ERCC1
+ρ −0.03, ERCC2 +0.03, XRCC1 −0.06), consistent with ERCC1's long record
+of failing to replicate as a platinum biomarker.
 
-**So building an expression mapping now would be fitting noise** — the
-same error that produced the retracted gate above. The blocking
-constraint is the number of cell lines, not the model.
+### The mismatch that explains everything
 
-**Still to do, in order.**
-1. **More cell lines.** Everything else is blocked on this. Validating
-   any per-line mapping needs tens of lines, not ten, and each needs a
-   trustworthy doubling time, which is the scarce input.
-2. **Per-line repair capacity** for the DNA-damage drugs, once there
-   are enough lines to test it. This is the channel with leverage.
-3. **A per-line efflux channel** so paclitaxel has any line-specific
-   behaviour at all.
-4. A shallower death response (curve shape above).
+Put the two measurements side by side. Translating each significant
+correlation into the IC50 change implied across its 10th-to-90th
+percentile expression range:
+
+| Channel | What the data implies | What the engine delivers |
+|---|:-:|:-:|
+| anti-apoptotic set-point (Bcl-xL) | 1.8–2.3× | **1.1×** |
+| efflux (ABCB1) | 1.5–2.1× | **not modelled** |
+| class III β-tubulin | 1.9× | not modelled |
+| DNA repair | **no signal** (cisplatin) | 7–9× |
+| proliferation rate | not tested | 1.0× |
+
+The engine has its leverage exactly where the data has no signal, and
+has little or no leverage exactly where the data does. That is the
+whole failure, stated in one table:
+
+1. **Repair rate** is the engine's only strong channel, and repair
+   genes do not predict cisplatin sensitivity.
+2. **The apoptotic set-point** is the strongest real signal and the
+   engine already has the field for it (`CellLine.bcl2_level`), but its
+   MOMP switch is so sharp that changing that field 8-fold moves the
+   IC50 by 1.1×. The channel exists and is throttled.
+3. **Efflux** is the second strongest real signal and the engine does
+   not model it at all.
+
+**A ceiling worth knowing before building.** These effects are modest:
+roughly 1.5–2.3× each. Even used perfectly and independently they
+compose to maybe 3–5×, against the 8–51× by which these lines actually
+differ. So wiring them in should make the engine beat a constant, but
+it will not close the gap — most line-to-line variation in drug
+response is not captured by the canonical markers. That is a property
+of the biology, not of this implementation.
+
+**Still to do, in order.** The measurements above specify the work:
+
+1. **Unthrottle the apoptotic set-point** so `bcl2_level` moves the
+   IC50 by ~2× over its real range instead of 1.1×, most likely by
+   softening the MOMP switch. This is the one channel the engine
+   already has and the data most supports.
+2. **Add a per-line efflux channel** (ABCB1 acting on intracellular
+   drug), which gives paclitaxel its only line-specific behaviour and
+   doxorubicin a second one.
+3. **Stop treating repair as the cisplatin lever.** It has the
+   leverage but not the evidence; cisplatin may simply not be
+   predictable from these markers.
+4. Expand the validation panel beyond ten lines — the data to do so is
+   already matched and available (156–683 lines per drug).
+5. A shallower death response (curve shape above).
 
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign
 test, not the RMSE table.
-
-The gate to beat from now on is the null's log10 RMSE, not the span.
 
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
 `benchmarks/cell/gdsc_reference.csv` from the public GDSC1 and GDSC2
-fitted dose-response tables, release 8.4: 30 screens across the three
-drugs and five of the curated lines (HCT116 and SW480 have no screens
-for these drugs). The raw files are not vendored; the script's docstring
-has the two-line download.
+fitted dose-response tables, release 8.4: **60 screens across the three
+drugs and ten cell lines** (HCT116 and SW480 are in the library but have
+no screens for these drugs). The raw files are not vendored; the
+script's docstring has the two-line download.
 
-| Drug | Source | Screens | In tested range | IC50 | Quantitative target? |
-|---|---|:-:|:-:|---|---|
-| paclitaxel | GDSC2 | 5 | 5 | 0.011–0.089 µM | **Yes** |
-| doxorubicin | GDSC1 | 10 | 9 | 0.010–0.37 µM | **Yes**, with the replicate spread below |
-| cisplatin | GDSC1 + GDSC2 | 15 | 2 | 6.9 and 9.8 µM where measured; the rest extrapolated up to 122 µM | **No.** Direction and rank only. |
+| Drug | Source | Screens | In tested range | Quantitative target? |
+|---|---|:-:|:-:|---|
+| paclitaxel | GDSC2 | 10 | 10 | **Yes** |
+| doxorubicin | GDSC1 | 20 | 19 | **Yes**, with the replicate spread below |
+| cisplatin | GDSC1 + GDSC2 | 30 | 10 | **Partly.** Two-thirds of its screens never reached 50 % kill, so those lines give lower bounds only. |
 
 Camptothecin is not a usable stand-in for doxorubicin: in GDSC2 four of
 five lines have IC50 above its 0.1 µM top dose.

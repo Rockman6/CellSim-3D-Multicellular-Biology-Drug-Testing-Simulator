@@ -1,0 +1,360 @@
+{
+  "genes": [
+    "ABCB1",
+    "ABCC1",
+    "ABCG2",
+    "BAK1",
+    "BAX",
+    "BBC3",
+    "BCL2",
+    "BCL2L1",
+    "ERCC1",
+    "ERCC2",
+    "GSTP1",
+    "MCL1",
+    "SLC31A1",
+    "TOP2A",
+    "TUBB3",
+    "XRCC1"
+  ],
+  "drugs": {
+    "Cisplatin": {
+      "release": "GDSC2",
+      "n_lines": 156,
+      "genes": [
+        {
+          "gene": "SLC31A1",
+          "expected_sign": -1,
+          "n": 156,
+          "rho": 0.2745495954699822,
+          "p": 0.0005234909801793215,
+          "p_bonferroni": 0.005758400781972537,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "MCL1",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": 0.19529673198919933,
+          "p": 0.014557205681610466,
+          "p_bonferroni": 0.16012926249771514,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BCL2",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": -0.18399168646904165,
+          "p": 0.021491397293685356,
+          "p_bonferroni": 0.23640537023053892,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "BBC3",
+          "expected_sign": -1,
+          "n": 156,
+          "rho": -0.10048735077160229,
+          "p": 0.21197450857379935,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BCL2L1",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": 0.09862195732963801,
+          "p": 0.22062435276932724,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "GSTP1",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": 0.08110856912617695,
+          "p": 0.3141473442539523,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BAK1",
+          "expected_sign": -1,
+          "n": 156,
+          "rho": 0.06446733722381222,
+          "p": 0.4239697398791327,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "XRCC1",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": -0.06315546574783222,
+          "p": 0.43348042849463353,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "ERCC1",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": -0.031177000521565964,
+          "p": 0.6992279942153179,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "ERCC2",
+          "expected_sign": 1,
+          "n": 156,
+          "rho": 0.02462743536131059,
+          "p": 0.7602374061405317,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BAX",
+          "expected_sign": -1,
+          "n": 156,
+          "rho": -0.022294574133489276,
+          "p": 0.782352864838814,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        }
+      ],
+      "significant": []
+    },
+    "Doxorubicin": {
+      "release": "GDSC1",
+      "n_lines": 683,
+      "genes": [
+        {
+          "gene": "BCL2L1",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": 0.19117865783795462,
+          "p": 4.811961537636529e-07,
+          "p_bonferroni": 4.811961537636529e-06,
+          "direction_as_expected": true,
+          "significant": true
+        },
+        {
+          "gene": "ABCB1",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": 0.1688835468794622,
+          "p": 9.101997370054543e-06,
+          "p_bonferroni": 9.101997370054542e-05,
+          "direction_as_expected": true,
+          "significant": true
+        },
+        {
+          "gene": "BAK1",
+          "expected_sign": -1,
+          "n": 683,
+          "rho": -0.09669424703788519,
+          "p": 0.01146061124283906,
+          "p_bonferroni": 0.11460611242839061,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "MCL1",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": -0.06883587703206022,
+          "p": 0.07220664529449279,
+          "p_bonferroni": 0.7220664529449279,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "TOP2A",
+          "expected_sign": -1,
+          "n": 683,
+          "rho": -0.06313891216019268,
+          "p": 0.09920663130211535,
+          "p_bonferroni": 0.9920663130211536,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BAX",
+          "expected_sign": -1,
+          "n": 683,
+          "rho": -0.056399644249867105,
+          "p": 0.14090324507823726,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "ABCC1",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": 0.043120353164274504,
+          "p": 0.26042881094929066,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "ABCG2",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": -0.034757897139817945,
+          "p": 0.3644160937676929,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "BCL2",
+          "expected_sign": 1,
+          "n": 683,
+          "rho": 0.029278824324540813,
+          "p": 0.4449012924515961,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BBC3",
+          "expected_sign": -1,
+          "n": 683,
+          "rho": -0.02072919974099497,
+          "p": 0.5886397362706682,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        }
+      ],
+      "significant": [
+        "BCL2L1",
+        "ABCB1"
+      ]
+    },
+    "Paclitaxel": {
+      "release": "GDSC2",
+      "n_lines": 427,
+      "genes": [
+        {
+          "gene": "BCL2L1",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.30689115754468743,
+          "p": 9.170684699903739e-11,
+          "p_bonferroni": 9.170684699903739e-10,
+          "direction_as_expected": true,
+          "significant": true
+        },
+        {
+          "gene": "ABCB1",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.23125770926265782,
+          "p": 1.3630831864229705e-06,
+          "p_bonferroni": 1.3630831864229705e-05,
+          "direction_as_expected": true,
+          "significant": true
+        },
+        {
+          "gene": "TUBB3",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.22357085719996644,
+          "p": 3.078584510931731e-06,
+          "p_bonferroni": 3.078584510931731e-05,
+          "direction_as_expected": true,
+          "significant": true
+        },
+        {
+          "gene": "BCL2",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": -0.15448450249196005,
+          "p": 0.0013640573762199583,
+          "p_bonferroni": 0.013640573762199583,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "ABCG2",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.1319047252960402,
+          "p": 0.0063406847010441265,
+          "p_bonferroni": 0.06340684701044126,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "MCL1",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.11310476990069877,
+          "p": 0.0193950420686532,
+          "p_bonferroni": 0.19395042068653198,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BAX",
+          "expected_sign": -1,
+          "n": 427,
+          "rho": 0.05498828461537363,
+          "p": 0.2568768170380262,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        },
+        {
+          "gene": "BBC3",
+          "expected_sign": -1,
+          "n": 427,
+          "rho": -0.028325625040787703,
+          "p": 0.5594077260315347,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "ABCC1",
+          "expected_sign": 1,
+          "n": 427,
+          "rho": 0.02272176328837211,
+          "p": 0.6396371782965227,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": true,
+          "significant": false
+        },
+        {
+          "gene": "BAK1",
+          "expected_sign": -1,
+          "n": 427,
+          "rho": 0.003690833168347416,
+          "p": 0.877504262634047,
+          "p_bonferroni": 1.0,
+          "direction_as_expected": false,
+          "significant": false
+        }
+      ],
+      "significant": [
+        "BCL2L1",
+        "ABCB1",
+        "TUBB3"
+      ]
+    }
+  }
+}
