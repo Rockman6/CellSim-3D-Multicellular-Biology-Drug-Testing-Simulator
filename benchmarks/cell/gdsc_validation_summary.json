@@ -1,0 +1,68 @@
+{
+  "n_cells_per_dose": 32,
+  "bisection_steps": 12,
+  "fit_lines": [
+    "A549",
+    "MCF7"
+  ],
+  "drugs": {
+    "cisplatin": {
+      "fit_target": "k_damage_per_uM_h",
+      "gain": 0.0009966221868136912,
+      "per_line_gain": {
+        "A549": 0.0009966221868136912
+      },
+      "fit_on": [
+        "A549"
+      ],
+      "spearman_vs_reference": NaN,
+      "log10_rmse_model": 0.21634195357792915,
+      "log10_rmse_null": 0.10825076808286964,
+      "null_ic50_uM": 9.7673,
+      "pass": 5,
+      "null_pass": 5,
+      "n": 5
+    },
+    "doxorubicin": {
+      "fit_target": "k_damage_per_uM_h",
+      "gain": 0.008419539983741533,
+      "per_line_gain": {
+        "A549": 0.0046137907601706855,
+        "MCF7": 0.015364514175584312
+      },
+      "fit_on": [
+        "A549",
+        "MCF7"
+      ],
+      "spearman_vs_reference": 0.3,
+      "log10_rmse_model": 0.4098127661079021,
+      "log10_rmse_null": 0.3106265304067811,
+      "null_ic50_uM": 0.05742796304794019,
+      "pass": 4,
+      "null_pass": 5,
+      "n": 5
+    },
+    "paclitaxel": {
+      "fit_target": "partition",
+      "gain": 0.1533878696145881,
+      "per_line_gain": {
+        "A549": 0.37919047696114666,
+        "MCF7": 0.06204754595488598
+      },
+      "fit_on": [
+        "A549",
+        "MCF7"
+      ],
+      "spearman_vs_reference": 0.7,
+      "log10_rmse_model": 0.32400109337893246,
+      "log10_rmse_null": 0.38474754758523483,
+      "null_ic50_uM": 0.02792310870945425,
+      "pass": 5,
+      "null_pass": 4,
+      "n": 5
+    }
+  },
+  "held_out_pass": 9,
+  "held_out_null_pass": 9,
+  "held_out_n": 10
+}

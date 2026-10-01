@@ -100,8 +100,12 @@ pathway topology and the citations, not as a validated predictor.
 
 ## Phase-1 cell engine (`cellsim/cell/engine.py`)
 
-Ten gates in `tests/cell/test_engine_smoke.py`, all passing, each
-asserting a phenotype rather than "it ran":
+Twelve gates in `tests/cell/test_engine_smoke.py`, all passing, each
+asserting a phenotype rather than "it ran" (the two not tabulated below
+cover cell-to-cell variability), plus five in
+`tests/cell/test_stream_smoke.py` for the UI stream, including that a
+6 h pulse washed out regrows (×4.0 at 72 h) where the same dose held
+continuously kills the colony:
 
 | Gate | Result |
 |---|---|
@@ -121,9 +125,57 @@ that made the C++ prototype unusable (MOMP saturated while caspase-3 sat
 clamped at 0.04, so no cell ever died). The port fixes it by putting
 Smac in excess over XIAP, as measured (Rehm 2006).
 
-Not yet calibrated: the per-drug potency gains in `cellsim/cell/library.py`
-are placeholders, so absolute IC50s are not meaningful yet. Fitting them
-against the reference table below is the next step.
+**Curve shape is not yet realistic.** Each simulated cell carries
+log-normal variability (σ 0.3) in its Bcl-2 reserve and drug uptake,
+the documented source of fractional killing (Spencer 2009). That widens
+the dose window over which viability falls from 85 % to 15 % from 1.2×
+(identical cells) to about 2×, measured on a 10-point-per-decade grid.
+A Hill slope of 1 would give about 32×. So the simulated curves are far
+steeper than typical measured ones, and only IC50s are compared below.
+
+## Phase-1 GDSC validation (`scripts/validate_gdsc.py`)
+
+Protocol: each drug's single `fit_target` constant is fitted by
+bisection on the clean TP53 wild-type lines A549 and MCF7 (geometric
+mean of the per-line fits) and applied unchanged to every line. HeLa and
+both TP53-mutant lines are held out. Results in
+`benchmarks/cell/gdsc_validation_results.csv` and `…_summary.json`.
+
+| Drug | Fitted constant | Engine in span | Constant-IC50 null in span | log10 RMSE engine | log10 RMSE null | Spearman |
+|---|---|:-:|:-:|:-:|:-:|:-:|
+| cisplatin | `k_damage_per_uM_h` = 0.000997 | 5/5 | 5/5 | 0.22 | **0.11** | n/a (2 lines in range) |
+| doxorubicin | `k_damage_per_uM_h` = 0.00842 | 4/5 | 5/5 | 0.41 | **0.31** | 0.30 |
+| paclitaxel | `partition` = 0.153 | 5/5 | 4/5 | **0.32** | 0.38 | 0.70 |
+| **held-out lines** | | **9/10** | **9/10** | | | |
+
+The null predicts one IC50 for every line: the geometric mean of the two
+fit lines' references. RMSE is over lines with an in-range reference.
+
+**What this shows.** From one fitted constant per drug, the engine puts
+every line's IC50 on the right scale: nine of ten held-out predictions
+fall inside GDSC's own replicate span, and the A549 cisplatin IC50
+comes out at 9.1 µM against 9.8 measured.
+
+**What it does not show.** The engine does not yet tell cell lines apart
+better than a constant. The span gate is at least 9× wide, so a constant
+passes it as often, and on log error the engine wins only for
+paclitaxel, where its line-to-line differences come from doubling time
+alone. For cisplatin and doxorubicin it loses, mainly because it makes
+the TP53-mutant lines too resistant: doxorubicin on MDA-MB-231 is
+predicted at 0.49 µM against 0.11 measured. In GDSC those lines are
+about as sensitive as the wild-type ones, so DNA-damage death in these
+cells does not run only through p53.
+
+**What would close the gap, in order.**
+1. A p53-independent damage-death route (p73, mitotic catastrophe). The
+   mutant lines are held out, so this is testable without refitting.
+2. Line-specific inputs from measured data rather than doubling time
+   only, e.g. CCLE/DepMap expression of ABCB1 (efflux), the BCL2 family
+   (apoptotic priming) and repair genes, mapped onto the engine's
+   existing per-cell multipliers.
+3. A shallower death response (curve shape above).
+
+The gate to beat from now on is the null's log10 RMSE, not the span.
 
 ## GDSC reference data (the Phase-1 validation target)
 

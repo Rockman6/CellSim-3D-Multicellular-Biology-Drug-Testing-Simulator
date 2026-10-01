@@ -44,6 +44,8 @@ MODULES: dict[str, str] = {
     "md-view": "cellsim.md.protein_viewer",
     "uq-mc": "cellsim.uq.dock_mc",
     "uq-sobol": "cellsim.uq.sobol",
+    "cell-sim": "cellsim.cell.engine",
+    "cell-stream": "cellsim.cell.stream",
 }
 
 # subcommand -> script under <repo>/scripts
@@ -54,9 +56,15 @@ SCRIPTS: dict[str, str] = {
     "bench": "bench_cli.py",
     "fetch-pdb": "fetch_pdb.py",
     "fetch-chembl": "fetch_chembl_sample.py",
+    "validate-gdsc": "validate_gdsc.py",
 }
 
 USAGE = """usage: cellsim <subcommand> [args...]
+
+  Cell drug-response engine (Phase 1)
+    cell-sim      dose-response of one cell line to one drug -> viability + IC50
+    cell-stream   one population under a dosing schedule -> per-tick JSON Lines for a UI
+    validate-gdsc fit one potency per drug on p53-wt lines, predict the rest vs GDSC
 
   Screening and triage
     dock          batch docking screen -> ranked CSV ± MC error bars ± profile PNGs
