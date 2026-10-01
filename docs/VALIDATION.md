@@ -26,37 +26,40 @@ and reads 0.56–0.69 Å now.
 Reproduce: `python scripts/run_blind_dock_bench.py benchmarks/pdbbind/blind_set.yaml`
 (results committed in `benchmarks/pdbbind/blind_set_results.csv`).
 
-## ⚠ Open correctness issue: the streptavidin reference set
+## Corrected: the streptavidin reference set (October 2026)
 
-`benchmarks/dock/streptavidin_calibration.yaml` lists desthiobiotin at
-**K_d = 5×10⁻⁵ M** (ΔG −5.9 kcal/mol). The literature says desthiobiotin
-binds streptavidin **100 to 10 000 fold weaker than biotin**, i.e. about
-10⁻¹¹ M (ΔG ≈ −15), and the entry's own cited source (Hirsch 2002 Anal
-Biochem 308:343) is the standard reference for that figure. The file's
-in-line note ("often cited 10⁻⁴ to 10⁻⁶ M") does not match it. The value
-is internally consistent (its ΔG matches its K_d) but appears to be wrong
-by roughly six orders of magnitude.
+`benchmarks/dock/streptavidin_calibration.yaml` listed desthiobiotin at
+**K_d = 5×10⁻⁵ M** (ΔG −5.9 kcal/mol). That was wrong by about six
+orders of magnitude and inconsistent with the source cited on the entry
+itself: Hirsch 2002 (Anal Biochem 308:343) is the standard reference for
+**~10⁻¹¹ M** (ΔG −15.0), and Green 1990 (Methods Enzymol 184:51) puts
+desthiobiotin 10²–10⁴ fold weaker than biotin, which brackets it. The
+value is what makes desthiobiotin useful as a reversible affinity tag:
+tight enough to capture, loose enough to elute with free biotin.
 
-It matters because it is load-bearing. Recomputing the Linux CI docking
-results against both values:
+**Corrected, and the consequences followed through rather than hidden.**
 
-| Reference used | Spearman ρ | MAE |
+| | Before (wrong K_d) | After (corrected) |
 |---|:-:|:-:|
-| repo value (5×10⁻⁵ M) | **+0.80** | 4.95 kcal/mol |
-| literature (10⁻¹¹ M) | **0.00** | 6.41 kcal/mol |
+| Spearman ρ | +0.80 | **+0.40** |
+| MAE | 4.98 kcal/mol | **6.66 kcal/mol** |
 
-So the claim that docking *ranks* streptavidin binders usably, the
-`tests/uq/test_calibration_smoke.py` gate (ρ ≥ 0.8), and the
-streptavidin row of the reliability table below all rest on this number.
-With the literature value the ranking is no better than chance, which is
-what Vina's tight-binder saturation would predict: all four compounds
-dock within 0.3 kcal/mol of each other.
+The claim this set used to support — that docking ranks biotin-site
+binders usably — does not hold. The class has been moved out of the
+"reliable for ranking" table in the tutorial into "pose filter only",
+alongside kinases.
 
-**Not changed here.** Correcting it flips a published headline and makes
-a CI gate fail, so it is the project owner's call. Tracked as a GitHub
-issue; the fix is to re-pull all four K_d values from BindingDB or
-PDBBind pinned to PDB IDs, as the file's own header already says a future
-change should.
+**What replaced it is a stronger test.** `tests/uq/test_calibration_smoke.py`
+asserted Spearman ≥ 0.8, which only passed because of the bad number.
+It now pins the saturation itself: across four compounds spanning
+**12.0 kcal/mol** of experimental affinity, the predictions span
+**0.33 kcal/mol**, all between −7.1 and −7.4. That is Vina's tight-binder
+saturation measured directly, it is reproducible, and it is the property
+the reliability table's `do_not_trust_absolute` verdict rests on.
+
+Downstream artifacts regenerated from the corrected data:
+`benchmarks/dock/uq_coverage.json` and the `ultra_tight_binder` row of
+`benchmarks/dock/reliability_table.yaml`.
 
 ## Docking: accuracy per target class
 

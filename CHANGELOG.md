@@ -29,12 +29,26 @@
   scored on the other, and it improves out-of-sample prediction in
   both folds while beating the constant-IC50 null in both.
 
-### Found, not fixed
-- `benchmarks/dock/streptavidin_calibration.yaml` lists desthiobiotin at
-  K_d 5e-5 M; the literature value is ~1e-11 M. With the correct value
-  the streptavidin Spearman falls from +0.80 to 0.00, which would break
-  a headline claim and a CI gate. Documented in `docs/VALIDATION.md` and
-  filed as issue #14 rather than changed unilaterally.
+### Fixed — streptavidin reference data (closes #14)
+- `benchmarks/dock/streptavidin_calibration.yaml` listed desthiobiotin at
+  K_d 5e-5 M, ~6 orders of magnitude too weak and inconsistent with the
+  source cited on the entry itself. Corrected to ~1e-11 M / -15.0
+  kcal/mol (Hirsch 2002 Anal Biochem 308:343; bracketed by Green 1990
+  Methods Enzymol 184:51, which puts desthiobiotin 10^2-10^4 fold weaker
+  than biotin).
+- Consequences followed through, not hidden: measured Spearman on this
+  set falls +0.80 -> +0.40 and MAE rises 4.98 -> 6.66 kcal/mol. The
+  claim that docking ranks biotin-site binders usably does not hold, so
+  the class moved out of the tutorial's "reliable for ranking" table
+  into "pose filter only", next to kinases.
+- `tests/uq/test_calibration_smoke.py` asserted Spearman >= 0.8, which
+  passed only because of the bad number. It now pins the saturation
+  itself: four compounds spanning 12.0 kcal/mol of experimental affinity
+  produce predictions spanning 0.33 kcal/mol. That is reproducible and
+  is what the reliability table's `do_not_trust_absolute` verdict rests
+  on.
+- Regenerated from corrected data: `benchmarks/dock/uq_coverage.json`,
+  the `ultra_tight_binder` row of `benchmarks/dock/reliability_table.yaml`.
 
 ### Validation result — exit gate NOT met, and now measured properly
 - Expanded to **ten** cell lines (five TP53 wild-type, five mutant),

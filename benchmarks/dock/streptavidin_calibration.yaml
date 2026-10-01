@@ -38,12 +38,20 @@ entries:
 
   - name: desthiobiotin
     smiles: "C[C@H]1NC(=O)N[C@H]1CCCCC(=O)O"
-    Kd_M: 5.0e-5
-    dG_expt_kcalmol: -5.9
+    Kd_M: 1.0e-11
+    dG_expt_kcalmol: -15.0
     source_notes: |
       Hirsch 2002 Anal Biochem 308:343 — lacks the sulphur and the
-      bicyclic ureido ring is opened; much weaker than biotin.
-      (Often cited K_d ≈ 10^-4 to 10^-6 M; midpoint used here.)
+      bicyclic ureido ring is opened; weaker than biotin but still a
+      tight binder, K_d ~ 10^-11 M. This is the value that makes
+      desthiobiotin useful as a reversible affinity tag: tight enough
+      to capture, loose enough to elute with free biotin.
+      CORRECTED 2026-10 (was 5.0e-5 M / -5.9 kcal/mol, ~6 orders of
+      magnitude too weak and inconsistent with the source cited on
+      this very entry). Green 1990 Methods Enzymol 184:51 puts
+      desthiobiotin 10^2-10^4 fold weaker than biotin, i.e. 10^-12 to
+      10^-10 M, bracketing this value. The old number made the set
+      look rank-orderable; see the commit that changed it.
 
   - name: HABA
     smiles: "Oc1ccc(/N=N/c2ccccc2C(=O)O)cc1"
