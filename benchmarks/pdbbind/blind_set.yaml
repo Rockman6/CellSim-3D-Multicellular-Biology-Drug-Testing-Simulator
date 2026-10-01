@@ -1,0 +1,21 @@
+# Layer 1.7 blind pose-recovery + PoseBusters validation set.
+# Diverse, standard re-docking cocrystals across protein families.
+# SMILES + coordinates are fetched from RCSB at run time (never
+# hard-coded), so this benchmark is not circular on our own inputs.
+# `resname` is given only where auto-pick could grab a cofactor.
+entries:
+  - {pdb: 1stp, resname: BTN, name: streptavidin_biotin}
+  - {pdb: 3ptb, resname: BEN, name: trypsin_benzamidine}
+  - {pdb: 1m17, resname: AQ4, name: egfr_erlotinib}
+  - {pdb: 1hvr, resname: XK2, name: hivprotease_xk263}
+  - {pdb: 2hyy, resname: STI, name: abl_imatinib}
+  - {pdb: 3ert, resname: OHT, name: er_hydroxytamoxifen}
+  - {pdb: 1err, resname: RAL, name: er_raloxifene}
+  - {pdb: 1oyt, name: thrombin}
+  - {pdb: 1fkg, name: fkbp12}
+  - {pdb: 1ke5, name: cdk2}
+  - {pdb: 1cbx, name: carboxypeptidase_a}
+  - {pdb: 1dwd, name: thrombin_napap}
+  - {pdb: 1hpx, name: hivprotease_kni272}
+  - {pdb: 1e1v, name: cdk2_inhibitor}
+  - {pdb: 1lpz, name: factor_xa}

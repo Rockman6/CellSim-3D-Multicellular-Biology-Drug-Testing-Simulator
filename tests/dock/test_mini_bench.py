@@ -31,7 +31,7 @@ from typing import Optional
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock import (  # noqa: E402
+from cellsim.dock import (  # noqa: E402
     attach_crystal_rmsd, dock_ligand,
 )
 

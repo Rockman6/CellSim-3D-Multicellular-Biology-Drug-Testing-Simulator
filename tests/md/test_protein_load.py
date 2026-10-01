@@ -27,7 +27,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.md import load_protein_pdb, short_protein_md  # noqa: E402
+from cellsim.md import load_protein_pdb, short_protein_md  # noqa: E402
 
 UBQ_PATH = REPO_ROOT / "benchmarks" / "md" / "1ubq.pdb"
 

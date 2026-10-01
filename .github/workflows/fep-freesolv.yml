@@ -7,7 +7,7 @@ name: fep-freesolv
 # windows × 2 legs × 12 compounds) take ~20 GPU-hours on an H100.
 #
 # Exit criterion: MAE ≤ 1.5 kcal/mol vs FreeSolv experimental.
-# Pinned in src/fep/freesolv_validate.py — the workflow just
+# Pinned in cellsim/fep/freesolv_validate.py — the workflow just
 # wraps a deterministic cellsim fep-freesolv call and uploads
 # the result CSV as an artifact.
 #
@@ -65,7 +65,7 @@ jobs:
       - name: Run FreeSolv gate
         run: |
           mkdir -p run/fep
-          python -u -m src.fep.freesolv_validate \
+          python -u -m cellsim.fep.freesolv_validate \
             benchmarks/fep/freesolv_12.yaml \
             --n-windows ${{ github.event.inputs.n_windows }} \
             --production-steps ${{ github.event.inputs.production_steps }} \

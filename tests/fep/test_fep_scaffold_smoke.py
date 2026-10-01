@@ -14,7 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fep import alchemical_state_smoke  # noqa: E402
+from cellsim.fep import alchemical_state_smoke  # noqa: E402
 
 
 def test_alchemical_factory_builds_on_lj_fluid():

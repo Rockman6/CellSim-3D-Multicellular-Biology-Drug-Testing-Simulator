@@ -51,7 +51,7 @@ def _build_methane_vacuum_alchemical():
 
 
 def test_methane_vacuum_decouple_is_near_zero():
-    from src.fep.sampling import sample_alchemical_windows
+    from cellsim.fep.sampling import sample_alchemical_windows
 
     alch, top, positions = _build_methane_vacuum_alchemical()
     r = sample_alchemical_windows(

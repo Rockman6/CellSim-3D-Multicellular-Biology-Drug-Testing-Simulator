@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/chem/**"
-      - "src/md/**"
-      - "src/dock/**"
-      - "src/fep/**"
-      - "src/quantum/**"
-      - "src/uq/**"
-      - "src/cache/**"
+      - "cellsim/chem/**"
+      - "cellsim/md/**"
+      - "cellsim/dock/**"
+      - "cellsim/fep/**"
+      - "cellsim/quantum/**"
+      - "cellsim/uq/**"
+      - "cellsim/cache/**"
       - "tests/chem/**"
       - "tests/cache/**"
       - "tests/md/**"
@@ -23,17 +23,22 @@ on:
       - "benchmarks/dock/**"
       - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
+      - "benchmarks/pdbbind/**"
+      - "cellsim/cell/**"
+      - "cellsim/bridge/**"
+      - "tests/cell/**"
+      - "tests/bridge/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
     paths:
-      - "src/chem/**"
-      - "src/md/**"
-      - "src/dock/**"
-      - "src/fep/**"
-      - "src/quantum/**"
-      - "src/uq/**"
-      - "src/cache/**"
+      - "cellsim/chem/**"
+      - "cellsim/md/**"
+      - "cellsim/dock/**"
+      - "cellsim/fep/**"
+      - "cellsim/quantum/**"
+      - "cellsim/uq/**"
+      - "cellsim/cache/**"
       - "tests/chem/**"
       - "tests/cache/**"
       - "tests/md/**"
@@ -46,6 +51,11 @@ on:
       - "benchmarks/dock/**"
       - "benchmarks/fep/**"
       - "benchmarks/quantum/**"
+      - "benchmarks/pdbbind/**"
+      - "cellsim/cell/**"
+      - "cellsim/bridge/**"
+      - "tests/cell/**"
+      - "tests/bridge/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -199,12 +209,6 @@ jobs:
       - name: bridge — Campaign-1 → Campaign-2 rate-law emitter
         run: python -u tests/bridge/test_binding_to_hill_smoke.py
 
-      - name: fill_prof_email auto-fill regression (10/10)
-        run: python -u tests/fep/test_fill_prof_email_smoke.py
-
-      - name: csv_tldr one-line Slack summariser (10/10)
-        run: python -u tests/fep/test_csv_tldr_smoke.py
-
       - name: fep sampled binding smoke (opt-in, ~10 min, manual)
         if: >
           github.event_name == 'workflow_dispatch' &&
@@ -257,6 +261,32 @@ jobs:
 
       - name: cache smoke (content-addressed SQLite store)
         run: python -u tests/cache/test_cache_smoke.py
+
+      # ── Gates added by PRs #10 / #11 / #12 (merged together) ──────────
+      - name: dock pose reconstruction (PR #11 — Meeko atom-order regression)
+        run: python -u tests/dock/test_pose_reconstruction.py
+
+      - name: fep binding audit regressions (PR #10 — deterministic mode, seed/n_windows guards, stereo)
+        run: |
+          python -u tests/fep/test_deterministic_mode_smoke.py
+          python -u tests/fep/test_seed_and_nwindows_smoke.py
+          python -u tests/fep/test_stereo_consistency_smoke.py
+
+      - name: UQ reliability table + Sobol artifact (PR #12)
+        run: |
+          python -u tests/uq/test_reliability_smoke.py
+          python -u tests/uq/test_sobol_sensitivity_smoke.py
+
+      - name: bridge rate-law accuracy (PR #12)
+        run: python -u tests/bridge/test_rate_law_accuracy_smoke.py
+
+      - name: cell module smoke (PR #12 — every tests/cell/test_*.py, seconds each)
+        run: |
+          set -e
+          for t in tests/cell/test_*.py; do
+            echo "== $t"
+            python -u "$t"
+          done
 
   scale:
     name: scale (workflow_dispatch only)

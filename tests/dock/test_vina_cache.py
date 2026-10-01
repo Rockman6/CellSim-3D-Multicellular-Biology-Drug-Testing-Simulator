@@ -24,8 +24,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.dock import dock_ligand  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.dock import dock_ligand  # noqa: E402
 
 RECEPTOR = REPO_ROOT / "benchmarks" / "dock" / "1stp.pdb"
 LIGAND = "OC(=O)CCCC[C@@H]1SC[C@@H]2NC(=O)N[C@H]12"

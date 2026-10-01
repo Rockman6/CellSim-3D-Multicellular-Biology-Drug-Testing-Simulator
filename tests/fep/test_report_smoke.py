@@ -35,7 +35,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fep.report import (  # noqa: E402
+from cellsim.fep.report import (  # noqa: E402
     analyse, format_markdown, _write_table_csv,
     GATE_MAE_KCALMOL,
 )
@@ -242,7 +242,7 @@ def test_cli_end_to_end_binding_csv_via_yaml_flag():
     --yaml binding_streptavidin.yaml`, assert the rendered markdown
     uses the binding sign-rule + 2.0 kcal/mol gate."""
     import io as _io
-    from src.fep.report import main as _report_main
+    from cellsim.fep.report import main as _report_main
 
     bind_csv_rows = [
         {"name": "biotin", "smiles": "...",
@@ -304,7 +304,7 @@ def test_table_csv_export_schema_stable():
     downstream silently.
     """
     import io as _io
-    from src.fep.report import main as _report_main
+    from cellsim.fep.report import main as _report_main
 
     with tempfile.TemporaryDirectory(
             prefix="cellsim_table_") as tmp:
@@ -344,7 +344,7 @@ def test_json_output_carries_within_sigma_and_yaml_kind():
     without a test."""
     import io as _io
     import json as _json
-    from src.fep.report import main as _report_main
+    from cellsim.fep.report import main as _report_main
 
     old = sys.stdout
     sys.stdout = _io.StringIO()
@@ -373,7 +373,7 @@ def test_yaml_flag_auto_infers_gate_from_kind():
     hydration YAML (freesolv) should stay at 1.5. Explicit
     --mae-gate on CLI always wins."""
     import io as _io
-    from src.fep.report import main as _report_main
+    from cellsim.fep.report import main as _report_main
 
     # Binding YAML → gate should be 2.0 (encoded in markdown).
     old = sys.stdout

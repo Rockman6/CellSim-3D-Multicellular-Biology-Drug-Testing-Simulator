@@ -15,9 +15,9 @@ Steps (each one < 1 s):
     6. bundled cocrystal 1STP loadable?
     7. RDKit can parse and embed aspirin?
     8. compound_hash deterministic?
-    9. src.cache round-trip works?
+    9. cellsim.cache round-trip works?
    10. triage rule table returns follow_up on a clean hit?
-   11. src.dock.strain importable?
+   11. cellsim.dock.strain importable?
    12. FEP scaffold: openmmtools alchemy builds a valid system?
    13. Every benchmark YAML under benchmarks/fep/ RDKit-parses
        and (if binding) points at an existing receptor.
@@ -169,7 +169,7 @@ def main() -> int:
 
     # 5b compound_hash deterministic
     try:
-        from src.cache import compound_hash
+        from cellsim.cache import compound_hash
         h1 = compound_hash("CC(=O)O")
         h2 = compound_hash("OC(C)=O")
         check(f"compound_hash stable under reorder (h={h1[:8] if h1 else 'none'})",
@@ -181,7 +181,7 @@ def main() -> int:
     # 5c Cache round-trip
     try:
         import tempfile
-        from src.cache import Cache
+        from cellsim.cache import Cache
         with tempfile.TemporaryDirectory() as tmp:
             c = Cache(Path(tmp) / "c.sqlite")
             c.put("k", "m", {"v": 42})
@@ -194,7 +194,7 @@ def main() -> int:
 
     # 5d Triage + strain modules import and basic rules fire.
     try:
-        from src.dock.batch import _triage_call
+        from cellsim.dock.batch import _triage_call
         verdict, _ = _triage_call(dict(
             dG_kcalmol=-9.2, strain_band="good",
             pocket_ok=True, mutagenic_risk="low",
@@ -205,14 +205,14 @@ def main() -> int:
         check(f"triage rules  [{e}]", False)
 
     try:
-        from src.dock.strain import ligand_strain  # noqa: F401
+        from cellsim.dock.strain import ligand_strain  # noqa: F401
         check("strain diagnostic module importable", True)
     except Exception as e:
         check(f"strain diagnostic  [{e}]", False)
 
     # 5e FEP scaffold (openmmtools alchemy primitives).
     try:
-        from src.fep import alchemical_state_smoke
+        from cellsim.fep import alchemical_state_smoke
         r = alchemical_state_smoke()
         check(
             f"FEP scaffold (openmmtools "
@@ -228,7 +228,7 @@ def main() -> int:
     # biologist burns 4 h on a doomed run.
     print(f"\n  6. Benchmark YAML dry-run")
     try:
-        from src.fep.binding import main as _fep_binding_main
+        from cellsim.fep.binding import main as _fep_binding_main
         import io as _io
         yaml_dir = REPO / "benchmarks" / "fep"
         for yml in sorted(yaml_dir.glob("*.yaml")):

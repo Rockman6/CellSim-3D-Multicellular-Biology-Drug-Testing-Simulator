@@ -25,8 +25,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.quantum.som_cyp_pose import predict_cyp_som_with_heme_access  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.quantum.som_cyp_pose import predict_cyp_som_with_heme_access  # noqa: E402
 
 
 def test_heme_access_aspirin():

@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO_ROOT))
 def _run(yaml_text: str, extra_args=()):
     """Invoke the validate CLI on a temporary YAML and return the
     exit code. Captures stdout so the test harness stays quiet."""
-    from src.fep.binding import main
+    from cellsim.fep.binding import main
 
     with tempfile.NamedTemporaryFile(
             mode="w", suffix=".yaml", delete=False) as tmp:
@@ -261,7 +261,7 @@ def test_empty_entries_list_fails():
 def test_bundled_streptavidin_yaml_validates():
     """End-to-end on the committed binding benchmark — this is the
     CI gate that stops a SMILES typo from landing on main."""
-    from src.fep.binding import main
+    from cellsim.fep.binding import main
 
     old = sys.stdout
     sys.stdout = io.StringIO()
@@ -279,7 +279,7 @@ def test_bundled_streptavidin_yaml_validates():
 
 
 def test_bundled_freesolv_yaml_validates():
-    from src.fep.binding import main
+    from cellsim.fep.binding import main
 
     old = sys.stdout
     sys.stdout = io.StringIO()
@@ -420,7 +420,7 @@ def test_hydration_wall_time_estimate_matches_m5max_observation():
     """
     import io as _io
     import re
-    from src.fep.binding import main
+    from cellsim.fep.binding import main
 
     old = sys.stdout
     sys.stdout = _io.StringIO()
@@ -453,7 +453,7 @@ def test_wall_time_estimate_within_reasonable_range():
     reversal. If someone drops an exponent on atom-count scaling
     or forgets the legs/windows factor, this fires.
     """
-    from src.fep.binding import main
+    from cellsim.fep.binding import main
 
     old = sys.stdout
     sys.stdout = io.StringIO()

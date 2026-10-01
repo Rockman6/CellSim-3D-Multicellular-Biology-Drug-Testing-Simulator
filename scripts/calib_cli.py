@@ -32,8 +32,8 @@ def main(argv=None):
                          "(default: print stats only)")
     args = ap.parse_args(argv)
 
-    from src.cache import Cache
-    from src.uq import run_calibration, render_calibration_result
+    from cellsim.cache import Cache
+    from cellsim.uq import run_calibration, render_calibration_result
 
     cache = Cache(args.cache) if args.cache else None
     r = run_calibration(

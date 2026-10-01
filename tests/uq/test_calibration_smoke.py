@@ -1,6 +1,6 @@
 """Layer 1.7 calibration smoke — CellSim vs published K_d.
 
-Runs src.uq.calibration on the bundled streptavidin set (4
+Runs cellsim.uq.calibration on the bundled streptavidin set (4
 published binders with K_d spanning 10^-14 to 10^-5 M).
 
 Gates:
@@ -25,8 +25,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import Cache  # noqa: E402
-from src.uq import run_calibration  # noqa: E402
+from cellsim.cache import Cache  # noqa: E402
+from cellsim.uq import run_calibration  # noqa: E402
 
 
 CAL_YAML = REPO_ROOT / "benchmarks" / "dock" / "streptavidin_calibration.yaml"
@@ -44,7 +44,13 @@ def test_calibration_streptavidin():
         assert r.n_ok >= 3, f"only {r.n_ok}/{r.n_points} docked"
         assert r.ok, f"run_calibration not ok: {r.reason}"
         assert r.spearman_rho is not None
-        assert r.spearman_rho >= 0.8, (
+        # With n=4, Spearman moves in steps of 0.2 and 0.8 means one swap.
+        # It is computed in floating point (0.8 can come out as 0.79999...),
+        # so compare with a tolerance far below the 0.2 step. Note the gate
+        # is fragile by construction: biotin and 2-iminobiotin dock within
+        # ~0.1 kcal/mol of each other, inside Vina's ~0.3 kcal/mol seed
+        # scatter, so their order can flip between platforms.
+        assert r.spearman_rho >= 0.8 - 1e-9, (
             f"Spearman ρ = {r.spearman_rho:+.3f} < 0.8; "
             "CellSim ranks too poorly for triage on this set")
         assert r.mae_kcalmol is not None
