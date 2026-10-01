@@ -26,6 +26,38 @@ and reads 0.56–0.69 Å now.
 Reproduce: `python scripts/run_blind_dock_bench.py benchmarks/pdbbind/blind_set.yaml`
 (results committed in `benchmarks/pdbbind/blind_set_results.csv`).
 
+## ⚠ Open correctness issue: the streptavidin reference set
+
+`benchmarks/dock/streptavidin_calibration.yaml` lists desthiobiotin at
+**K_d = 5×10⁻⁵ M** (ΔG −5.9 kcal/mol). The literature says desthiobiotin
+binds streptavidin **100 to 10 000 fold weaker than biotin**, i.e. about
+10⁻¹¹ M (ΔG ≈ −15), and the entry's own cited source (Hirsch 2002 Anal
+Biochem 308:343) is the standard reference for that figure. The file's
+in-line note ("often cited 10⁻⁴ to 10⁻⁶ M") does not match it. The value
+is internally consistent (its ΔG matches its K_d) but appears to be wrong
+by roughly six orders of magnitude.
+
+It matters because it is load-bearing. Recomputing the Linux CI docking
+results against both values:
+
+| Reference used | Spearman ρ | MAE |
+|---|:-:|:-:|
+| repo value (5×10⁻⁵ M) | **+0.80** | 4.95 kcal/mol |
+| literature (10⁻¹¹ M) | **0.00** | 6.41 kcal/mol |
+
+So the claim that docking *ranks* streptavidin binders usably, the
+`tests/uq/test_calibration_smoke.py` gate (ρ ≥ 0.8), and the
+streptavidin row of the reliability table below all rest on this number.
+With the literature value the ranking is no better than chance, which is
+what Vina's tight-binder saturation would predict: all four compounds
+dock within 0.3 kcal/mol of each other.
+
+**Not changed here.** Correcting it flips a published headline and makes
+a CI gate fail, so it is the project owner's call. Tracked as a GitHub
+issue; the fix is to re-pull all four K_d values from BindingDB or
+PDBBind pinned to PDB IDs, as the file's own header already says a future
+change should.
+
 ## Docking: accuracy per target class
 
 Measured absolute error of docking ΔG against experiment, so a
@@ -166,9 +198,27 @@ predicted at 0.49 µM against 0.11 measured. In GDSC those lines are
 about as sensitive as the wild-type ones, so DNA-damage death in these
 cells does not run only through p53.
 
-**What would close the gap, in order.**
-1. A p53-independent damage-death route (p73, mitotic catastrophe). The
-   mutant lines are held out, so this is testable without refitting.
+**A p53-independent death route closes part of the gap.** ATM/c-Abl →
+p73 → PUMA is the documented route by which TP53-mutant cells still die
+of DNA damage (Gong 1999 Nature 399:806; Agami 1999 Nature 399:809, both
+with cisplatin). Added as `Params.p73_gain` (0 = off, the p53-only
+model). Tested leave-one-mutant-out by `scripts/experiment_p73.py`: the
+gain is chosen on one mutant line and scored on the *other*, so the test
+line never influences it. Log10 error on the held-out mutant:
+
+| Fold | Chosen gain | With route | p53-only | Constant-IC50 null |
+|---|:-:|:-:|:-:|:-:|
+| train HT-29 → test MDA-MB-231 | 0.1 | **0.318** | 0.524 | 0.405 |
+| train MDA-MB-231 → test HT-29 | 0.1 | **0.332** | 0.388 | 0.410 |
+
+The route improves out-of-sample prediction in both folds and beats the
+null on both, and both folds independently pick the same small gain. It
+does not touch untreated cells or the wild-type lines, because it only
+engages once ATM is genuinely activated. Default stays 0 until the
+drug constants are refitted with it on, which is the next run.
+
+**Still to do, in order.**
+1. Refit with the route on and re-check the exit gate.
 2. Line-specific inputs from measured data rather than doubling time
    only, e.g. CCLE/DepMap expression of ABCB1 (efflux), the BCL2 family
    (apoptotic priming) and repair genes, mapped onto the engine's

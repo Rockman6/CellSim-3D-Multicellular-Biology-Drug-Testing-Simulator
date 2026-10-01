@@ -46,7 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from cellsim.cell.engine import (  # noqa: E402
-    calibrate_cycle_scale, dose_response, ic50_from_curve,
+    Params, calibrate_cycle_scale, dose_response, ic50_from_curve,
 )
 from cellsim.cell.library import CELL_LINES, DRUGS  # noqa: E402
 
@@ -89,11 +89,11 @@ def load_targets(path: Path) -> dict[tuple[str, str], Target]:
 
 # ── engine wrappers ───────────────────────────────────────────────────
 def predicted_ic50(line_name: str, drug, center_uM: float, *, n_cells: int,
-                   k_cyc: dict[str, float], seed: int = 1) -> float:
+                   k_cyc: dict[str, float], seed: int = 1, params: Params = Params()) -> float:
     """IC50 from a 13-point log grid spanning 4 decades either side."""
     conc = center_uM * np.logspace(-4, 4, 13)
-    viab, _ = dose_response(CELL_LINES[line_name], drug, conc,
-                            n_cells_per_conc=n_cells, k_cyc=k_cyc[line_name], seed=seed)
+    viab, _ = dose_response(CELL_LINES[line_name], drug, conc, n_cells_per_conc=n_cells,
+                            k_cyc=k_cyc[line_name], seed=seed, p=params)
     return ic50_from_curve(conc, viab[1:])
 
 
@@ -102,14 +102,17 @@ def with_gain(drug, gain: float):
 
 
 def fit_gain_for_line(line_name: str, drug, target_uM: float, *, n_cells: int,
-                      k_cyc: dict[str, float], iters: int) -> tuple[float, float]:
+                      k_cyc: dict[str, float], iters: int,
+                      params: Params = Params()) -> tuple[float, float]:
     """Bisection in log10 of the fitted constant. The direction (does the
     IC50 fall or rise as the constant grows?) is read off the bracket ends,
     so a potency gain and an affinity constant are fitted the same way."""
     g0 = getattr(drug, drug.fit_target)
     lo, hi = math.log10(g0) - 5, math.log10(g0) + 5
-    ic_lo = predicted_ic50(line_name, with_gain(drug, 10 ** lo), target_uM, n_cells=n_cells, k_cyc=k_cyc)
-    ic_hi = predicted_ic50(line_name, with_gain(drug, 10 ** hi), target_uM, n_cells=n_cells, k_cyc=k_cyc)
+    ic_lo = predicted_ic50(line_name, with_gain(drug, 10 ** lo), target_uM, n_cells=n_cells, k_cyc=k_cyc,
+                           params=params)
+    ic_hi = predicted_ic50(line_name, with_gain(drug, 10 ** hi), target_uM, n_cells=n_cells, k_cyc=k_cyc,
+                           params=params)
     falling = ic_lo >= ic_hi                     # IC50 falls as the constant rises
     weak_end, strong_end = (ic_lo, ic_hi) if falling else (ic_hi, ic_lo)
     if strong_end > target_uM:   # even the most potent setting cannot kill enough
@@ -119,7 +122,8 @@ def fit_gain_for_line(line_name: str, drug, target_uM: float, *, n_cells: int,
     ic = math.nan
     for _ in range(iters):
         mid = 0.5 * (lo + hi)
-        ic = predicted_ic50(line_name, with_gain(drug, 10 ** mid), target_uM, n_cells=n_cells, k_cyc=k_cyc)
+        ic = predicted_ic50(line_name, with_gain(drug, 10 ** mid), target_uM, n_cells=n_cells, k_cyc=k_cyc,
+                           params=params)
         too_weak = ic > target_uM
         if too_weak == falling:      # move toward more potency
             lo = mid
@@ -140,110 +144,153 @@ def spearman(a: list[float], b: list[float]) -> float:
     return float(np.corrcoef(ra, rb)[0, 1])
 
 
+# ── validation run ────────────────────────────────────────────────────
+def _rmse(pred: list[float], ref: list[float]) -> float:
+    if not ref:
+        return math.nan
+    return math.sqrt(sum(math.log10(p_ / r_) ** 2 for p_, r_ in zip(pred, ref)) / len(ref))
+
+
+def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int = 12,
+                   drug_names: tuple[str, ...] = tuple(DRUGS), verbose: bool = True
+                   ) -> tuple[list[dict], dict]:
+    """Fit on FIT_LINES, predict every line; return (rows, summary)."""
+    say = print if verbose else (lambda *a, **k: None)
+    targets = load_targets(REFERENCE_CSV)
+    lines = sorted({line for (_, line) in targets})
+    k_cyc = {ln: calibrate_cycle_scale(CELL_LINES[ln], params) for ln in lines}
+    t_start = time.time()
+    rows: list[dict] = []
+    summary: dict = {"n_cells_per_dose": n_cells, "bisection_steps": iters,
+                     "fit_lines": list(FIT_LINES), "params": dataclasses.asdict(params),
+                     "drugs": {}}
+
+    for drug_name in drug_names:
+        drug = DRUGS[drug_name]
+        drug_lines = [ln for ln in lines if (drug_name, ln) in targets]
+        fit_on = [ln for ln in FIT_LINES
+                  if (drug_name, ln) in targets and targets[(drug_name, ln)].kind == "value"]
+        say(f"\n== {drug_name}: fit {drug.fit_target} on {fit_on or 'nothing'}")
+        per_line_gain = {}
+        for ln in fit_on:
+            g, ic = fit_gain_for_line(ln, drug, targets[(drug_name, ln)].center,
+                                      n_cells=n_cells, k_cyc=k_cyc, iters=iters, params=params)
+            per_line_gain[ln] = g
+            say(f"   {ln:<11} gain {g:.4g}  (IC50 at fit {ic:.3g} µM, target "
+                f"{targets[(drug_name, ln)].center:.3g})")
+        good = [g for g in per_line_gain.values() if np.isfinite(g) and g > 0]
+        if not good:
+            say("   no fit possible; skipping predictions for this drug")
+            summary["drugs"][drug_name] = {"fit_target": drug.fit_target, "gain": None,
+                                           "per_line_gain": per_line_gain, "fit_on": fit_on}
+            continue
+        gain = math.exp(sum(math.log(g) for g in good) / len(good))
+        fitted = with_gain(drug, gain)
+        say(f"   fitted {drug.fit_target} = {gain:.4g}")
+        # Null model: one IC50 for every line, the geometric mean of the fit
+        # lines' references. If the engine cannot beat this, it is not yet
+        # telling lines apart; it is only reproducing the drug's potency scale.
+        null_ic = math.exp(sum(math.log(targets[(drug_name, ln)].center) for ln in fit_on)
+                           / len(fit_on))
+
+        drug_rows = []
+        for ln in drug_lines:
+            t = targets[(drug_name, ln)]
+            ic = predicted_ic50(ln, fitted, t.center, n_cells=n_cells, k_cyc=k_cyc,
+                                params=params)
+            ok = (t.lo <= ic <= t.hi) if t.kind == "value" else (ic >= t.lo)
+            ok_null = (t.lo <= null_ic <= t.hi) if t.kind == "value" else (null_ic >= t.lo)
+            fold = (ic / t.center) if (t.kind == "value" and np.isfinite(ic)) else math.nan
+            role = "fit" if ln in fit_on else "held-out"
+            row = {"drug": drug_name, "cell_line": ln,
+                   "p53_functional": CELL_LINES[ln].p53_functional, "role": role,
+                   "reference_kind": t.kind, "reference_ic50_uM": round(t.center, 5),
+                   "accept_lo_uM": round(t.lo, 5),
+                   "accept_hi_uM": (round(t.hi, 5) if np.isfinite(t.hi) else "inf"),
+                   "n_screens": t.n_screens,
+                   "predicted_ic50_uM": (round(ic, 5) if np.isfinite(ic) else "inf"),
+                   "null_ic50_uM": round(null_ic, 5),
+                   "fold_error": (round(fold, 3) if np.isfinite(fold) else ""),
+                   "pass": bool(ok), "null_pass": bool(ok_null)}
+            rows.append(row)
+            drug_rows.append(row)
+            mark = "PASS" if ok else "MISS"
+            span = (f"[{t.lo:.3g}, {t.hi:.3g}]" if t.kind == "value" else f">= {t.lo:.3g}")
+            say(f"   {mark}  {ln:<11} {role:<8} ref {t.center:>8.3g} µM  span {span:<20} "
+                f"pred {ic:>8.3g} µM")
+
+        def vals(rs):
+            ref = [r["reference_ic50_uM"] for r in rs if r["reference_kind"] == "value"]
+            pred = [(r["predicted_ic50_uM"] if r["predicted_ic50_uM"] != "inf" else 1e9)
+                    for r in rs if r["reference_kind"] == "value"]
+            return pred, ref
+
+        pred_all, ref_all = vals(drug_rows)
+        pred_ho, ref_ho = vals([r for r in drug_rows if r["role"] == "held-out"])
+        rho = spearman(ref_all, pred_all)
+        d = {"fit_target": drug.fit_target, "gain": gain, "per_line_gain": per_line_gain,
+             "fit_on": fit_on, "spearman_vs_reference": rho, "null_ic50_uM": null_ic,
+             "log10_rmse_model": _rmse(pred_all, ref_all),
+             "log10_rmse_null": _rmse([null_ic] * len(ref_all), ref_all),
+             "log10_rmse_model_heldout": _rmse(pred_ho, ref_ho),
+             "log10_rmse_null_heldout": _rmse([null_ic] * len(ref_ho), ref_ho),
+             "n_heldout_in_range": len(ref_ho),
+             "pass": sum(r["pass"] for r in drug_rows),
+             "null_pass": sum(r["null_pass"] for r in drug_rows), "n": len(drug_rows)}
+        summary["drugs"][drug_name] = d
+        say(f"   Spearman (lines with in-range reference) = {rho:.2f}")
+        say(f"   log10 RMSE all lines: engine {d['log10_rmse_model']:.2f} vs null "
+            f"{d['log10_rmse_null']:.2f};  held-out only: engine "
+            f"{d['log10_rmse_model_heldout']:.2f} vs null {d['log10_rmse_null_heldout']:.2f} "
+            f"(n={len(ref_ho)})   span passes: engine {d['pass']}/{d['n']}, "
+            f"null {d['null_pass']}/{d['n']}")
+
+    held = [r for r in rows if r["role"] == "held-out"]
+    beats = [name for name, d in summary["drugs"].items()
+             if d.get("gain") and d["n_heldout_in_range"] > 0
+             and d["log10_rmse_model_heldout"] < d["log10_rmse_null_heldout"]]
+    summary.update({
+        "held_out_pass": sum(r["pass"] for r in held),
+        "held_out_null_pass": sum(r["null_pass"] for r in held),
+        "held_out_n": len(held),
+        "drugs_beating_null_heldout": beats,
+        "exit_gate_met": len(beats) >= 2,
+        "wall_s": round(time.time() - t_start, 1)})
+    say(f"\nheld-out predictions inside the GDSC span: engine "
+        f"{summary['held_out_pass']}/{len(held)}, constant-IC50 null "
+        f"{summary['held_out_null_pass']}/{len(held)}   ({summary['wall_s']:.0f} s)")
+    say(f"Phase-1 exit gate (beat the null's held-out log10 RMSE for >= 2 of 3 drugs): "
+        f"{'MET' if summary['exit_gate_met'] else 'not met'}  (beating: {beats or 'none'})")
+    return rows, summary
+
+
 # ── main ──────────────────────────────────────────────────────────────
+def _parse_param(text: str) -> tuple[str, float]:
+    key, _, val = text.partition("=")
+    names = {f.name for f in dataclasses.fields(Params)}
+    if key not in names or not val:
+        raise argparse.ArgumentTypeError(f"--param expects NAME=VALUE with NAME one of the "
+                                         f"engine Params fields; got {text!r}")
+    return key, float(val)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quick", action="store_true", help="16 cells per dose, 8 bisection steps")
     ap.add_argument("--cells", type=int, default=None, help="cells per dose (default 32)")
     ap.add_argument("--drugs", default=",".join(DRUGS), help="comma-separated subset")
+    ap.add_argument("--param", type=_parse_param, action="append", default=[],
+                    metavar="NAME=VALUE", help="override an engine parameter (repeatable)")
     ap.add_argument("--no-write", action="store_true", help="do not write the results files")
     a = ap.parse_args(argv)
-    n_cells = a.cells or (16 if a.quick else 32)
-    iters = 8 if a.quick else 12
-
-    targets = load_targets(REFERENCE_CSV)
-    lines = sorted({line for (_, line) in targets})
-    k_cyc = {ln: calibrate_cycle_scale(CELL_LINES[ln]) for ln in lines}
-    t_start = time.time()
-    rows, summary = [], {"n_cells_per_dose": n_cells, "bisection_steps": iters,
-                         "fit_lines": list(FIT_LINES), "drugs": {}}
-
-    for drug_name in [d.strip() for d in a.drugs.split(",") if d.strip()]:
-        drug = DRUGS[drug_name]
-        drug_lines = [ln for ln in lines if (drug_name, ln) in targets]
-        fit_on = [ln for ln in FIT_LINES
-                  if (drug_name, ln) in targets and targets[(drug_name, ln)].kind == "value"]
-        print(f"\n== {drug_name}: fit {drug.fit_target} on {fit_on or 'nothing'}")
-        per_line_gain = {}
-        for ln in fit_on:
-            g, ic = fit_gain_for_line(ln, drug, targets[(drug_name, ln)].center,
-                                      n_cells=n_cells, k_cyc=k_cyc, iters=iters)
-            per_line_gain[ln] = g
-            print(f"   {ln:<11} gain {g:.4g}  (IC50 at fit {ic:.3g} µM, target "
-                  f"{targets[(drug_name, ln)].center:.3g})")
-        good = [g for g in per_line_gain.values() if np.isfinite(g) and g > 0]
-        if not good:
-            print("   no fit possible; skipping predictions for this drug")
-            summary["drugs"][drug_name] = {"fit_target": drug.fit_target, "gain": None,
-                                           "per_line_gain": per_line_gain, "fit_on": fit_on}
-            continue
-        gain = math.exp(sum(math.log(g) for g in good) / len(good))
-        fitted = with_gain(drug, gain)
-        print(f"   fitted {drug.fit_target} = {gain:.4g}")
-
-        ref_vals, pred_vals = [], []
-        for ln in drug_lines:
-            t = targets[(drug_name, ln)]
-            ic = predicted_ic50(ln, fitted, t.center, n_cells=n_cells, k_cyc=k_cyc)
-            ok = (t.lo <= ic <= t.hi) if t.kind == "value" else (ic >= t.lo)
-            fold = (ic / t.center) if (t.kind == "value" and np.isfinite(ic)) else math.nan
-            role = "fit" if ln in fit_on else "held-out"
-            rows.append({"drug": drug_name, "cell_line": ln,
-                         "p53_functional": CELL_LINES[ln].p53_functional, "role": role,
-                         "reference_kind": t.kind, "reference_ic50_uM": round(t.center, 5),
-                         "accept_lo_uM": round(t.lo, 5),
-                         "accept_hi_uM": (round(t.hi, 5) if np.isfinite(t.hi) else "inf"),
-                         "n_screens": t.n_screens,
-                         "predicted_ic50_uM": (round(ic, 5) if np.isfinite(ic) else "inf"),
-                         "fold_error": (round(fold, 3) if np.isfinite(fold) else ""),
-                         "pass": bool(ok)})
-            if t.kind == "value":
-                ref_vals.append(t.center)
-                pred_vals.append(ic if np.isfinite(ic) else 1e9)
-            mark = "PASS" if ok else "MISS"
-            span = (f"[{t.lo:.3g}, {t.hi:.3g}]" if t.kind == "value" else f">= {t.lo:.3g}")
-            print(f"   {mark}  {ln:<11} {role:<8} ref {t.center:>8.3g} µM  span {span:<20} "
-                  f"pred {ic:>8.3g} µM")
-        rho = spearman(ref_vals, pred_vals)
-        # Null model: one IC50 for every line, the geometric mean of the fit
-        # lines' references. If the engine cannot beat this, it is not yet
-        # telling lines apart; it is only reproducing the drug's potency scale.
-        null_ic = math.exp(sum(math.log(targets[(drug_name, ln)].center) for ln in fit_on)
-                           / len(fit_on))
-        drug_rows = [r for r in rows if r["drug"] == drug_name]
-        null_pass = 0
-        for r in drug_rows:
-            t = targets[(drug_name, r["cell_line"])]
-            ok_null = (t.lo <= null_ic <= t.hi) if t.kind == "value" else (null_ic >= t.lo)
-            r["null_pass"] = bool(ok_null)
-            null_pass += ok_null
-        rmse_model = (math.sqrt(sum(math.log10(p_ / r_) ** 2 for p_, r_ in zip(pred_vals, ref_vals))
-                                / len(ref_vals)) if ref_vals else math.nan)
-        rmse_null = (math.sqrt(sum(math.log10(null_ic / r_) ** 2 for r_ in ref_vals)
-                               / len(ref_vals)) if ref_vals else math.nan)
-        summary["drugs"][drug_name] = {
-            "fit_target": drug.fit_target, "gain": gain, "per_line_gain": per_line_gain,
-            "fit_on": fit_on, "spearman_vs_reference": rho,
-            "log10_rmse_model": rmse_model, "log10_rmse_null": rmse_null,
-            "null_ic50_uM": null_ic,
-            "pass": sum(r["pass"] for r in drug_rows), "null_pass": null_pass,
-            "n": len(drug_rows)}
-        print(f"   Spearman (lines with in-range reference) = {rho:.2f}")
-        print(f"   log10 RMSE: engine {rmse_model:.2f} vs constant-IC50 null {rmse_null:.2f}"
-              f"   span passes: engine {summary['drugs'][drug_name]['pass']}/{len(drug_rows)}, "
-              f"null {null_pass}/{len(drug_rows)}")
-
-    held = [r for r in rows if r["role"] == "held-out"]
-    print(f"\nheld-out predictions inside the GDSC span: engine "
-          f"{sum(r['pass'] for r in held)}/{len(held)}, constant-IC50 null "
-          f"{sum(r.get('null_pass', False) for r in held)}/{len(held)}   "
-          f"(all rows {sum(r['pass'] for r in rows)}/{len(rows)}, {time.time() - t_start:.0f} s)")
+    params = Params(**dict(a.param))
+    rows, summary = run_validation(
+        params=params, n_cells=a.cells or (16 if a.quick else 32),
+        iters=8 if a.quick else 12,
+        drug_names=tuple(d.strip() for d in a.drugs.split(",") if d.strip()))
     print("The span gate is at least 9x wide, so it checks the potency scale, not whether "
-          "the engine tells lines apart; compare the log10 RMSE against the null for that.")
-    summary["held_out_pass"] = sum(r["pass"] for r in held)
-    summary["held_out_null_pass"] = sum(r.get("null_pass", False) for r in held)
-    summary["held_out_n"] = len(held)
+          "the engine tells lines apart; the exit gate compares log10 RMSE with the null.")
     if not a.no_write and rows:
         with RESULTS_CSV.open("w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))
