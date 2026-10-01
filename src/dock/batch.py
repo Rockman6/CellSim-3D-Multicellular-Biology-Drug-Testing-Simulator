@@ -248,7 +248,7 @@ def _warn_kinase_receptor(receptor_pdb: Path) -> None:
         "         Use the ΔG as a pose/pocket-fit sanity check "
         "only; do NOT\n"
         "         triage a kinase hit list on raw Vina ΔG. See "
-        "TUTORIAL.md §8\n"
+        "docs/docking_tutorial.md §8\n"
         "         'when CellSim works and when it fails' for "
         "details.\n",
         flush=True)
