@@ -98,6 +98,52 @@ cisplatin in every run. Units are "sim units" in several subsystems
 (`OLD/UNITS.md`). Treat `OLD/` as a reference implementation of the
 pathway topology and the citations, not as a validated predictor.
 
+## Phase-1 cell engine (`cellsim/cell/engine.py`)
+
+Ten gates in `tests/cell/test_engine_smoke.py`, all passing, each
+asserting a phenotype rather than "it ran":
+
+| Gate | Result |
+|---|---|
+| Untreated colony doubles at the line's quoted rate | A549 grows ×10.3 in 72 h vs ×9.7 expected for a 22 h doubling |
+| Asynchronous phase fractions are physiological | G1 0.67 / S 0.18 / G2 0.13 / M 0.03 |
+| p53 pulses under sustained damage, Purvis-like period | 4.9 h (published 5.5 h; the C++ prototype gave 3.0 h) |
+| No pulsing without damage (specificity) | basal p53 stays below 0.12 |
+| Damage *executes* death, not just commitment | caspase-3 reaches 1.0, cells are removed |
+| p53-mutant line resists damage-induced death | HT-29 deaths ≪ A549 deaths at the same damage |
+| Dose-response is monotone with a finite IC50 | holds |
+| Fixed seed is reproducible | exact |
+| State stays finite and bounded | holds |
+| Cycle scale tracks doubling time | HCT116 (18 h) > MCF7 (29 h) |
+
+The death-execution gate is the one that matters most: it is the defect
+that made the C++ prototype unusable (MOMP saturated while caspase-3 sat
+clamped at 0.04, so no cell ever died). The port fixes it by putting
+Smac in excess over XIAP, as measured (Rehm 2006).
+
+Not yet calibrated: the per-drug potency gains in `cellsim/cell/library.py`
+are placeholders, so absolute IC50s are not meaningful yet. Fitting them
+against the reference table below is the next step.
+
+## GDSC2 reference data (the Phase-1 validation target)
+
+Extracted by `scripts/gdsc_reference.py` into
+`benchmarks/cell/gdsc_reference.csv` from the public GDSC2 fitted
+dose-response release 8.4. The raw file is not vendored; the script
+prints the one-line download.
+
+| Drug | Lines | Published IC50 range | Usable as a quantitative target? |
+|---|:-:|---|---|
+| paclitaxel | 5 | 0.011–0.089 µM, all within the tested range | **Yes** |
+| cisplatin | 5 | 20–122 µM, all **above** the 8 µM top dose, AUC 0.92–0.99 | **No** — the screen never reached 50 % kill, so those IC50s are extrapolations. Gate on direction and rank only. |
+| doxorubicin | 0 | absent from GDSC2 | Use GDSC1 explicitly, or substitute camptothecin (in GDSC2, same replication-coupled damage mechanism) |
+
+The p53 split is **not** clean in this data and must not be assumed:
+cisplatin is less potent in p53-mutant HT-29 (122 µM) than in wild-type
+A549 (20 µM) as expected, but p53-mutant MDA-MB-231 (43 µM) is *more*
+sensitive than wild-type MCF7 (100 µM). The p53 effect is a measured
+outcome to report, never a gate.
+
 ## Cell-level modules (`cellsim/cell`)
 
 22 standalone tests, each asserting an analytic limit (steady state
@@ -106,6 +152,17 @@ conserved, Monte-Carlo agrees with interval arithmetic). No calibration
 against cell-line data yet; that is Phase 1 of `PLAN.md`.
 
 ## CI
+
+**Known CI cost problem.** `tests/fep/test_binding_scaffold_smoke.py`
+takes **35 minutes on a cold cache** on an Apple-silicon laptop (37 s
+warm). PR #10 expanded it to 14 tests, several of which build full
+solvated protein-ligand complexes (streptavidin, ubiquitin) with
+AM1-BCC charges. It is scaffold-only (`sample=False`, no MD), so the
+cost is parametrisation and solvation, not sampling. On a 2-core
+GitHub runner with no warm cache this will dominate the job and may
+exceed sensible limits. Fix before relying on CI: cache the built
+systems as fixtures, or move the heavy builders to `workflow_dispatch`
+and keep the cheap assertions always-on.
 
 `smoke.yml`: 54 always-on steps. The 51 that existed before the October
 wiring were replayed locally on the merged tree: 51 pass, 0 fail, 14 min.
