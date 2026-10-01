@@ -72,3 +72,8 @@ data/bioagents/uncertainty/
 
 # Editable-install metadata
 *.egg-info/
+
+# Bulk public datasets fetched by scripts (not redistributed; see each
+# script's docstring for the download line).
+data/depmap/
+data/gdsc/

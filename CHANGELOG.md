@@ -69,6 +69,28 @@
   hurts T47D, the one genuinely resistant mutant. Recorded in
   `docs/VALIDATION.md`.
 
+### Diagnosed — why the engine cannot tell cell lines apart
+- Swept every per-line field across its full observed range and measured
+  how far the predicted IC50 moves: doubling time 1.0x, Bcl-2 reserve
+  1.1x, DNA repair rate 7-9x (and 1.0x for paclitaxel). Real lines
+  differ by 8-51x. Doubling time is the engine's main line-specific
+  input and has no leverage at all, so with TP53 status binary the
+  engine can give at most two answers per drug — tying a constant is
+  arithmetic, not misfortune.
+- Paclitaxel has no line-specific channel whatsoever: its IC50 is set by
+  the tubulin-occupancy arrest threshold, a property of the drug. It
+  needs a per-line efflux channel the engine does not model.
+- Pulled DepMap 24Q4 expression for all 10 lines and 16 candidate genes
+  (efflux, BCL2 family, repair, target). After correcting for having
+  searched 16 genes, by permutation, nothing correlates with sensitivity
+  better than chance (family-wise p 0.86 / 0.25 / 0.54). The top hit for
+  both cisplatin and doxorubicin is TUBB3, which has no mechanism for
+  either. DepMap's CRISPR growth rate also fails as a scalable
+  doubling-time substitute (rho -0.15 against curated values).
+- Conclusion recorded rather than coded around: building an expression
+  mapping now would fit noise, the same error behind the retracted gate
+  above. The blocking constraint is the number of cell lines.
+
 ### Changed
 - `cellsim/cell/library.py`: placeholder potencies replaced by the fitted
   values (refitting reproduces them within 0.3 %). Paclitaxel's fitted
