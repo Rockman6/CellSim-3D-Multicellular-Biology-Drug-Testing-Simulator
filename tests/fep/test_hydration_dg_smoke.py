@@ -46,9 +46,13 @@ def test_methane_hydration_pipeline_runs():
     assert r.dG_hydration_kcalmol is not None
     assert math.isfinite(r.dG_hydration_kcalmol)
     assert math.isfinite(r.uncertainty_kcalmol)
-    assert r.wall_seconds is not None and r.wall_seconds < 180, (
-        f"pipeline wall = {r.wall_seconds:.1f}s; "
-        "expected < 3 min at smoke params.")
+    # Wall-clock bound. On CI this measures the runner, not the code, so
+    # it is set well above the observed CI time: it exists to catch a
+    # severe performance regression, not to benchmark the machine.
+    # Observed on a 2-core GitHub runner: ~118 s.
+    assert r.wall_seconds is not None and r.wall_seconds < 600, (
+        f"pipeline wall = {r.wall_seconds:.1f}s; expected well under "
+        "10 min at smoke params — suspect a performance regression.")
     # Vacuum decoupling for neutral methane must be ≈ 0 — no
     # λ-dependent self-interaction change. This is the load-
     # bearing physics sanity the sampling gate is also pinning.

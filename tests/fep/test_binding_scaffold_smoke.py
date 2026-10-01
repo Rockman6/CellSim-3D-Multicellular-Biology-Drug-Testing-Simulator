@@ -288,7 +288,13 @@ def test_amber14_builder_on_streptavidin():
     out = _build_complex_alchemical_system_amber14(
         "C", pdb, padding_nm=0.8)
     elapsed = time.time() - t0
-    assert elapsed < 30.0, (
+    # Wall-clock bound. On CI this measures the runner, not the code, so
+    # it is set well above the observed CI time: it exists to catch a
+    # severe performance regression, not to benchmark the machine.
+    # Guards the terminal-missing-residue filter: without it this build
+    # used to take minutes or exhaust memory, so a 150 s bound still
+    # catches that regression on any runner.
+    assert elapsed < 150.0, (
         f"amber14 builder on 1stp took {elapsed:.1f}s — "
         "terminal-missing-residue filter may have regressed")
     assert out["n_total_atoms"] < 100_000, (
