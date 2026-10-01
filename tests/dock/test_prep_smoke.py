@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock.vina import _prep_receptor_pdbqt, _prep_ligand_pdbqt  # noqa: E402
+from cellsim.dock.vina import _prep_receptor_pdbqt, _prep_ligand_pdbqt  # noqa: E402
 
 UBQ_PATH = REPO_ROOT / "benchmarks" / "md" / "1ubq.pdb"
 

@@ -29,8 +29,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock import dock_ligand  # noqa: E402
-from src.dock.strain import (  # noqa: E402
+from cellsim.dock import dock_ligand  # noqa: E402
+from cellsim.dock.strain import (  # noqa: E402
     _normalise_elem,
     ligand_strain,
 )

@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.chem import parametrize_smiles  # noqa: E402
+from cellsim.chem import parametrize_smiles  # noqa: E402
 
 SMI_FILE = REPO_ROOT / "benchmarks" / "chembl" / "smoke_10.smi"
 

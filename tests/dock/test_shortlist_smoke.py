@@ -10,7 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock.shortlist import filter_csv  # noqa: E402
+from cellsim.dock.shortlist import filter_csv  # noqa: E402
 
 
 def test_filter_csv_keeps_followup_and_review():

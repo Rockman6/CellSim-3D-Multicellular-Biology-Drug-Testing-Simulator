@@ -39,7 +39,7 @@ case "$MODE" in
         # else (assets, GLBs, shaders) stays local — these are the small
         # files that change most often during calibration.
         git checkout "origin/$BRANCH" -- \
-            src/core/Constants.h \
+            cellsim/core/Constants.h \
             src/simulation/Simulation.h \
             src/simulation/CentralDogma.h \
             src/simulation/CellCycleProgram.h \

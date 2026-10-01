@@ -20,7 +20,7 @@
 - `pdbbind/`    — PDBBind refined-set pose recovery blind test.
 - `casf/`       — CASF-2016 scoring / ranking / docking / screening.
 - `posebusters/`— PoseBusters physical-validity suite (already
-                  wired via `src/dock/validity.py`).
+                  wired via `cellsim/dock/validity.py`).
 - `redteam/`    — quarterly adversarial compound drops from external
                   contributors; each one a new regression gate.
 

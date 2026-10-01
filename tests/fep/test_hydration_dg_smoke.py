@@ -36,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 def test_methane_hydration_pipeline_runs():
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     r = compute_hydration_dg(
         "C", n_windows=5,
         n_production_steps=200, n_equilibration_steps=50,
@@ -84,7 +84,7 @@ def test_methane_hydration_composition_formula_pinned():
     # sampling: ΔG_ann_vac = 0, ΔG_ann_water ≈ -2 (favorable to
     # annihilate, because phantom-in-water has more entropy than
     # caged-real-in-water). The CORRECT formula returns +2.
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     import inspect
     src = inspect.getsource(compute_hydration_dg)
     # Pin: the composition line must have the leading minus.
@@ -103,7 +103,7 @@ def test_methane_hydration_finite_at_smoke_params():
     """Pure pipeline-runs check: ΔG_hyd is finite and uncertainty
     is finite at smoke params. Does NOT assert sign or magnitude
     (smoke sampling is biased, see post-mortem above)."""
-    from src.fep import compute_hydration_dg
+    from cellsim.fep import compute_hydration_dg
     r = compute_hydration_dg(
         "C", n_windows=7,
         n_production_steps=500, n_equilibration_steps=100,

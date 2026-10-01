@@ -18,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.uq import reliability_for  # noqa: E402
+from cellsim.uq import reliability_for  # noqa: E402
 
 
 def test_calibrated_targets_report_measured_error():

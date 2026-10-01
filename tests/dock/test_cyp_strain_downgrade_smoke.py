@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock.cyp_inhibition import _classify  # noqa: E402
+from cellsim.dock.cyp_inhibition import _classify  # noqa: E402
 
 
 def _apply_downgrade(dG, fe, strain_band, strain_ratio=3.0):

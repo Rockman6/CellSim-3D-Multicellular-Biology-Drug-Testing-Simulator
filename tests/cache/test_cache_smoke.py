@@ -1,6 +1,6 @@
 """Cache smoke — round-trip write + read, stable hashes, invalidate.
 
-Verifies src/cache/:
+Verifies cellsim/cache/:
   - compound_hash is stable for canonical SMILES input:
       canonical SMILES "CC(=O)O" (acetic acid) and the atom-reordered
       "OC(C)=O" must hash identically (InChI Key is the same).
@@ -23,10 +23,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.cache import (  # noqa: E402
+from cellsim.cache import (  # noqa: E402
     Cache, compound_hash, receptor_hash,
 )
-from src.cache.hashing import method_key  # noqa: E402
+from cellsim.cache.hashing import method_key  # noqa: E402
 
 
 UBQ = REPO_ROOT / "benchmarks" / "md" / "1ubq.pdb"

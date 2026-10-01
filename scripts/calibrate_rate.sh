@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-CONSTS="src/core/Constants.h"
+CONSTS="cellsim/core/Constants.h"
 BACKUP="$CONSTS.bak"
 [ -f "$BACKUP" ] || cp "$CONSTS" "$BACKUP"
 

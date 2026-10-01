@@ -14,8 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.bridge import binding_to_hill  # noqa: E402
-from src.cell import (  # noqa: E402
+from cellsim.bridge import binding_to_hill  # noqa: E402
+from cellsim.cell import (  # noqa: E402
     hill_occupancy,
     occupancy_from_prior,
     OccupancyResult,
@@ -91,7 +91,7 @@ def test_no_ci_when_prior_has_none():
 
 
 def test_rejects_non_hill_prior():
-    from src.bridge import affinity_to_michaelis
+    from cellsim.bridge import affinity_to_michaelis
     mm = affinity_to_michaelis(kcat_per_s=100.0, KM_M=1e-5)
     try:
         occupancy_from_prior(mm, 1e-8)

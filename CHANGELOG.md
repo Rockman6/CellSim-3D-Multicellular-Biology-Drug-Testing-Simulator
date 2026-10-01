@@ -41,6 +41,14 @@ cell and drug-response simulator. See `docs/PLAN.md`.
   screenshots, and the empty `src/cg`, `src/core`, `src/render`,
   `src/viewer` scaffolds.
 
+### Packaging
+- The `src` package is renamed `cellsim` (every import, `python -m`
+  invocation and path reference rewritten; `git mv` keeps history).
+- `pyproject.toml` added: `pip install -e .` inside the conda env
+  registers the package and a `cellsim` console command
+  (`cellsim/cli.py`, a Python twin of `scripts/cellsim`). `pytest`
+  collects `tests/` directly.
+
 ### Known, documented limits carried forward
 - Hydration FEP runs NVT on a packmol box with no barostat; the
   FreeSolv-12 "PASS" (MAE 1.42 on 10/12) hides a size-dependent

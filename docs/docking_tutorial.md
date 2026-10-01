@@ -24,7 +24,7 @@ conda activate cellsim
 The `conda activate cellsim` step sets `AMBERHOME`, which is
 required for AM1-BCC partial charges. A bare `python …` invocation
 without the activate will silently fail at charge assignment — see
-[`src/chem/README.md`](src/chem/README.md) for diagnostics.
+[`cellsim/chem/README.md`](cellsim/chem/README.md) for diagnostics.
 
 Everything below assumes `conda activate cellsim` has been run.
 

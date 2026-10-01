@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.quantum import predict_cyp_som_bde  # noqa: E402
+from cellsim.quantum import predict_cyp_som_bde  # noqa: E402
 
 
 CASES: list[tuple[str, str]] = [

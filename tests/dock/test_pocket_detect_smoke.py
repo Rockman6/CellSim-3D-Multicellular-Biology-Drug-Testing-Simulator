@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.dock import detect_pockets  # noqa: E402
+from cellsim.dock import detect_pockets  # noqa: E402
 
 RECEPTOR = REPO_ROOT / "benchmarks" / "dock" / "1stp.pdb"
 

@@ -38,7 +38,7 @@ def test_sampled_binding_pipeline_runs_to_completion():
         print("[SKIP] set CELLSIM_RUN_SAMPLED_SMOKE=1 to enable")
         return
 
-    from src.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
 
     t0 = time.time()
     r = compute_absolute_binding_dg(
@@ -87,7 +87,7 @@ def test_sampled_binding_with_restraint_on_real_leg():
         print("[SKIP] set CELLSIM_RUN_SAMPLED_SMOKE=1 to enable")
         return
 
-    from src.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
 
     r = compute_absolute_binding_dg(
         "C",
@@ -122,7 +122,7 @@ def test_default_leaves_restraint_on_real_provisional():
         print("[SKIP] set CELLSIM_RUN_SAMPLED_SMOKE=1 to enable")
         return
 
-    from src.fep.binding import compute_absolute_binding_dg
+    from cellsim.fep.binding import compute_absolute_binding_dg
 
     r = compute_absolute_binding_dg(
         "C", REPO_ROOT / "benchmarks/md/1ubq.pdb",

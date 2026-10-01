@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fep import ligand_hydration_fep  # noqa: E402
+from cellsim.fep import ligand_hydration_fep  # noqa: E402
 
 
 CASES = [

@@ -14,7 +14,7 @@ flag; it is not the product on its own.
 > **Status (October 2026).** Phase 0 of the [plan](docs/PLAN.md) is
 > done: the July fixes are merged, the smoke suite is green (54 gates),
 > and the repository has one identity again. Phase 1, a validated
-> single-cell drug-response engine, is being built in `src/cell/`.
+> single-cell drug-response engine, is being built in `cellsim/cell/`.
 > The 2026 C++/Metal prototype lives in [`OLD/`](OLD/) as a biology
 > reference; it still builds and passes its 8 headless benchmarks, but
 > its UI is retired and a new interface is planned on top of the Python
@@ -25,11 +25,11 @@ flag; it is not the product on its own.
 | Layer | What you can run | How it is validated |
 |---|---|---|
 | Docking triage (`cellsim dock`) | SMILES list + receptor PDB → ranked CSV with ΔG ± CI, pose-trust (UFF strain), PoseBusters, ADMET, one triage column | 15-cocrystal blind re-dock, structures and SMILES fetched from RCSB: top-3 pose recovery 87 %, top-1 73 %, PoseBusters validity 100 % |
-| Target-class reliability (`src/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
-| ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `src/chem/admet.py` |
+| Target-class reliability (`cellsim/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
+| ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `cellsim/chem/admet.py` |
 | CYP3A4 site of metabolism (`cellsim som`) | xTB C–H bond-dissociation ranking with a heme-accessibility re-rank | 2/3 on the bundled literature set; blind to N-dealkylation. **Advisory only.** |
-| Cell-level PK/PD (`src/cell`) | Occupancy, permeation, pH trapping, efflux, binding sink, tissue penetration, fate, resistance, clearance, cell cycle, lattice agents | Each module is checked against its analytic limit (22 tests). Not yet calibrated against cell-line data; that is Phase 1. |
-| Alchemical FEP (`src/fep`) | Hydration and binding ΔG scaffolds on openmmtools + MBAR | **Experimental, not a product path.** FreeSolv-12 MAE 1.42 kcal/mol on 10/12 with a size-dependent bias (no barostat). Binding ΔG has never produced a number on a real binder. |
+| Cell-level PK/PD (`cellsim/cell`) | Occupancy, permeation, pH trapping, efflux, binding sink, tissue penetration, fate, resistance, clearance, cell cycle, lattice agents | Each module is checked against its analytic limit (22 tests). Not yet calibrated against cell-line data; that is Phase 1. |
+| Alchemical FEP (`cellsim/fep`) | Hydration and binding ΔG scaffolds on openmmtools + MBAR | **Experimental, not a product path.** FreeSolv-12 MAE 1.42 kcal/mol on 10/12 with a size-dependent bias (no barostat). Binding ΔG has never produced a number on a real binder. |
 
 The full set of numbers, with reproducers and caveats, is in
 [`docs/VALIDATION.md`](docs/VALIDATION.md).
@@ -40,10 +40,11 @@ The full set of numbers, with reproducers and caveats, is in
 # 1. One-time environment (conda or mamba).
 mamba env create -f environment.yml
 conda activate cellsim
-./scripts/cellsim doctor            # expect "42/42 checks passed"
+pip install -e .                    # registers the `cellsim` command
+cellsim doctor                      # expect "42/42 checks passed"
 
 # 2. Screen the bundled 5-compound batch against streptavidin (PDB 1STP).
-./scripts/cellsim dock \
+cellsim dock \
     --smi benchmarks/dock/1stp_batch_5.smi \
     --receptor benchmarks/dock/1stp.pdb \
     --out-csv /tmp/run/report.csv \
@@ -54,7 +55,7 @@ conda activate cellsim
 You get a ranked CSV (`triage`, `dG_kcalmol`, `Kd_human`, `strain_band`,
 `pocket_ok`, ADMET columns) plus one-page profile PNGs for the top hits.
 Omit `--center` / `--box` for any other receptor and fpocket finds the
-site. `./scripts/cellsim help` lists every subcommand;
+site. `cellsim help` lists every subcommand;
 [`docs/docking_tutorial.md`](docs/docking_tutorial.md) walks through a
 full screen and, in §8, says which target classes to trust.
 
@@ -63,7 +64,7 @@ full screen and, in §8, says which target classes to trust.
 | Phase | Deliverable | Target |
 |---|---|---|
 | 0 — done | July fixes merged, CI green, one identity, honest validation page | Oct 2026 |
-| 1 | Single-cell drug-response engine with one state object and one integrator: cell cycle and p53 axis ported from `OLD/`, death that actually executes, `src/cell` PK on top. Calibrated against GDSC dose-response for cisplatin, doxorubicin and paclitaxel. Headless state stream for any UI. | Jan 2027 |
+| 1 | Single-cell drug-response engine with one state object and one integrator: cell cycle and p53 axis ported from `OLD/`, death that actually executes, `cellsim/cell` PK on top. Calibrated against GDSC dose-response for cisplatin, doxorubicin and paclitaxel. Headless state stream for any UI. | Jan 2027 |
 | 2 | The dish: spatial colony, diffusion, drug penetration, contact inhibition, validated on spheroid growth curves; new web UI reading the engine stream; first outside users | Apr 2027 |
 | 3 | Ten drugs × five lines, combinations and resistance, calibrated uncertainty, JOSS paper, conda-forge | Oct 2027 |
 
@@ -72,7 +73,7 @@ Details, the keep/kill list and success metrics: [`docs/PLAN.md`](docs/PLAN.md).
 ## Layout
 
 ```
-src/
+cellsim/
   dock/      Vina + Meeko + PoseBusters + fpocket, batch screen, triage, strain, off-target
   chem/      SMILES → OpenFF Sage + AM1-BCC; ADMET descriptors; profile dashboards
   uq/        Monte-Carlo, Sobol, split-conformal, target-class reliability table
