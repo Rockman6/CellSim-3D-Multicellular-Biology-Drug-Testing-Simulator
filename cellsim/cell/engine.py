@@ -104,6 +104,16 @@ class Params:
     bax_puma_gain: float = 0.3
     bcl2_block: float = 3.0
     bcl2_neutralised_by_puma: float = 0.2
+    # Anti-apoptotic proteins SEQUESTER activated Bax stoichiometrically,
+    # so MOMP needs activated Bax to exceed the reserve rather than merely
+    # to accumulate more slowly against it (mitochondrial priming; Certo
+    # et al. 2006 Cancer Cell 9:351, Letai). Modelling it as a rate
+    # penalty instead made the reserve almost irrelevant: an 8-fold change
+    # in CellLine.bcl2_level moved the IC50 by 1.1x, because a slower
+    # climb still crosses a fixed threshold within 72 h. As a buffer it
+    # sets whether the threshold is reachable at all. 0 restores the old
+    # rate-only behaviour.
+    bcl2_buffer: float = 0.30
     momp_k: float = 10.0
     momp_K: float = 0.5
     momp_n: float = 6.0
@@ -257,7 +267,9 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     bcl2_eff = np.maximum(0.0, line.bcl2_level * aux["het_bcl2"]
                           - p.bcl2_neutralised_by_puma * Puma)
     dY[:, 13] = p.bax_k * (p.bax_puma_gain * Puma + mit_drive) / (1 + p.bcl2_block * bcl2_eff) * (1 - Bax)
-    bn = Bax ** p.momp_n
+    # Only Bax in excess of the anti-apoptotic buffer can form pores.
+    bax_free = np.maximum(0.0, Bax - p.bcl2_buffer * bcl2_eff)
+    bn = bax_free ** p.momp_n
     dY[:, 14] = p.momp_k * bn / (p.momp_K ** p.momp_n + bn) * (1 - MOMP)
     dY[:, 15] = p.release_k * MOMP * (1 - CytC)
     dY[:, 16] = p.release_k * MOMP * (1 - Smac)

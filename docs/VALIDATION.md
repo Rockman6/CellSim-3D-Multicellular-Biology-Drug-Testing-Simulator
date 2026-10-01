@@ -330,20 +330,51 @@ it will not close the gap — most line-to-line variation in drug
 response is not captured by the canonical markers. That is a property
 of the biology, not of this implementation.
 
+### Step 1 built: the apoptotic set-point is no longer throttled
+
+The first item was acted on. The Bcl-2 reserve was modelled as a **rate
+penalty** on Bax activation, which is why it barely mattered: a slower
+climb still crosses a fixed threshold inside 72 h, so the reserve
+changed *when* a cell died, not *whether*. It is now a **stoichiometric
+buffer** — only Bax in excess of the reserve can form pores — which is
+the mitochondrial-priming picture (Certo et al. 2006 Cancer Cell 9:351).
+
+| | Before | After |
+|---|:-:|:-:|
+| IC50 span over `bcl2_level` 0.5–4×, doxorubicin | 1.2× | **1.7×** (data implies 1.8×) |
+| doxorubicin held-out log10 RMSE vs null | 0.45 / 0.46 | **0.40** / 0.46 |
+| paclitaxel held-out RMSE vs null | 0.31 / 0.35 | 0.30 / 0.35 |
+| cisplatin held-out RMSE vs null | 0.54 / 0.47 | **0.65** / 0.47 (worse) |
+| paired sign test (engine : null) | 10 : 11 | **11 : 10**, p = 1.0 |
+
+**Predicted and confirmed.** The ceiling above said wiring these in
+"should make the engine beat a constant, but will not close the gap".
+That is exactly what happened: the paired count flipped from losing to
+winning, and stayed far from significance. A 1.7× channel cannot resolve
+an 8–51× spread.
+
+It also improved the model's honesty elsewhere. Treating the reserve as
+a buffer restored **partial** resistance in TP53-mutant lines — survival
+0.08 against wild-type 0.00 under sustained damage, where the previous
+version killed mutants outright. That was flagged above as stronger than
+the literature supports, and is now pinned by a test.
+
+Cisplatin got worse, which fits: it is the drug with no Bcl-xL signal,
+so the added mechanism only adds noise there.
+
 **Still to do, in order.** The measurements above specify the work:
 
-1. **Unthrottle the apoptotic set-point** so `bcl2_level` moves the
-   IC50 by ~2× over its real range instead of 1.1×, most likely by
-   softening the MOMP switch. This is the one channel the engine
-   already has and the data most supports.
+1. ~~Unthrottle the apoptotic set-point~~ — done, see above.
 2. **Add a per-line efflux channel** (ABCB1 acting on intracellular
-   drug), which gives paclitaxel its only line-specific behaviour and
-   doxorubicin a second one.
-3. **Stop treating repair as the cisplatin lever.** It has the
-   leverage but not the evidence; cisplatin may simply not be
-   predictable from these markers.
-4. Expand the validation panel beyond ten lines — the data to do so is
-   already matched and available (156–683 lines per drug).
+   drug). This is the remaining signal the engine cannot express at all,
+   and the only one that would give paclitaxel any line-specific
+   behaviour: its IC50 is set by a tubulin-occupancy threshold, so
+   nothing downstream of death can move it.
+3. **Stop treating repair as the cisplatin lever.** It has the leverage
+   but not the evidence.
+4. **Expand the validation panel beyond ten lines** — matched data for
+   156–683 lines per drug already exists. With effects this small, ten
+   lines cannot resolve them even if the model is right.
 5. A shallower death response (curve shape above).
 
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign

@@ -114,6 +114,26 @@
 - `scripts/experiment_expression_scale.py` added; its p-value routine
   was checked against scipy to 4 decimal places before use.
 
+### Changed — Bcl-2 reserve is now a stoichiometric buffer, not a rate penalty
+- The anti-apoptotic reserve divided the Bax ACTIVATION RATE, so a
+  high-Bcl-xL line merely died later: a slower climb still crosses a
+  fixed MOMP threshold within 72 h. That is why an 8-fold change in
+  `CellLine.bcl2_level` moved the IC50 by only 1.1x. It now acts as a
+  buffer -- only Bax in excess of the reserve can form pores -- which is
+  the mitochondrial-priming picture (Certo 2006 Cancer Cell 9:351).
+  `Params.bcl2_buffer = 0` restores the old behaviour.
+- Effect, as predicted by the ceiling recorded above: doxorubicin
+  leverage 1.2x -> 1.7x (data implies 1.8x) and its held-out RMSE
+  0.45 -> 0.40 against the null's 0.46; the paired sign test flipped
+  from 10:11 to 11:10 but stays at p = 1.0, so the gate is still NOT
+  met. A 1.7x channel cannot resolve an 8-51x spread.
+- Cisplatin got worse (0.54 -> 0.65), consistent with it being the drug
+  with no Bcl-xL signal.
+- Side benefit: TP53-mutant lines now keep PARTIAL resistance (survival
+  0.08 vs wild-type 0.00 under sustained damage) instead of being killed
+  outright, which was previously flagged as stronger than the
+  literature supports. Pinned by a rewritten test.
+
 ### Changed
 - `cellsim/cell/library.py`: placeholder potencies replaced by the fitted
   values (refitting reproduces them within 0.3 %). Paclitaxel's fitted

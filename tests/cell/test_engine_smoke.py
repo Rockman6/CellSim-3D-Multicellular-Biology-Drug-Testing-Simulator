@@ -91,25 +91,37 @@ def test_mutant_p53_resists_damage_induced_death_when_only_p53_can_kill():
         f"{wt.deaths[-1, 0]:.1f}")
 
 
-def test_default_route_removes_p53_protection_under_sustained_damage():
-    """Consequence of the fitted route, pinned so it cannot change silently.
+def test_p53_mutant_keeps_partial_resistance_under_sustained_damage():
+    """With the defaults (p73 route on, anti-apoptotic buffer on), a
+    TP53-mutant line should be substantially sensitised relative to the
+    p53-only model but NOT fully: real TP53-mutant cells are more
+    resistant to DNA damage, not immune to it.
 
-    At the default gain the p53-independent route is strong enough that
-    sustained damage kills a TP53-mutant line outright, i.e. p53 status
-    confers no protection against a damage index held constant. That is
-    what lets the mutant lines match GDSC, where they are about as
-    cisplatin-sensitive as wild-type, but it is stronger than the
-    literature's partial resistance. Recorded in docs/VALIDATION.md.
+    Before the Bcl-2 reserve was modelled as a stoichiometric buffer the
+    route removed p53 protection entirely (mutant survival 0.000), which
+    is stronger than the literature supports. Pinned here so the balance
+    cannot drift unnoticed in either direction.
     """
-    mut_line = get_line("HT-29")
-    k = calibrate_cycle_scale(mut_line)
-    ctl = simulate(mut_line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k)
-    dmg = simulate(mut_line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k,
-                   forced_D=0.30)
-    surviving = dmg.alive_weight[-1, 0] / max(ctl.alive_weight[-1, 0], 1e-9)
-    assert surviving < 0.05, (
-        f"p53-mutant surviving fraction {surviving:.3f} under sustained damage; "
-        "the default p73 route should remove p53 protection")
+    mut = get_line("HT-29")
+    on, off = Params(), Params(p73_gain=0.0)
+    s_on = _surviving_fraction(mut, on, 0.30)
+    s_off = _surviving_fraction(mut, off, 0.30)
+    wt_on = _surviving_fraction(A549, on, 0.30)
+    assert s_on < 0.5 * s_off, (
+        f"p73 route barely sensitised the mutant: {s_off:.3f} -> {s_on:.3f}")
+    assert s_on > wt_on, (
+        f"mutant ({s_on:.3f}) should keep some advantage over wild-type "
+        f"({wt_on:.3f}); total loss of p53 protection is unphysiological")
+
+
+def _surviving_fraction(line, params, damage):
+    """Alive weight after 72 h of sustained damage, relative to this
+    line's own untreated control: what a viability assay reads."""
+    k = calibrate_cycle_scale(line, params)
+    ctl = simulate(line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k, p=params)
+    dmg = simulate(line, None, 0.0, t_end_h=72, n_cells=32, dt_h=0.02, k_cyc=k,
+                   p=params, forced_D=damage)
+    return float(dmg.alive_weight[-1, 0] / max(ctl.alive_weight[-1, 0], 1e-9))
 
 
 def test_dose_response_is_monotone_and_yields_a_finite_ic50():
