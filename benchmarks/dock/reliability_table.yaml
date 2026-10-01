@@ -93,12 +93,17 @@ classes:
     description: >
       Streptavidin/biotin and analogues; Kd down to ~1e-14 M.
     n: 4
-    mean_abs_err_kcalmol: 4.98
-    median_abs_err_kcalmol: 4.12
+    mean_abs_err_kcalmol: 6.66
+    median_abs_err_kcalmol: 7.48
     worst_abs_err_kcalmol: 11.62
     worst_compound: biotin
     verdict: do_not_trust_absolute
     note: >
-      Vina's scoring function saturates around -11 to -12 kcal/mol and
-      cannot represent binding this strong (biotin: experiment -19.1,
-      predicted ~-7.3). Absolute dG is meaningless here; use FEP.
+      Vina's scoring function saturates: across four compounds spanning
+      12 kcal/mol of experimental affinity the predictions span only
+      ~0.3 kcal/mol, all near -7.1 to -7.4 (biotin: experiment -19.1,
+      predicted ~-7.4). Absolute dG is meaningless here, and RANKING is
+      unreliable too (measured Spearman ~0.4). Use FEP.
+      Numbers updated 2026-10 after the bundled desthiobiotin K_d was
+      corrected from 5e-5 M to ~1e-11 M; the old value understated this
+      class's error and made the set look rank-orderable.

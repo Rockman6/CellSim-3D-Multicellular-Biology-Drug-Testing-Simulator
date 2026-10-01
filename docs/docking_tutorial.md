@@ -428,7 +428,6 @@ before trusting a ΔG / hit-list.
 
 | Target class | Evidence | Typical accuracy |
 |---|---|---|
-| Biotin-binding sites (streptavidin, avidin) | [`benchmarks/dock/streptavidin_calibration.yaml`](benchmarks/dock/streptavidin_calibration.yaml) | Spearman +0.80 across 14 orders of magnitude |
 | Serine proteases (trypsin, thrombin-like S1 pocket) | [`benchmarks/dock/trypsin_calibration.yaml`](benchmarks/dock/trypsin_calibration.yaml) | MAE 0.9 kcal/mol on the absolute scale |
 | Rigid pocket, wide K_d spread (nM → mM) | generalisable from the above | Pearson > 0.6 typical |
 
@@ -436,6 +435,7 @@ before trusting a ΔG / hit-list.
 
 | Target class | Evidence | What to do instead |
 |---|---|---|
+| Ultra-tight binders (streptavidin/biotin and analogues) | [`benchmarks/dock/streptavidin_calibration.yaml`](benchmarks/dock/streptavidin_calibration.yaml) — 4 compounds spanning 12 kcal/mol; predictions span 0.3 kcal/mol, Spearman ~0.4, MAE 6.7 | Vina saturates near −7 kcal/mol and can neither score nor rank these. Use FEP. |
 | Kinase ATP sites (EGFR, Abl, CDK, …) | [`benchmarks/dock/egfr_calibration.yaml`](benchmarks/dock/egfr_calibration.yaml) — Spearman −0.49 on 6 EGFR inhibitors | Use Vina for pose/pocket-fit sanity only; rescore with alchemical FEP via [`benchmarks/fep/binding_egfr.yaml`](benchmarks/fep/binding_egfr.yaml) → `cellsim fep-binding bench --sample` (Kendall τ gate) |
 | Anything where the strain ratio > 3 on top pose | `strain_band = suspicious` / `reject` in the batch CSV | Don't trust the ΔG; strain means Vina contorted the ligand |
 | Compounds with > 15 rotatable bonds | Vina's degrees-of-freedom scaling | Flag for refinement (`--refine-poses` + MD rescoring) |

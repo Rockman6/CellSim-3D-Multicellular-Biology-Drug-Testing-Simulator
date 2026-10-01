@@ -37,8 +37,8 @@
     {
       "target_class": "streptavidin",
       "n": 4,
-      "mean_abs_err": 4.9807500000000005,
-      "median_abs_err": 4.1205,
+      "mean_abs_err": 6.65875,
+      "median_abs_err": 7.4765,
       "worst_abs_err": 11.619000000000002,
       "worst_compound": "biotin",
       "conformal_valid": false,
