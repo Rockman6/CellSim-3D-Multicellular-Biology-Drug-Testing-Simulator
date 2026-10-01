@@ -91,6 +91,29 @@
   mapping now would fit noise, the same error behind the retracted gate
   above. The blocking constraint is the number of cell lines.
 
+### Measured — what per-line data actually predicts, and why the engine misses it
+- Repeated the expression test on every GDSC line DepMap covers
+  (156-683 per drug instead of 6-10), genes pre-specified by mechanism,
+  Bonferroni-corrected per drug. Real signal appears:
+  doxorubicin — BCL2L1 rho +0.19 (p 5e-06), ABCB1 rho +0.17 (p 9e-05);
+  paclitaxel  — BCL2L1 rho +0.31 (p 9e-10), ABCB1 rho +0.23 (p 1e-05),
+                TUBB3 rho +0.22 (p 3e-05);
+  cisplatin   — nothing, and the repair genes in particular do not
+                predict it (ERCC1 rho -0.03), consistent with ERCC1's
+                record of failing to replicate as a platinum biomarker.
+- Side by side with the leverage sweep this explains the tie exactly:
+  the engine's one strong channel (repair, 7-9x) is where the data has
+  no signal; the strongest real signal (apoptotic set-point, implying
+  ~2x) maps to a field the engine already has but throttles to 1.1x
+  because its MOMP switch is too sharp; and efflux, the second
+  strongest, is not modelled at all.
+- Ceiling recorded before any build: the real effects are ~1.5-2.3x
+  each, composing to perhaps 3-5x against the 8-51x lines actually
+  span. Wiring them in should beat a constant but will not close the
+  gap.
+- `scripts/experiment_expression_scale.py` added; its p-value routine
+  was checked against scipy to 4 decimal places before use.
+
 ### Changed
 - `cellsim/cell/library.py`: placeholder potencies replaced by the fitted
   values (refitting reproduces them within 0.3 %). Paclitaxel's fitted

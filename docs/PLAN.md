@@ -141,11 +141,27 @@ No UI work until this exists.
    DepMap's CRISPR growth rate does not match curated doubling times
    (rho -0.15). Building a mapping now would fit noise.
 
-   So the next step is NOT more mechanism and NOT an omics mapping. It
-   is more cell lines, because nothing can be validated at ten. Then
-   per-line repair capacity for the DNA-damage drugs (the one channel
-   with leverage), and a per-line efflux channel so paclitaxel has any
-   line-specific behaviour at all.
+   At ten lines no mapping could be validated. Repeating the test on
+   every GDSC line DepMap has expression for (156-683 per drug), with
+   genes pre-specified by mechanism and Bonferroni-corrected, real
+   signal does appear: Bcl-xL (BCL2L1) and P-glycoprotein (ABCB1) for
+   doxorubicin and paclitaxel, plus class III beta-tubulin (TUBB3) for
+   paclitaxel. Cisplatin gives nothing, and notably the repair genes do
+   not predict it (ERCC1 rho -0.03).
+
+   Putting that beside the leverage measurement explains the whole
+   failure. The engine's only strong channel is DNA repair, where the
+   data has no signal. The strongest real signal is the apoptotic
+   set-point, where the engine HAS the field (CellLine.bcl2_level) but
+   its MOMP switch is so sharp that an 8-fold change moves the IC50 by
+   1.1x, against the ~2x the data implies. The second strongest is
+   efflux, which the engine does not model at all.
+
+   Known ceiling before building: these effects are ~1.5-2.3x each, so
+   even used perfectly they compose to perhaps 3-5x against the 8-51x
+   the lines actually span. Wiring them in should beat a constant; it
+   will not close the gap, because most line-to-line variation is not
+   captured by canonical markers.
 
 5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
    population under a piecewise-constant dosing schedule (wash-outs
