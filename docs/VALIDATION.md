@@ -476,6 +476,55 @@ produce this — it falls out of the cell-cycle and arrest mechanism.
 
 Gated by `tests/cell/test_schedule_smoke.py` (4 gates, 38 s).
 
+## Phase 2: selection, and what the schedule selects *for*
+
+Also within-line. Each representative cell in the engine is a lineage
+carrying its own anti-apoptotic reserve and drug accumulation, and a
+surviving lineage keeps those as it doubles — so selection emerges
+without being modelled explicitly. It does, and in the right direction.
+
+**Treatment leaves a biased sample.** After a week of cisplatin the
+survivors' mean anti-apoptotic reserve has risen above the starting
+population's 1.0 and their mean drug accumulation has fallen. Untreated
+controls stay at 1.0, so this is the drug and not drift.
+
+**Dose intensity changes how hard, and along which axis.** The same
+total exposure given as 3× the concentration for a third of the time
+(A549, 7 days, cisplatin):
+
+| Arm | alive weight | mean reserve | mean accumulation | combined score |
+|---|:-:|:-:|:-:|:-:|
+| continuous | 3456 | 1.15 | 0.61 | 1.87 |
+| pulsed 1 d on / 2 d off | **256** | 0.95 | **0.33** | **2.88** |
+
+Pulsing kills **13× more** at matched exposure and leaves a remnant that
+is more resistant overall — but note *which* kind of resistance. Against
+a brief triple dose the anti-apoptotic reserve cannot save a cell, so
+survival depends almost entirely on accumulating less drug; the reserve
+channel is not selected at all. A low continuous dose lets both matter.
+
+That is the dose-intensity trade-off made mechanical: the schedule that
+kills more selects harder, and selects for a *pharmacokinetic* escape
+rather than an apoptotic one.
+
+**Consistent with the schedule result.** Over 14 days, pulsing helps
+cisplatin and doxorubicin enormously and paclitaxel least, because
+compressing exposure wastes a drug that needs cells to transit mitosis
+while it is present. The two experiments were built independently and
+agree.
+
+**What this cannot show, stated so a passing test is not over-read.**
+The engine draws its heterogeneity once, so this is selection from a
+pre-existing resistant tail, not evolution of new resistance by
+mutation. Lineages also grow without a carrying capacity, so sensitive
+and resistant cells never compete for space — which means
+adaptive-therapy results, where keeping a sensitive population alive
+suppresses a resistant one, are out of reach here by construction.
+`cellsim/cell/agents.py` is the module with a lattice and contact
+inhibition, and is where that question belongs.
+
+Gated by `tests/cell/test_resistance_selection_smoke.py` (5 gates, 32 s).
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
