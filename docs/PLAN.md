@@ -57,7 +57,7 @@ re-implementing free-energy codes.
   tooling, run logs and retired-UI screenshots removed; empty scaffolds
   deleted.
 
-### Phase 1, the validated slice (target January 2027)
+### Phase 1, the validated slice — CLOSED October 2026, with a finding
 
 No UI work until this exists.
 
@@ -182,7 +182,28 @@ No UI work until this exists.
 7. Packaging (done in Phase 0): `pyproject.toml`, the `cellsim` console
    script, pytest collection; the `src` package is now `cellsim`.
 
-### Phase 2, the dish (target April 2027)
+### Phase 2, within-line dynamics and the dish (now current)
+
+**Re-aimed October 2026.** Phase 1 measured that per-line IC50
+prediction is unreachable from canonical markers (R² 0.09–0.20 across
+156–683 lines). Phase 2 therefore targets the questions mechanism
+answers well and statistics answer badly — all of them *within* one
+line, so no per-line marker is needed:
+
+- **Schedule dependence.** Does a long low exposure differ from a short
+  high one at matched AUC? It should, and differently per drug: a
+  tubulin binder kills only cells that reach mitosis during exposure,
+  so it is exposure-time limited in a way a DNA-damage agent is not.
+- **Wash-out and recovery.** Already shown: a 6 h pulse regrows ×4.0
+  where the same dose held continuously eradicates the colony.
+- **Resistance under selection**, and whether intermittent dosing
+  delays relapse relative to continuous dosing at matched exposure.
+- **Combination timing**, where a cytostatic given first antagonises a
+  phase-specific partner.
+
+These are validated against published *phenotypes* rather than a
+ten-line IC50 table, which is the kind of evidence that does not run
+into the ceiling above.
 
 - Space: lattice or off-lattice agents, diffusion of oxygen, glucose
   and drug, a vessel source, contact inhibition. Reuse

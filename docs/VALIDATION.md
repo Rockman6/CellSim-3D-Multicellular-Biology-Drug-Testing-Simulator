@@ -431,6 +431,51 @@ on no per-line marker at all.
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign
 test, not the RMSE table.
 
+## Phase 2: schedule dependence (within-line, no marker needed)
+
+The first Phase-2 result, and the kind of evidence the ceiling above
+does not apply to: everything here is one cell line compared against
+itself under different schedules.
+
+**Same total dose, delivered differently.** Holding AUC fixed at 1.8
+µM·h of paclitaxel and varying the split between concentration and
+hours (A549, 72 h assay, surviving fraction; `scripts/experiment_schedule.py`):
+
+| exposure | 3 h | 12 h | 24 h | **36 h** | 48 h | 72 h |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| concentration (µM) | 0.60 | 0.15 | 0.075 | **0.05** | 0.0375 | 0.025 |
+| surviving fraction | 1.00 | 0.79 | 0.48 | **0.28** | 0.69 | 1.00 |
+
+**Both extremes fail, for different mechanistic reasons.** Too brief and
+few cells reach the mitosis the drug acts on. Too dilute and tubulin
+occupancy never crosses the threshold that triggers arrest — at 72 h the
+0.025 µM arm sits right at it and does nothing at all. The optimum in
+between is a prediction of the mechanism, not a fitted result, and it
+reproduces across seeds.
+
+This is why **AUC is the wrong exposure metric for this class**, which
+is the documented clinical finding: paclitaxel efficacy tracks time
+above a threshold concentration rather than AUC or peak (Gianni 1995
+J Clin Oncol 13:180; Huizing 1993 J Clin Oncol 11:2127).
+
+**Exposure-time dependence, ranked.** At a fixed concentration above
+each drug's threshold, how many times more cells survive a 3 h exposure
+than a 72 h one:
+
+| Drug | 3 h ÷ 72 h | best split of a fixed AUC |
+|---|:-:|:-:|
+| paclitaxel | **242×** | 36 h |
+| doxorubicin | 17× | 18 h |
+| cisplatin | 7.6× | 12 h |
+
+The ordering is the published one. Paclitaxel is the textbook
+schedule-dependent agent because killing requires mitotic transit while
+the drug is present; cisplatin forms adducts on contact and is
+comparatively concentration-driven. Nothing in the engine was fitted to
+produce this — it falls out of the cell-cycle and arrest mechanism.
+
+Gated by `tests/cell/test_schedule_smoke.py` (4 gates, 38 s).
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
