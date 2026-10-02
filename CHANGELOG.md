@@ -114,6 +114,34 @@
 - `scripts/experiment_expression_scale.py` added; its p-value routine
   was checked against scipy to 4 decimal places before use.
 
+### Added — per-line efflux channel, and the ceiling it exposed
+- Saturable P-glycoprotein efflux on intracellular drug, for substrate
+  drugs only (doxorubicin, paclitaxel; not cisplatin), scaled by
+  `CellLine.efflux_level`. That level is DERIVED, not fitted:
+  2^(ABCB1 log2(TPM+1) - panel median) from DepMap 24Q4, a fixed formula
+  with no free parameter, so held-out lines stay out of sample.
+  Leverage 1.9x / 2.0x, matching the 1.5-2.1x the data implies, and
+  exactly 1.0x for cisplatin. `Params.efflux_vmax_uM_per_h = 0` disables.
+- It did NOT improve prediction: paired count 11:10 -> 10:11, a one-line
+  change at p = 1.0. HeLa carries ~10x the median ABCB1 yet sits
+  mid-pack for doxorubicin, so the engine now calls it too resistant.
+
+### Measured — the ceiling on per-line prediction from canonical markers
+- Fitting ALL eleven markers to IC50 by least squares (far more freedom
+  than a mechanistic model gets) across every GDSC line DepMap covers:
+  best-case R2 = 0.09 (cisplatin, n=156), 0.15 (doxorubicin, n=683),
+  0.20 (paclitaxel, n=427). So 80-92 % of line-to-line variation is not
+  captured by these markers at all.
+- Consequence, recorded rather than worked around: a mechanistic model
+  restricted to these inputs cannot pass the paired sign test however
+  faithfully it is built, and building it more faithfully (the efflux
+  channel) did not help. rho ~ 0.2 is a population trend, not a
+  per-line predictor.
+- Phase-2 direction revised: aim at WITHIN-LINE dynamics (schedule
+  dependence, wash-out recovery, resistance under selection, combination
+  timing), where the engine's mechanism is load-bearing and no per-line
+  marker is needed. Per-line IC50 is dropped as the headline metric.
+
 ### Changed — Bcl-2 reserve is now a stoichiometric buffer, not a rate penalty
 - The anti-apoptotic reserve divided the Bax ACTIVATION RATE, so a
   high-Bcl-xL line merely died later: a slower climb still crosses a

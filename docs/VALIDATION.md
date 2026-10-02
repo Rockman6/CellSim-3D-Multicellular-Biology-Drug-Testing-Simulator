@@ -362,20 +362,71 @@ the literature supports, and is now pinned by a test.
 Cisplatin got worse, which fits: it is the drug with no Bcl-xL signal,
 so the added mechanism only adds noise there.
 
-**Still to do, in order.** The measurements above specify the work:
+### Step 2 built: a per-line efflux channel
 
-1. ~~Unthrottle the apoptotic set-point~~ — done, see above.
-2. **Add a per-line efflux channel** (ABCB1 acting on intracellular
-   drug). This is the remaining signal the engine cannot express at all,
-   and the only one that would give paclitaxel any line-specific
-   behaviour: its IC50 is set by a tubulin-occupancy threshold, so
-   nothing downstream of death can move it.
-3. **Stop treating repair as the cisplatin lever.** It has the leverage
-   but not the evidence.
-4. **Expand the validation panel beyond ten lines** — matched data for
-   156–683 lines per drug already exists. With effects this small, ten
-   lines cannot resolve them even if the model is right.
-5. A shallower death response (curve shape above).
+ABCB1 was the remaining signal the engine could not express, and the
+only possible route to line-specific behaviour for paclitaxel, whose
+IC50 is set by a tubulin-occupancy threshold belonging to the drug. A
+saturable P-glycoprotein pump now acts on intracellular drug for
+substrate drugs only, scaled by the line's ABCB1.
+
+`CellLine.efflux_level` is **derived, not fitted**: 2^(ABCB1 log2(TPM+1)
+− panel median) from DepMap 24Q4, a fixed formula with no free
+parameter, so held-out lines stay out of sample. At the pump strength
+the measured ABCB1 range implies, leverage is 1.9× for doxorubicin and
+2.0× for paclitaxel — matching the data's 1.5–2.1× — and exactly 1.0×
+for cisplatin, which is not a substrate.
+
+**It did not improve prediction.** The paired count moved from 11 : 10
+to 10 : 11, a one-line change at p = 1.0 — noise, not degradation, but
+certainly not the improvement the population statistics suggested. The
+high-ABCB1 lines are the tell: HeLa carries ~10× the panel's median
+ABCB1 yet sits mid-pack for doxorubicin sensitivity, so the engine now
+predicts it too resistant.
+
+### The ceiling, measured: these markers cannot support per-line prediction
+
+That failure is not an implementation flaw, and the point generalises.
+Taking all eleven candidate markers together and fitting them to IC50
+by least squares — far more freedom than any mechanistic model gets —
+across every GDSC line DepMap covers:
+
+| Drug | n lines | best-case R² | spread it must explain |
+|---|:-:|:-:|:-:|
+| cisplatin | 156 | **0.09** | 4× |
+| doxorubicin | 683 | **0.15** | 10× |
+| paclitaxel | 427 | **0.20** | 7× |
+
+**80–92 % of why one cell line is more sensitive than another is not
+captured by the canonical markers at all.** A correlation of ρ ≈ 0.2 is
+real at n = 683 and nearly useless for an individual line: it is a
+population trend, not a predictor. So a mechanistic model restricted to
+these inputs cannot pass the paired test, however faithfully it is
+built — and building it more faithfully, as the efflux channel was,
+does not help.
+
+This is the honest answer to the question Phase 1 was posed to settle,
+and it redirects the project rather than ending it. **Predicting which
+cell line is more sensitive is not a goal this engine can reach with
+available inputs.** What it does well is the other thing: reasoning
+about one system over time — dose schedules and wash-out, resistance
+emerging under selection, the timing of combinations, the difference
+between arrest and kill. Those depend on mechanism the engine has and
+on no per-line marker at all.
+
+**Still to do, in order.** Revised by the measurement above:
+
+1. **Re-aim Phase 2 at within-line dynamics**, which is where the
+   engine's mechanism is load-bearing and where the validation data is
+   not a ten-line IC50 table: schedule dependence, wash-out recovery,
+   resistance under selection, combination timing.
+2. **Keep the per-line channels** — apoptotic set-point and efflux are
+   correct biology and are needed for drug-level reasoning — but stop
+   treating per-line IC50 as the headline metric.
+3. **If per-line prediction is revisited**, it needs inputs beyond
+   canonical markers (pathway state, baseline apoptotic priming by
+   BH3 profiling, or a much larger panel), not more mechanism.
+4. A shallower death response (curve shape above).
 
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign
 test, not the RMSE table.

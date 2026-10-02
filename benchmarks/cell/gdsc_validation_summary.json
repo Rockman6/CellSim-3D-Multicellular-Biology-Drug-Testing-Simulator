@@ -33,6 +33,8 @@
     "bcl2_block": 3.0,
     "bcl2_neutralised_by_puma": 0.2,
     "bcl2_buffer": 0.3,
+    "efflux_vmax_uM_per_h": 1.0,
+    "efflux_km_uM": 0.5,
     "momp_k": 10.0,
     "momp_K": 0.5,
     "momp_n": 6.0,
@@ -76,20 +78,20 @@
     },
     "doxorubicin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.011571634860987242,
+      "gain": 0.01749194409100301,
       "per_line_gain": {
-        "A549": 0.006148037644875257,
-        "MCF7": 0.021779751701362916
+        "A549": 0.00837556014795436,
+        "MCF7": 0.036531062123349986
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.2606060606060606,
+      "spearman_vs_reference": 0.4545454545454545,
       "null_ic50_uM": 0.05742796304794019,
-      "log10_rmse_model": 0.37997802096063865,
+      "log10_rmse_model": 0.4053400603119919,
       "log10_rmse_null": 0.42988752678239867,
-      "log10_rmse_model_heldout": 0.39747212898384504,
+      "log10_rmse_model_heldout": 0.42593902661640054,
       "log10_rmse_null_heldout": 0.46058981493395545,
       "n_heldout_in_range": 8,
       "pass": 8,
@@ -98,20 +100,20 @@
     },
     "paclitaxel": {
       "fit_target": "partition",
-      "gain": 0.1534306531918588,
+      "gain": 0.21197907529236584,
       "per_line_gain": {
-        "A549": 0.3792962423330248,
-        "MCF7": 0.062064852512330765
+        "A549": 0.5225630482774183,
+        "MCF7": 0.08598986956680364
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.6727272727272726,
+      "spearman_vs_reference": 0.5030303030303029,
       "null_ic50_uM": 0.02792310870945425,
-      "log10_rmse_model": 0.30904337210408855,
+      "log10_rmse_model": 0.31836693566512925,
       "log10_rmse_null": 0.35804885607498255,
-      "log10_rmse_model_heldout": 0.303777920978684,
+      "log10_rmse_model_heldout": 0.31720929234203954,
       "log10_rmse_null_heldout": 0.35091490505651757,
       "n_heldout_in_range": 8,
       "pass": 10,
@@ -119,8 +121,8 @@
       "n": 10
     }
   },
-  "paired_vs_null_wins": 11,
-  "paired_vs_null_losses": 10,
+  "paired_vs_null_wins": 10,
+  "paired_vs_null_losses": 11,
   "paired_vs_null_p": 1.0,
   "discriminates_lines": false,
   "held_out_pass": 20,
@@ -131,5 +133,5 @@
     "paclitaxel"
   ],
   "exit_gate_met": false,
-  "wall_s": 212.7
+  "wall_s": 208.6
 }

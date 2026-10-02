@@ -157,11 +157,20 @@ No UI work until this exists.
    1.1x, against the ~2x the data implies. The second strongest is
    efflux, which the engine does not model at all.
 
-   Known ceiling before building: these effects are ~1.5-2.3x each, so
-   even used perfectly they compose to perhaps 3-5x against the 8-51x
-   the lines actually span. Wiring them in should beat a constant; it
-   will not close the gap, because most line-to-line variation is not
-   captured by canonical markers.
+   Both channels were then built (apoptotic buffer, efflux) and
+   neither moved the gate, which led to the measurement that settles
+   it: fitting ALL eleven markers to IC50 by least squares across every
+   GDSC line DepMap covers gives best-case R2 of 0.09 / 0.15 / 0.20.
+   80-92 % of line-to-line variation is not in these markers, so a
+   mechanistic model restricted to them cannot pass the paired test
+   however faithfully it is built.
+
+   DECISION: per-line IC50 prediction is not a goal this engine can
+   reach with available inputs, and is dropped as the headline metric.
+   Phase 2 re-aims at within-line dynamics -- schedule dependence,
+   wash-out recovery, resistance under selection, combination timing --
+   where the mechanism is load-bearing and no per-line marker is
+   required. See docs/VALIDATION.md for the numbers.
 
 5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
    population under a piecewise-constant dosing schedule (wash-outs
