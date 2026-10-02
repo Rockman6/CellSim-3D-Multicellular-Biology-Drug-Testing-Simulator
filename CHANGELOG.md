@@ -114,6 +114,25 @@
 - `scripts/experiment_expression_scale.py` added; its p-value routine
   was checked against scipy to 4 decimal places before use.
 
+### Added — Phase 2: selection under treatment
+- `scripts/experiment_resistance.py` +
+  `tests/cell/test_resistance_selection_smoke.py` (5 gates, 32 s).
+- Selection emerges without being modelled: survivors of a week of
+  cisplatin are enriched for high anti-apoptotic reserve and low drug
+  accumulation, while untreated controls stay at the population mean.
+- Dose intensity decides how hard AND along which axis. At matched total
+  exposure, 3x the concentration for a third of the time kills 13x more
+  and leaves a more resistant remnant (combined score 2.88 vs 1.87) --
+  but selects almost entirely on drug accumulation (0.33 vs 0.61), not
+  on the apoptotic reserve, because no reserve survives a triple dose.
+- Consistent with the schedule result built independently: pulsing helps
+  cisplatin and doxorubicin most and paclitaxel least.
+- Limits recorded in the test and docstring: heterogeneity is drawn once,
+  so this is selection from a pre-existing tail rather than evolution of
+  new resistance, and lineages do not compete for space, so
+  adaptive-therapy questions are out of reach here by construction
+  (`cellsim/cell/agents.py` has the lattice for those).
+
 ### Added — Phase 2 opens: schedule dependence
 - `scripts/experiment_schedule.py` + `tests/cell/test_schedule_smoke.py`
   (4 gates, 38 s). Entirely within-line comparisons, so the per-line
