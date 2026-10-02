@@ -114,6 +114,16 @@ class Params:
     # sets whether the threshold is reachable at all. 0 restores the old
     # rate-only behaviour.
     bcl2_buffer: float = 0.30
+    # Saturable P-glycoprotein efflux, applied only to substrate drugs and
+    # scaled by the line's ABCB1 activity. Saturable rather than linear
+    # because a pump has finite turnover: it defeats a low dose and is
+    # overwhelmed by a high one, which is what makes efflux shift an IC50
+    # instead of simply rescaling the concentration axis.
+    #   d[Cin]/dt gains  - V_max * efflux_level * Cin / (K_m + Cin)
+    # 1.0 uM/h reproduces the IC50 spread that the measured ABCB1 range
+    # implies (1.5-2.1x); 0 disables efflux entirely.
+    efflux_vmax_uM_per_h: float = 1.0
+    efflux_km_uM: float = 0.5
     momp_k: float = 10.0
     momp_K: float = 0.5
     momp_n: float = 6.0
@@ -281,6 +291,9 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     # ── drug uptake ──
     if drug is not None:
         dY[:, 20] = (drug.partition * aux["het_uptake"] * aux["C_out"] - Cin) / drug.tau_uptake_h
+        if p.efflux_vmax_uM_per_h > 0 and getattr(drug, "pgp_substrate", False):
+            vmax = p.efflux_vmax_uM_per_h * line.efflux_level * aux["het_uptake"]
+            dY[:, 20] -= vmax * Cin / (p.efflux_km_uM + Cin)
     return dY
 
 
