@@ -114,6 +114,21 @@
 - `scripts/experiment_expression_scale.py` added; its p-value routine
   was checked against scipy to 4 decimal places before use.
 
+### Added — Phase 2 opens: schedule dependence
+- `scripts/experiment_schedule.py` + `tests/cell/test_schedule_smoke.py`
+  (4 gates, 38 s). Entirely within-line comparisons, so the per-line
+  prediction ceiling does not apply.
+- Holding paclitaxel's AUC fixed and varying the split gives an INTERIOR
+  optimum at 36 h (surviving fraction 1.00 / 0.48 / 0.28 / 0.69 / 1.00
+  across 3 / 24 / 36 / 48 / 72 h). Both extremes fail for different
+  reasons: too brief and few cells reach mitosis; too dilute and tubulin
+  occupancy never crosses the arrest threshold. Reproduces across seeds
+  and is a prediction of the mechanism, not a fit.
+- Exposure-time dependence ranks paclitaxel 242x, doxorubicin 17x,
+  cisplatin 7.6x (survival at 3 h over 72 h at fixed concentration) --
+  the published ordering, and the reason AUC is the wrong exposure
+  metric for taxanes (Gianni 1995, Huizing 1993).
+
 ### Added — per-line efflux channel, and the ceiling it exposed
 - Saturable P-glycoprotein efflux on intracellular drug, for substrate
   drugs only (doxorubicin, paclitaxel; not cisplatin), scaled by
