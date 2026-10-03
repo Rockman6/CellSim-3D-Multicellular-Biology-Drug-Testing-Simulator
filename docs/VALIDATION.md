@@ -525,6 +525,58 @@ inhibition, and is where that question belongs.
 
 Gated by `tests/cell/test_resistance_selection_smoke.py` (5 gates, 32 s).
 
+## Phase 2: combinations, and a confound the engine exposes
+
+The engine now carries one intracellular concentration per drug, so a
+combination is a real two-drug run rather than two single-drug runs
+compared. Every arm below gives each drug for 36 h at the same
+concentration in the same cell line; only the timing differs, which is a
+question no correlation over cell lines can address.
+
+**Antagonism, and it is robust.** Cisplatin damages DNA, driving
+p53 → p21 and arresting the cycle. Paclitaxel kills only cells that
+attempt mitosis while it is present. So the platinum removes the very
+cells the taxane needs (A549, 72 h, surviving fraction):
+
+| Arm | surviving | vs independent |
+|---|:-:|:-:|
+| cisplatin alone | 0.598 | |
+| paclitaxel alone | 0.409 | |
+| independent expectation | 0.244 | — |
+| both together | 0.323 | **1.32× antagonistic** |
+| cisplatin → paclitaxel | 0.341 | 1.40× antagonistic |
+| paclitaxel → cisplatin | 0.366 | 1.50× antagonistic |
+
+Every arrangement kills less than independent action predicts, which is
+the textbook result for a cytostatic paired with a phase-specific agent.
+Nothing was fitted to produce it: the arrest comes from the p53 → p21
+axis ported from the C++ prototype, the mitosis requirement from the
+tubulin occupancy threshold.
+
+**The sequence effect is an artefact, and that is the more useful
+finding.** At a 72 h readout the platinum-first arm looks better. It
+does not survive a longer one:
+
+| readout | cis → pac | pac → cis | ratio |
+|---|:-:|:-:|:-:|
+| 72 h | 0.341 | 0.366 | **0.93** |
+| 96 h | 0.345 | 0.351 | 0.98 |
+| 120 h | 0.347 | 0.353 | 0.99 |
+
+The cause is kinetic. Cisplatin acts slowly — adducts, then p53, then
+commitment — so placing it second truncates its effect inside a fixed
+window. The apparent ordering advantage is a confound between *when the
+drug was given* and *how long it had left to act*.
+
+So, stated plainly: **the engine reproduces the antagonism and does not
+reproduce a biological platinum/taxane sequence dependence.** What it
+does instead is expose a trap that fixed-endpoint combination assays
+fall into, which is worth more than a claim it cannot support. The test
+suite pins the antagonism and pins the artefact; it deliberately does
+not assert a sequence effect.
+
+Gated by `tests/cell/test_combination_timing_smoke.py` (3 gates, 22 s).
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
