@@ -57,7 +57,7 @@ re-implementing free-energy codes.
   tooling, run logs and retired-UI screenshots removed; empty scaffolds
   deleted.
 
-### Phase 1, the validated slice (target January 2027)
+### Phase 1, the validated slice — CLOSED October 2026, with a finding
 
 No UI work until this exists.
 
@@ -106,14 +106,104 @@ No UI work until this exists.
    Fit the one potency gain per drug on the p53 wild-type lines; predict
    the mutant lines with nothing re-tuned. Publish the table including
    every miss.
-5. Headless API: `engine.run(schedule) -> per-tick state records`
-   (JSON or Arrow). Any UI is a renderer of this stream.
+
+   *First cycle done* (`scripts/validate_gdsc.py`, results in
+   `docs/VALIDATION.md`). Nine of ten held-out IC50s land inside the
+   GDSC span, but a constant-IC50 null does equally well there, and on
+   log error the engine beats the null only for paclitaxel. So the
+   potency scale is right and cross-line discrimination is not yet.
+   **The Phase-1 exit gate is therefore: beat the null's log10 RMSE on
+   held-out lines for at least two of the three drugs.**
+
+   *Status, October 2026: NOT met, and now measured properly.* On ten
+   lines (five TP53 wild-type, five mutant, fitted on two) the engine is
+   closer than a constant-IC50 null on 10 held-out lines and further on
+   11, sign-test p = 1.0. An earlier five-line run appeared to pass, but
+   the gate then compared two RMSE numbers and the winning margin was
+   0.45 vs 0.46 — noise. The gate is now a paired per-line sign test.
+
+   What IS established: each drug's potency scale, from one fitted
+   constant, with 22 of 25 held-out predictions inside GDSC's replicate
+   span against the null's 18.
+
+   What the measurement says is missing, now pinned down: the engine has
+   no channel through which lines can differ. Sweeping each per-line
+   field across its full observed range moves the predicted IC50 by
+   1.0x for doubling time, 1.1x for the Bcl-2 reserve, and 7-9x only
+   for DNA repair rate (and not at all for paclitaxel, whose IC50 is
+   set by a drug-intrinsic arrest threshold). Lines differ by 8-51x in
+   reality. So the engine can produce at most two answers per drug, and
+   tying a constant is arithmetic, not bad luck.
+
+   Also established: DepMap 24Q4 expression for all ten lines and
+   sixteen candidate genes correlates with sensitivity no better than
+   chance once corrected for the search (family-wise p 0.25-0.86), and
+   DepMap's CRISPR growth rate does not match curated doubling times
+   (rho -0.15). Building a mapping now would fit noise.
+
+   At ten lines no mapping could be validated. Repeating the test on
+   every GDSC line DepMap has expression for (156-683 per drug), with
+   genes pre-specified by mechanism and Bonferroni-corrected, real
+   signal does appear: Bcl-xL (BCL2L1) and P-glycoprotein (ABCB1) for
+   doxorubicin and paclitaxel, plus class III beta-tubulin (TUBB3) for
+   paclitaxel. Cisplatin gives nothing, and notably the repair genes do
+   not predict it (ERCC1 rho -0.03).
+
+   Putting that beside the leverage measurement explains the whole
+   failure. The engine's only strong channel is DNA repair, where the
+   data has no signal. The strongest real signal is the apoptotic
+   set-point, where the engine HAS the field (CellLine.bcl2_level) but
+   its MOMP switch is so sharp that an 8-fold change moves the IC50 by
+   1.1x, against the ~2x the data implies. The second strongest is
+   efflux, which the engine does not model at all.
+
+   Both channels were then built (apoptotic buffer, efflux) and
+   neither moved the gate, which led to the measurement that settles
+   it: fitting ALL eleven markers to IC50 by least squares across every
+   GDSC line DepMap covers gives best-case R2 of 0.09 / 0.15 / 0.20.
+   80-92 % of line-to-line variation is not in these markers, so a
+   mechanistic model restricted to them cannot pass the paired test
+   however faithfully it is built.
+
+   DECISION: per-line IC50 prediction is not a goal this engine can
+   reach with available inputs, and is dropped as the headline metric.
+   Phase 2 re-aims at within-line dynamics -- schedule dependence,
+   wash-out recovery, resistance under selection, combination timing --
+   where the mechanism is load-bearing and no per-line marker is
+   required. See docs/VALIDATION.md for the numbers.
+
+5. *Done.* Headless state stream: `cellsim/cell/stream.py` runs one
+   population under a piecewise-constant dosing schedule (wash-outs
+   included) and emits per-tick JSON Lines, schema
+   `cellsim.cell.stream/v1` (`cellsim cell-stream`). Any UI is a
+   renderer of this stream.
 6. A Colab notebook that reproduces the validation figure from a clean
    environment.
 7. Packaging (done in Phase 0): `pyproject.toml`, the `cellsim` console
    script, pytest collection; the `src` package is now `cellsim`.
 
-### Phase 2, the dish (target April 2027)
+### Phase 2, within-line dynamics and the dish (now current)
+
+**Re-aimed October 2026.** Phase 1 measured that per-line IC50
+prediction is unreachable from canonical markers (R² 0.09–0.20 across
+156–683 lines). Phase 2 therefore targets the questions mechanism
+answers well and statistics answer badly — all of them *within* one
+line, so no per-line marker is needed:
+
+- **Schedule dependence.** Does a long low exposure differ from a short
+  high one at matched AUC? It should, and differently per drug: a
+  tubulin binder kills only cells that reach mitosis during exposure,
+  so it is exposure-time limited in a way a DNA-damage agent is not.
+- **Wash-out and recovery.** Already shown: a 6 h pulse regrows ×4.0
+  where the same dose held continuously eradicates the colony.
+- **Resistance under selection**, and whether intermittent dosing
+  delays relapse relative to continuous dosing at matched exposure.
+- **Combination timing**, where a cytostatic given first antagonises a
+  phase-specific partner.
+
+These are validated against published *phenotypes* rather than a
+ten-line IC50 table, which is the kind of evidence that does not run
+into the ceiling above.
 
 - Space: lattice or off-lattice agents, diffusion of oxygen, glucose
   and drug, a vessel source, contact inhibition. Reuse

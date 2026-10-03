@@ -1,0 +1,54 @@
+{
+  "line": "A549",
+  "days": 14,
+  "n_cells": 128,
+  "conc_uM": {
+    "cisplatin": 15.0,
+    "doxorubicin": 0.08,
+    "paclitaxel": 0.04
+  },
+  "drugs": {
+    "cisplatin": {
+      "continuous": {
+        "alive_weight": 475136.0,
+        "mean_bcl2": 1.0927141027537506,
+        "mean_uptake": 0.5928776154678631,
+        "n_lineages": 18
+      },
+      "pulsed 1d/2d": {
+        "alive_weight": 2.0,
+        "mean_bcl2": 2.9461242417426274,
+        "mean_uptake": 0.7064272958945934,
+        "n_lineages": 1
+      }
+    },
+    "doxorubicin": {
+      "continuous": {
+        "alive_weight": 2670592.0,
+        "mean_bcl2": 1.0460199441546083,
+        "mean_uptake": 0.810454385214288,
+        "n_lineages": 89
+      },
+      "pulsed 1d/2d": {
+        "alive_weight": 49152.0,
+        "mean_bcl2": 2.5031402962521367,
+        "mean_uptake": 0.6496841843976822,
+        "n_lineages": 2
+      }
+    },
+    "paclitaxel": {
+      "continuous": {
+        "alive_weight": 2686976.0,
+        "mean_bcl2": 1.052128761731679,
+        "mean_uptake": 0.7592215416736798,
+        "n_lineages": 71
+      },
+      "pulsed 1d/2d": {
+        "alive_weight": 1146880.0,
+        "mean_bcl2": 1.1284902380455903,
+        "mean_uptake": 0.949035512647696,
+        "n_lineages": 70
+      }
+    }
+  }
+}
