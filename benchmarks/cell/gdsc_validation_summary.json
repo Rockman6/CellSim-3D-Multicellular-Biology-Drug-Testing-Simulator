@@ -1,0 +1,137 @@
+{
+  "n_cells_per_dose": 32,
+  "bisection_steps": 12,
+  "fit_lines": [
+    "A549",
+    "MCF7"
+  ],
+  "params": {
+    "atm_threshold": 0.1,
+    "atm_gain": 20.0,
+    "atm_tau_h": 0.1,
+    "p53_Kd": 0.1,
+    "p53_k_basal": 1.0,
+    "p53_k_deg": 10.0,
+    "atm_shield": 0.7,
+    "mdm2_K_hill": 0.18,
+    "mdm2_k_basal": 0.315,
+    "mdm2_k_max": 3.0,
+    "mdm2_k_mrna_deg": 1.5,
+    "mdm2_k_translate": 1.5,
+    "mdm2_k_prot_deg": 1.5,
+    "p53_time_scale": 0.5509090909090909,
+    "p21_K_hill": 0.18,
+    "p21_k_max": 0.15,
+    "chk_damage_threshold": 0.2,
+    "chk_gain": 0.008,
+    "p53_act_lo": 0.12,
+    "p53_act_hi": 0.35,
+    "puma_k_on": 1.0,
+    "puma_k_off": 0.3,
+    "bax_k": 0.5,
+    "bax_puma_gain": 0.3,
+    "bcl2_block": 3.0,
+    "bcl2_neutralised_by_puma": 0.2,
+    "bcl2_buffer": 0.3,
+    "efflux_vmax_uM_per_h": 1.0,
+    "efflux_km_uM": 0.5,
+    "momp_k": 10.0,
+    "momp_K": 0.5,
+    "momp_n": 6.0,
+    "release_k": 20.0,
+    "xiap_total": 0.3,
+    "smac_total": 1.0,
+    "c9_k": 5.0,
+    "c9_xiap_block": 10.0,
+    "c3_k": 6.0,
+    "exec_k": 2.0,
+    "c3_commit": 0.5,
+    "m_duration_h": 1.0,
+    "g2m_damage_block": 0.5,
+    "slippage_h": 24.0,
+    "slippage_damage": 0.3,
+    "mitotic_death_lag_h": 2.0,
+    "het_sigma": 0.3,
+    "p73_gain": 0.1,
+    "p73_atm_on": 0.5
+  },
+  "drugs": {
+    "cisplatin": {
+      "fit_target": "k_damage_per_uM_h",
+      "gain": 0.0011807954134641825,
+      "per_line_gain": {
+        "A549": 0.0011807954134641823
+      },
+      "fit_on": [
+        "A549"
+      ],
+      "spearman_vs_reference": -0.2571428571428572,
+      "null_ic50_uM": 9.7673,
+      "log10_rmse_model": 0.597142659592131,
+      "log10_rmse_null": 0.4306877970311103,
+      "log10_rmse_model_heldout": 0.654111881769052,
+      "log10_rmse_null_heldout": 0.4717948433522912,
+      "n_heldout_in_range": 5,
+      "pass": 7,
+      "null_pass": 7,
+      "n": 10
+    },
+    "doxorubicin": {
+      "fit_target": "k_damage_per_uM_h",
+      "gain": 0.01749194409100301,
+      "per_line_gain": {
+        "A549": 0.00837556014795436,
+        "MCF7": 0.036531062123349986
+      },
+      "fit_on": [
+        "A549",
+        "MCF7"
+      ],
+      "spearman_vs_reference": 0.4545454545454545,
+      "null_ic50_uM": 0.05742796304794019,
+      "log10_rmse_model": 0.4053400603119919,
+      "log10_rmse_null": 0.42988752678239867,
+      "log10_rmse_model_heldout": 0.42593902661640054,
+      "log10_rmse_null_heldout": 0.46058981493395545,
+      "n_heldout_in_range": 8,
+      "pass": 8,
+      "null_pass": 8,
+      "n": 10
+    },
+    "paclitaxel": {
+      "fit_target": "partition",
+      "gain": 0.21197907529236584,
+      "per_line_gain": {
+        "A549": 0.5225630482774183,
+        "MCF7": 0.08598986956680364
+      },
+      "fit_on": [
+        "A549",
+        "MCF7"
+      ],
+      "spearman_vs_reference": 0.5030303030303029,
+      "null_ic50_uM": 0.02792310870945425,
+      "log10_rmse_model": 0.31836693566512925,
+      "log10_rmse_null": 0.35804885607498255,
+      "log10_rmse_model_heldout": 0.31720929234203954,
+      "log10_rmse_null_heldout": 0.35091490505651757,
+      "n_heldout_in_range": 8,
+      "pass": 10,
+      "null_pass": 8,
+      "n": 10
+    }
+  },
+  "paired_vs_null_wins": 10,
+  "paired_vs_null_losses": 11,
+  "paired_vs_null_p": 1.0,
+  "discriminates_lines": false,
+  "held_out_pass": 20,
+  "held_out_null_pass": 18,
+  "held_out_n": 25,
+  "drugs_beating_null_heldout": [
+    "doxorubicin",
+    "paclitaxel"
+  ],
+  "exit_gate_met": false,
+  "wall_s": 208.6
+}

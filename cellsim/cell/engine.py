@@ -47,7 +47,7 @@ prototype (p53 basal 0.089 ≈ 1x). Non-AI: closed-form ODEs, RK4.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import numpy as np
 
@@ -104,6 +104,26 @@ class Params:
     bax_puma_gain: float = 0.3
     bcl2_block: float = 3.0
     bcl2_neutralised_by_puma: float = 0.2
+    # Anti-apoptotic proteins SEQUESTER activated Bax stoichiometrically,
+    # so MOMP needs activated Bax to exceed the reserve rather than merely
+    # to accumulate more slowly against it (mitochondrial priming; Certo
+    # et al. 2006 Cancer Cell 9:351, Letai). Modelling it as a rate
+    # penalty instead made the reserve almost irrelevant: an 8-fold change
+    # in CellLine.bcl2_level moved the IC50 by 1.1x, because a slower
+    # climb still crosses a fixed threshold within 72 h. As a buffer it
+    # sets whether the threshold is reachable at all. 0 restores the old
+    # rate-only behaviour.
+    bcl2_buffer: float = 0.30
+    # Saturable P-glycoprotein efflux, applied only to substrate drugs and
+    # scaled by the line's ABCB1 activity. Saturable rather than linear
+    # because a pump has finite turnover: it defeats a low dose and is
+    # overwhelmed by a high one, which is what makes efflux shift an IC50
+    # instead of simply rescaling the concentration axis.
+    #   d[Cin]/dt gains  - V_max * efflux_level * Cin / (K_m + Cin)
+    # 1.0 uM/h reproduces the IC50 spread that the measured ABCB1 range
+    # implies (1.5-2.1x); 0 disables efflux entirely.
+    efflux_vmax_uM_per_h: float = 1.0
+    efflux_km_uM: float = 0.5
     momp_k: float = 10.0
     momp_K: float = 0.5
     momp_n: float = 6.0
@@ -121,6 +141,25 @@ class Params:
     slippage_h: float = 24.0         # Gascoigne & Taylor 2008
     slippage_damage: float = 0.3
     mitotic_death_lag_h: float = 2.0
+    # Cell-to-cell variability. Each cell draws log-normal multipliers
+    # (mean 1) on its anti-apoptotic Bcl-2 reserve and on its drug
+    # accumulation. Pre-existing protein-level differences are the
+    # documented origin of fractional killing (Spencer et al. 2009
+    # Nature 459:428; Roux et al. 2015 Mol Syst Biol 11:803), and they are
+    # what turns an all-or-none population into a graded dose-response.
+    # 0 reproduces identical cells exactly.
+    het_sigma: float = 0.30
+    # p53-independent damage -> PUMA route: ATM / c-Abl activate p73, which
+    # transactivates PUMA without p53 (Gong et al. 1999 Nature 399:806;
+    # Agami et al. 1999 Nature 399:809, both with cisplatin). Engages only
+    # once ATM is genuinely activated (> 0.5; basal ATM sits at 0.12-0.27).
+    # 0 = off (p53-only). Default 0.1: chosen by a leave-one-mutant-out
+    # test (scripts/experiment_p73.py) in which the gain is fitted on one
+    # TP53-mutant line and scored on the other. Both folds independently
+    # picked 0.1, and in both it improved the held-out line over the
+    # p53-only model and over a constant-IC50 null.
+    p73_gain: float = 0.1
+    p73_atm_on: float = 0.5
 
 
 # ── small helpers ─────────────────────────────────────────────────────
@@ -229,14 +268,18 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
 
     # ── apoptosis ──
     p53_act = np.clip((p53 - p.p53_act_lo) / (p.p53_act_hi - p.p53_act_lo), 0, 1) * f53
-    dY[:, 12] = p.puma_k_on * p53_act - p.puma_k_off * Puma
+    p73_act = np.clip((ATM - p.p73_atm_on) / (1.0 - p.p73_atm_on), 0, 1)
+    dY[:, 12] = p.puma_k_on * (p53_act + p.p73_gain * p73_act) - p.puma_k_off * Puma
     mit_drive = np.zeros(len(Y))
     if drug is not None and drug.mechanism == "tubulin":
         mit_drive = drug.k_mitotic_death_per_h * np.maximum(
             0.0, aux["arrest_h"] - p.mitotic_death_lag_h) / 10.0
-    bcl2_eff = np.maximum(0.0, line.bcl2_level - p.bcl2_neutralised_by_puma * Puma)
+    bcl2_eff = np.maximum(0.0, line.bcl2_level * aux["het_bcl2"]
+                          - p.bcl2_neutralised_by_puma * Puma)
     dY[:, 13] = p.bax_k * (p.bax_puma_gain * Puma + mit_drive) / (1 + p.bcl2_block * bcl2_eff) * (1 - Bax)
-    bn = Bax ** p.momp_n
+    # Only Bax in excess of the anti-apoptotic buffer can form pores.
+    bax_free = np.maximum(0.0, Bax - p.bcl2_buffer * bcl2_eff)
+    bn = bax_free ** p.momp_n
     dY[:, 14] = p.momp_k * bn / (p.momp_K ** p.momp_n + bn) * (1 - MOMP)
     dY[:, 15] = p.release_k * MOMP * (1 - CytC)
     dY[:, 16] = p.release_k * MOMP * (1 - Smac)
@@ -247,7 +290,10 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
 
     # ── drug uptake ──
     if drug is not None:
-        dY[:, 20] = (drug.partition * aux["C_out"] - Cin) / drug.tau_uptake_h
+        dY[:, 20] = (drug.partition * aux["het_uptake"] * aux["C_out"] - Cin) / drug.tau_uptake_h
+        if p.efflux_vmax_uM_per_h > 0 and getattr(drug, "pgp_substrate", False):
+            vmax = p.efflux_vmax_uM_per_h * line.efflux_level * aux["het_uptake"]
+            dY[:, 20] -= vmax * Cin / (p.efflux_km_uM + Cin)
     return dY
 
 
@@ -263,6 +309,8 @@ class Population:
     generation: np.ndarray
     C_out: np.ndarray
     forced_D: np.ndarray
+    het_bcl2: np.ndarray             # per-cell Bcl-2 reserve multiplier (mean 1)
+    het_uptake: np.ndarray           # per-cell drug-accumulation multiplier (mean 1)
     t_h: float = 0.0
 
 
@@ -290,7 +338,8 @@ def calibrate_cycle_scale(line: CellLine, p: Params = Params(), dt_h: float = 0.
     Y = np.zeros((1, NV))
     Y[0, :7] = fresh_cycle_state()
     Y[0, IX["p53"]], Y[0, IX["MDM2_mRNA"]], Y[0, IX["MDM2"]] = 0.089, 0.21, 0.21
-    aux = {"C_out": np.zeros(1), "arrest_h": np.zeros(1), "forced_D": np.full(1, np.nan)}
+    aux = {"C_out": np.zeros(1), "arrest_h": np.zeros(1), "forced_D": np.full(1, np.nan),
+           "het_bcl2": np.ones(1), "het_uptake": np.ones(1)}
     t = 0.0
     while t < max_h:
         _rk4(Y, aux, line, None, p, 1.0, dt_h)
@@ -311,8 +360,14 @@ def _rk4(Y: np.ndarray, aux: dict, line, drug, p: Params, k_cyc: float, dt: floa
     np.clip(Y, 0.0, _UPPER, out=Y)
 
 
+def _lognormal_mean_one(rng: np.random.Generator, sigma: float, n: int) -> np.ndarray:
+    if sigma <= 0:
+        return np.ones(n)
+    return np.exp(rng.normal(-0.5 * sigma ** 2, sigma, n))
+
+
 def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.random.Generator,
-                    forced_D: Optional[float] = None) -> Population:
+                    forced_D: Optional[float] = None, het_sigma: float = 0.0) -> Population:
     C = np.broadcast_to(np.asarray(C_out, dtype=float), (n_cells,)).copy()
     Y = np.zeros((n_cells, NV))
     for i in range(n_cells):
@@ -322,21 +377,33 @@ def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.rando
     fD = np.full(n_cells, np.nan if forced_D is None else float(forced_D))
     if forced_D is not None:
         Y[:, IX["D"]] = forced_D
+    # Drawn after the cycle states so het_sigma=0 leaves every earlier
+    # random draw, and therefore every earlier result, unchanged.
+    het_bcl2 = _lognormal_mean_one(rng, het_sigma, n_cells)
+    het_uptake = _lognormal_mean_one(rng, het_sigma, n_cells)
     return Population(Y=Y, weight=np.ones(n_cells), alive=np.ones(n_cells, bool),
                       in_M=np.zeros(n_cells, bool), t_in_M=np.zeros(n_cells),
                       arrest_h=np.zeros(n_cells), generation=np.zeros(n_cells, int),
-                      C_out=C, forced_D=fD)
+                      C_out=C, forced_D=fD, het_bcl2=het_bcl2, het_uptake=het_uptake)
 
 
 def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.ndarray],
              *, t_end_h: float = 72.0, n_cells: int = 128, dt_h: float = 0.02,
              seed: int = 1, groups: Optional[np.ndarray] = None,
              forced_D: Optional[float] = None, p: Params = Params(),
-             k_cyc: Optional[float] = None, record_every_h: float = 1.0) -> SimResult:
+             k_cyc: Optional[float] = None, record_every_h: float = 1.0,
+             dose_fn: Optional[Callable[[float], float]] = None,
+             on_record: Optional[Callable[["Population", float], None]] = None) -> SimResult:
     """Integrate a population for t_end_h. `C_out_uM` may be a per-cell
-    vector; `groups` labels cells (e.g. by concentration) for readouts."""
+    vector; `groups` labels cells (e.g. by concentration) for readouts.
+
+    `dose_fn(t_h)`, if given, sets every cell's extracellular
+    concentration (µM) before each step, which is how dosing schedules
+    and wash-outs are expressed. `on_record(pop, t_h)` is called at every
+    record tick with the live population (read-only use), which is what
+    `cellsim.cell.stream` turns into a per-tick state stream for a UI."""
     rng = np.random.default_rng(seed)
-    pop = make_population(n_cells, C_out_uM, rng, forced_D)
+    pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma)
     if groups is None:
         groups = np.zeros(n_cells, int)
     n_groups = int(groups.max()) + 1
@@ -344,7 +411,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
                         for g in range(n_groups)])
     if k_cyc is None:
         k_cyc = calibrate_cycle_scale(line, p)
-    aux = {"C_out": pop.C_out, "arrest_h": pop.arrest_h, "forced_D": pop.forced_D}
+    aux = {"C_out": pop.C_out, "arrest_h": pop.arrest_h, "forced_D": pop.forced_D,
+           "het_bcl2": pop.het_bcl2, "het_uptake": pop.het_uptake}
     n_steps = int(round(t_end_h / dt_h))
     rec_stride = max(1, int(round(record_every_h / dt_h)))
     T = n_steps // rec_stride + 1
@@ -366,10 +434,15 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
         ph = np.where(pop.in_M, 3, ph)
         for q in range(4):
             phase_frac[k, q] = aw[g0 & (ph == q)].sum() / max(aw[g0].sum(), 1e-12)
+        if on_record is not None:
+            on_record(pop, pop.t_h)
 
+    if dose_fn is not None:
+        pop.C_out[:] = dose_fn(0.0)
     record(0)
-    tub_theta = None
     for step in range(1, n_steps + 1):
+        if dose_fn is not None:
+            pop.C_out[:] = dose_fn(pop.t_h)    # aux["C_out"] is this same array
         _rk4(pop.Y, aux, line, drug, p, k_cyc, dt_h)
         pop.t_h += dt_h
         Y = pop.Y
@@ -463,9 +536,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"control growth: x{res.alive_weight[-1, 0] / res.alive_weight[0, 0]:.2f} "
           f"(doubling {line.doubling_time_h} h)")
     print(f"{'conc_uM':>10} {'viability':>10}")
-    for c, v in zip(res.group_C, viab):
+    for c, v in zip(res.group_C_out, viab):
         print(f"{c:>10.4g} {v:>10.3f}")
-    print(f"IC50 = {ic50_from_curve(res.group_C[1:], viab[1:]):.4g} µM")
+    print(f"IC50 = {ic50_from_curve(res.group_C_out[1:], viab[1:]):.4g} µM")
     return 0
 
 
