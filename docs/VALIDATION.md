@@ -626,6 +626,114 @@ Gated by `tests/cell/test_combination_timing_smoke.py` (4 gates, 41 s):
 two-drug state, antagonism, no ordering effect at matched IC50 (3-seed
 mean), and the fade of the above-IC50 ordering effect with readout.
 
+## Phase 2: the dish — cells in space (`cellsim/cell/dish.py`)
+
+The well-mixed engine says how many cells survive; the dish says which
+ones and where. Each lattice site holds at most one cell and each cell
+carries a full engine state row, so the validated biology runs per cell
+unchanged. Space adds contact inhibition (a dividing cell must push its
+neighbours to free space within a set reach, or its G1 growth signal
+drops to zero), diffusing oxygen and drug consumed by the cells they
+pass, hypoxic quiescence, necrosis, and clones that inherit their
+founder's traits. Two geometries: a monolayer under stirred medium and a
+3-D spheroid whose fields are solved radially, which is exact for a
+symmetric aggregate and is how the spheroid literature models it.
+
+Every environmental constant is an input with a source: oxygen
+diffusivity, medium pressure and consumption from DLD-1 spheroids
+(Grimes et al. 2014 J R Soc Interface 11:20131124: 2e-9 m²/s, 100 mmHg,
+22.1 mmHg/s in packed tissue); oxygen-dependent proliferation from
+PhysiCell's documented defaults (Ghaffarizadeh et al. 2018); apoptotic
+clearance 8.6 h (Macklin et al. 2012); small-molecule interstitial
+diffusivity 1e-6 cm²/s (Nugent & Jain 1984). How much drug a cell
+sequesters, which sets how slowly drug penetrates tissue, is known only
+to an order of magnitude and is flagged as such per drug.
+
+**Two engine changes it needed, both inert by default.** A per-cell G1
+growth signal: lowering cyclin D synthesis alone does not arrest this
+cycle, whose Rb/E2F/cyclin E feedback restarts itself, so the signal
+scales progression through G1 only — cells past the restriction point
+finish their cycle and their daughters wait (gs = 0 leaves exactly the
+56 % of cells that were past G1 dividing once and nothing dividing
+twice). And optional cycle-time variability (`Params.cycle_cv`). With
+neither in use, every earlier result is bit-identical.
+
+**Numerics against closed forms** (`tests/cell/test_dish_smoke.py`). The
+oxygen solver reproduces the zero-order sphere profile to within 1 % of
+the medium value and Grimes's 233 µm diffusion limit; with first-order
+uptake the slab solver reproduces `cellsim.cell.tissue`'s analytic
+profile to 0.5 %; the transient drug solver relaxes to the steady one.
+
+**A sparse monolayer: the Cell Tracking Challenge HeLa movie.** Both
+46 h sequences re-run as closed fields of the same size, seeded with the
+same counts (five seeds each; `scripts/validate_dish.py`, targets from
+the curated tracks by `scripts/ctc_reference.py`):
+
+| | sequence 01 | sequence 02 |
+|---|:-:|:-:|
+| cells at 46 h, measured | 43 → **137** | 125 → **363** |
+| engine (cycle CV 0.25) | **140** (trajectory error 12 %) | **377** (15 %) |
+| complete cycles, measured | 20.2 h, CV 0.22 | 18.5 h, CV 0.33 |
+| engine | 26.4 h, CV 0.23 | 27.3 h, CV 0.22 |
+| still undivided at 30 h, measured | 0.51 | 0.71 |
+| engine | 0.41 | 0.45 |
+
+The colony grows right; the single-cell picture does not. The movie's
+cells are a mix of fast cyclers (complete cycles ~19 h) and a large
+fraction that does not divide within the window — the proliferation /
+quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369),
+which the engine does not model. Open. With every cell on one clock
+(cycle CV 0) no cell divides within 30 h of birth at all, so measured
+variability is clearly needed.
+
+This also caught a provenance error. The library gave HeLa a 20 h
+doubling time, read off this movie's COMPLETE cycles, which a 46 h
+window biases short. Cellosaurus gives 1.3 days (PubMed 29156801; DSMZ
+~48 h) and the movie's own counts double every 27–31 h, so it is now
+31 h. HeLa's held-out GDSC predictions moved 3–7 % and still pass.
+
+**A spheroid: DLD-1, calibrated, not yet independently validated.**
+The dish has one free spatial constant, how far a dividing cell can
+push its neighbours (`DishParams.push_sites`). Grimes's DLD-1 spheroids
+grow ~15 µm/day in radius after their core turns anoxic (233 µm to
+~400 µm between days 6 and 17), and from 3000 cells over 12 days:
+
+| mechanical reach | necrosis starts | radial growth after that | Grimes |
+|---|:-:|:-:|:-:|
+| **1 site** | day 6 (R 206 µm) | **15.3 µm/day** | **~15 µm/day** |
+| 2 sites | day 4 (R 211 µm) | 28.2 µm/day | |
+| 3 sites | day 4 (R 245 µm) | 36.3 µm/day | |
+| unlimited | day 3 (R 277 µm) | 58.1 µm/day | |
+
+A reach of one site matches, and leaves ~80 % of viable cells
+quiescent with proliferation confined to the outer layer, consistent
+with Ki-67 rims; solid stress is known to limit spheroid proliferation
+this way (Helmlinger et al. 1997 Nat Biotechnol 15:778). Without a
+mechanical limit the spheroid grows four times too fast.
+
+**A miss in the necrotic core.** Feeding the model's (radius, necrotic
+radius) pairs through Grimes's own anoxic-core relation should return
+their 233 ± 22 µm diffusion limit if the model's core tracks anoxia.
+With PhysiCell's generic necrosis threshold (5 mmHg) it returns 155 µm;
+moving the threshold to near-anoxia, which is how Grimes define the
+core, gives 173 µm. The core is still too large. The likely
+cause is an overshoot built into its formation: the first cells die
+under the profile of a fully consuming sphere, and once the dead core
+stops consuming, oxygen reaches deeper than the dead region, so the core
+is bigger than the anoxic region it now sits in. A surface-growth
+lattice also roughens the surface, so the equivalent radius understates
+how far oxygen must travel. Open.
+
+**What the dish does not do yet.** One cell per site, so no compression
+or multilayering beyond a fixed reach; necrotic debris never lyses; no
+glucose, lactate or pH; drug sequestration is order-of-magnitude; and
+spheroid drug response has not been checked against data (multicellular
+resistance to a 1 h paclitaxel exposure, Nicholson et al. 1997 Eur J
+Cancer 33:1291, cannot be used: the engine keeps no paclitaxel in a cell
+after wash-out, and kills nothing with exposures under 24 h).
+
+Gated by `tests/cell/test_dish_smoke.py` (7 gates, 20 s).
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into

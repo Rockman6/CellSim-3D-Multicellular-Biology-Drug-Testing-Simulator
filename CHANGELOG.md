@@ -1,5 +1,40 @@
 # CellSim — Changelog
 
+## Unreleased — Phase 2: the dish
+
+### Added
+- `cellsim/cell/dish.py` and `cellsim dish`: the engine's cells on a
+  lattice, one per site, each with a full engine state. Monolayer (contact
+  inhibition) or spheroid (radial oxygen and drug fields, hypoxic
+  quiescence, necrosis, apoptotic-body clearance), with daughters
+  inheriting their founder's traits. Field solvers checked against closed
+  forms. Stream schema `cellsim.dish.stream/v1`.
+- `web/viewer/`: a static web viewer for both stream schemas (three.js):
+  3-D cells coloured by phase, p53, caspase-3, damage, oxygen, growth
+  signal or lineage; cut-open spheroids; time scrubbing; charts; cell
+  inspector; CSV export. Runs no biology. Demo runs in `web/demo/`.
+- `scripts/ctc_reference.py`: counts and cell-cycle times from the Cell
+  Tracking Challenge HeLa ground truth (Kaplan-Meier for censoring);
+  `scripts/validate_dish.py`: the dish against that movie and against
+  DLD-1 spheroids (Grimes et al. 2014).
+- Engine: a per-cell G1 growth signal (`aux["gs"]`) for contact
+  inhibition and hypoxia, and optional cycle-time variability
+  (`Params.cycle_cv`); with neither used, results are bit-identical.
+- DLD-1 in the library (TP53 S241F, high ABCB1), and
+  `Drug.accumulation_ratio` for tissue penetration.
+
+### Fixed
+- HeLa's doubling time was 20 h, read off the CTC movie's complete
+  cycles, which a 46 h window biases short. Now 31 h (Cellosaurus 1.3 d;
+  the movie's own counts double every 27-31 h). HeLa's held-out GDSC
+  predictions moved 3-7 % and still pass.
+
+### Known misses (documented, open)
+- Spheroid necrotic cores are larger than Grimes's anoxic-core relation
+  allows (implied diffusion limit below the measured 233 um).
+- The HeLa movie's cells split into fast cyclers and non-dividers
+  (proliferation/quiescence at mitotic exit); the engine's do not.
+
 ## Unreleased — Phase 2 audit: refit, then re-measure everything
 
 ### Fixed
