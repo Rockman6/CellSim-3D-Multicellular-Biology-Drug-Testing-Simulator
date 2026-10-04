@@ -64,12 +64,34 @@ NAMES = [
 ]
 IX = {n: i for i, n in enumerate(NAMES)}
 NV = len(NAMES)
-_UPPER = np.array([1.5, 1, 1, 1.5, 1.5, 1.5, 1,   # cycle
-                   1, 2, 2, 2,                     # stress
-                   2,                              # damage
-                   5, 1, 1, 1, 1, 1, 1,            # death
-                   1,                              # exec
-                   np.inf])                        # Cin
+# One intracellular-concentration slot per drug, appended after the base
+# variables, so a combination carries each drug's own Cin. A single drug
+# or none leaves the layout exactly as it was.
+N_BASE = IX["Cin"]
+_UPPER_BASE = [1.5, 1, 1, 1.5, 1.5, 1.5, 1,   # cycle
+               1, 2, 2, 2,                     # stress
+               2,                              # damage
+               5, 1, 1, 1, 1, 1, 1,            # death
+               1]                              # exec
+_UPPER = np.array(_UPPER_BASE + [np.inf])      # + one Cin
+
+
+def state_width(n_drugs: int) -> int:
+    """Number of state variables for a run carrying `n_drugs` drugs."""
+    return N_BASE + max(1, n_drugs)
+
+
+def _upper_for(n_drugs: int) -> np.ndarray:
+    return np.array(_UPPER_BASE + [np.inf] * max(1, n_drugs))
+
+
+def _as_drug_tuple(drug):
+    """Accept None, one drug, or a sequence; always return a tuple."""
+    if drug is None:
+        return ()
+    if isinstance(drug, (list, tuple)):
+        return tuple(drug)
+    return (drug,)
 
 
 @dataclass(frozen=True)
@@ -220,7 +242,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     ATM, p53, mRNA, MDM2 = (Y[:, i] for i in range(7, 11))
     D = Y[:, IX["D"]]
     Puma, Bax, MOMP, CytC, Smac, C9, C3 = (Y[:, i] for i in range(12, 19))
-    Exec, Cin = Y[:, IX["Exec"]], Y[:, IX["Cin"]]
+    Exec = Y[:, IX["Exec"]]
+    drugs = _as_drug_tuple(drug)
+    # Cin for drug i lives at N_BASE + i; with no drug the single
+    # legacy slot is still present and simply stays at zero.
+    Cin_all = [Y[:, N_BASE + i] for i in range(max(1, len(drugs)))]
+    Cin = Cin_all[0]
     phase = _phase(Y)
 
     # ── cell cycle (prototype CDKState::step, growth signal = 1) ──
@@ -258,11 +285,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
 
     # ── damage index ──
     dD = -line.repair_rate_per_h * D
-    if drug is not None:
-        if drug.mechanism == "dna_adduct":
-            dD = dD + drug.k_damage_per_uM_h * Cin
-        elif drug.mechanism == "topo2":
-            dD = dD + drug.k_damage_per_uM_h * Cin * np.where(phase == 1, drug.s_phase_factor, 1.0)
+    for i, dg in enumerate(drugs):
+        ci = Cin_all[i]
+        if dg.mechanism == "dna_adduct":
+            dD = dD + dg.k_damage_per_uM_h * ci
+        elif dg.mechanism == "topo2":
+            dD = dD + dg.k_damage_per_uM_h * ci * np.where(phase == 1, dg.s_phase_factor, 1.0)
     forced = aux["forced_D"]
     dY[:, 11] = np.where(np.isnan(forced), dD, 0.0)
 
@@ -271,9 +299,9 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     p73_act = np.clip((ATM - p.p73_atm_on) / (1.0 - p.p73_atm_on), 0, 1)
     dY[:, 12] = p.puma_k_on * (p53_act + p.p73_gain * p73_act) - p.puma_k_off * Puma
     mit_drive = np.zeros(len(Y))
-    if drug is not None and drug.mechanism == "tubulin":
-        mit_drive = drug.k_mitotic_death_per_h * np.maximum(
-            0.0, aux["arrest_h"] - p.mitotic_death_lag_h) / 10.0
+    if any(dg.mechanism == "tubulin" for dg in drugs):
+        k = max(dg.k_mitotic_death_per_h for dg in drugs if dg.mechanism == "tubulin")
+        mit_drive = k * np.maximum(0.0, aux["arrest_h"] - p.mitotic_death_lag_h) / 10.0
     bcl2_eff = np.maximum(0.0, line.bcl2_level * aux["het_bcl2"]
                           - p.bcl2_neutralised_by_puma * Puma)
     dY[:, 13] = p.bax_k * (p.bax_puma_gain * Puma + mit_drive) / (1 + p.bcl2_block * bcl2_eff) * (1 - Bax)
@@ -289,11 +317,17 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     dY[:, 19] = p.exec_k * C3 * (1 - Exec)
 
     # ── drug uptake ──
-    if drug is not None:
-        dY[:, 20] = (drug.partition * aux["het_uptake"] * aux["C_out"] - Cin) / drug.tau_uptake_h
-        if p.efflux_vmax_uM_per_h > 0 and getattr(drug, "pgp_substrate", False):
+    C_out_all = aux["C_out"]
+    if C_out_all.ndim == 1:                      # single drug: (n_cells,)
+        C_out_all = C_out_all[:, None]
+    for i, dg in enumerate(drugs):
+        ci = Cin_all[i]
+        col = N_BASE + i
+        dY[:, col] = ((dg.partition * aux["het_uptake"] * C_out_all[:, i] - ci)
+                      / dg.tau_uptake_h)
+        if p.efflux_vmax_uM_per_h > 0 and getattr(dg, "pgp_substrate", False):
             vmax = p.efflux_vmax_uM_per_h * line.efflux_level * aux["het_uptake"]
-            dY[:, 20] -= vmax * Cin / (p.efflux_km_uM + Cin)
+            dY[:, col] -= vmax * ci / (p.efflux_km_uM + ci)
     return dY
 
 
@@ -335,7 +369,7 @@ def calibrate_cycle_scale(line: CellLine, p: Params = Params(), dt_h: float = 0.
                           max_h: float = 400.0) -> float:
     """Rate scale k_cyc so that one cycle (fresh G1 -> mitosis + M) takes
     the line's doubling time. One cell, no drug, RK4 at k_cyc=1."""
-    Y = np.zeros((1, NV))
+    Y = np.zeros((1, state_width(0)))
     Y[0, :7] = fresh_cycle_state()
     Y[0, IX["p53"]], Y[0, IX["MDM2_mRNA"]], Y[0, IX["MDM2"]] = 0.089, 0.21, 0.21
     aux = {"C_out": np.zeros(1), "arrest_h": np.zeros(1), "forced_D": np.full(1, np.nan),
@@ -357,7 +391,9 @@ def _rk4(Y: np.ndarray, aux: dict, line, drug, p: Params, k_cyc: float, dt: floa
     k3 = rhs(Y + 0.5 * dt * k2, aux, line, drug, p, k_cyc)
     k4 = rhs(Y + dt * k3, aux, line, drug, p, k_cyc)
     Y += dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
-    np.clip(Y, 0.0, _UPPER, out=Y)
+    # Upper bounds must match the state width, which grows with the number
+    # of drugs carried; every extra slot is an unbounded concentration.
+    np.clip(Y, 0.0, _upper_for(Y.shape[1] - N_BASE), out=Y)
 
 
 def _lognormal_mean_one(rng: np.random.Generator, sigma: float, n: int) -> np.ndarray:
@@ -367,9 +403,13 @@ def _lognormal_mean_one(rng: np.random.Generator, sigma: float, n: int) -> np.nd
 
 
 def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.random.Generator,
-                    forced_D: Optional[float] = None, het_sigma: float = 0.0) -> Population:
-    C = np.broadcast_to(np.asarray(C_out, dtype=float), (n_cells,)).copy()
-    Y = np.zeros((n_cells, NV))
+                    forced_D: Optional[float] = None, het_sigma: float = 0.0,
+                    n_drugs: int = 1) -> Population:
+    # C_out is (n_cells,) for one drug, or (n_cells, n_drugs) for several.
+    C = np.asarray(C_out, dtype=float)
+    C = (np.broadcast_to(C, (n_cells,)).copy() if n_drugs <= 1
+         else np.broadcast_to(C, (n_cells, n_drugs)).copy())
+    Y = np.zeros((n_cells, state_width(n_drugs)))
     for i in range(n_cells):
         Y[i, :7] = random_cycle_state(rng)
     Y[:, IX["p53"]], Y[:, IX["MDM2_mRNA"]], Y[:, IX["MDM2"]] = 0.089, 0.21, 0.21
@@ -403,11 +443,15 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     record tick with the live population (read-only use), which is what
     `cellsim.cell.stream` turns into a per-tick state stream for a UI."""
     rng = np.random.default_rng(seed)
-    pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma)
+    drugs = _as_drug_tuple(drug)
+    n_drugs = max(1, len(drugs))
+    pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma,
+                          n_drugs=n_drugs)
     if groups is None:
         groups = np.zeros(n_cells, int)
     n_groups = int(groups.max()) + 1
-    group_C = np.array([pop.C_out[groups == g].mean() if np.any(groups == g) else np.nan
+    _c1 = pop.C_out if pop.C_out.ndim == 1 else pop.C_out[:, 0]
+    group_C = np.array([_c1[groups == g].mean() if np.any(groups == g) else np.nan
                         for g in range(n_groups)])
     if k_cyc is None:
         k_cyc = calibrate_cycle_scale(line, p)
@@ -437,12 +481,19 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
         if on_record is not None:
             on_record(pop, pop.t_h)
 
+    def _apply_dose(t_h: float) -> None:
+        v = dose_fn(t_h)
+        if pop.C_out.ndim == 1:
+            pop.C_out[:] = v
+        else:
+            pop.C_out[:, :] = np.asarray(v, dtype=float)
+
     if dose_fn is not None:
-        pop.C_out[:] = dose_fn(0.0)
+        _apply_dose(0.0)
     record(0)
     for step in range(1, n_steps + 1):
         if dose_fn is not None:
-            pop.C_out[:] = dose_fn(pop.t_h)    # aux["C_out"] is this same array
+            _apply_dose(pop.t_h)               # aux["C_out"] is this same array
         _rk4(pop.Y, aux, line, drug, p, k_cyc, dt_h)
         pop.t_h += dt_h
         Y = pop.Y
@@ -453,9 +504,12 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
         pop.t_in_M[enter] = 0.0
         pop.t_in_M[pop.in_M] += dt_h
         arrested = np.zeros(n_cells, bool)
-        if drug is not None and drug.mechanism == "tubulin":
-            theta = Y[:, IX["Cin"]] / (Y[:, IX["Cin"]] + drug.Kd_tubulin_uM)
-            arrested = pop.in_M & (theta > drug.theta_arrest)
+        for i, dg in enumerate(_as_drug_tuple(drug)):
+            if dg.mechanism != "tubulin":
+                continue
+            ci = Y[:, N_BASE + i]
+            theta = ci / (ci + dg.Kd_tubulin_uM)
+            arrested = arrested | (pop.in_M & (theta > dg.theta_arrest))
         pop.arrest_h[arrested] += dt_h
         pop.arrest_h[~pop.in_M] = 0.0
         divide = pop.alive & pop.in_M & ~arrested & (pop.t_in_M >= p.m_duration_h)
