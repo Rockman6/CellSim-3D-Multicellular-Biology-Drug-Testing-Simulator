@@ -74,17 +74,24 @@ cellsim dish --line DLD-1 --geometry spheroid --hours 120 \
 # local file: use the "Open .jsonl" button).
 ```
 
-In Python:
+In a notebook, `cellsim.api` returns tidy tables (a `pandas.DataFrame`
+when pandas is installed, a list of dicts otherwise):
 
 ```python
-import numpy as np
-from cellsim.cell.engine import dose_response, ic50
-from cellsim.cell.library import get_drug, get_line
+from cellsim.api import curve, exposure, washout, combination, spheroid
 
-line, drug = get_line("A549"), get_drug("paclitaxel")
-print(ic50(line, drug, guess_uM=0.03))              # 72 h continuous exposure
-print(ic50(line, drug, guess_uM=0.03, exposure_h=6))  # 6 h pulse, read at 72 h
+curve("A549", "paclitaxel")               # viability vs concentration, with IC50
+exposure("A549", "paclitaxel")            # concentration needed for half kill at
+                                          # each exposure time — the schedule question
+washout("A549", "cisplatin", 20.0, 12.0)  # a 12 h pulse, then recovery
+combination("A549", "cisplatin", "paclitaxel", 10.0, 0.03)   # vs independent action
+spheroid("DLD-1", days=6)                 # size, hypoxia, necrotic core over time
 ```
+
+`exposure()` is the one worth knowing about: it returns `inf` where no
+concentration reaches half kill, which is the honest answer for a taxane
+given for three hours, and the reason AUC is the wrong exposure metric
+for that class.
 
 The molecular layers (docking, MD, FEP, quantum) need the conda stack
 below.
