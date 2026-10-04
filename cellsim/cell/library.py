@@ -127,7 +127,7 @@ CELL_LINES: dict[str, CellLine] = {
 DRUGS: dict[str, Drug] = {
     "cisplatin": Drug(
         "cisplatin", "dna_adduct",
-        k_damage_per_uM_h=0.000951,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
+        k_damage_per_uM_h=0.001181,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
         tau_uptake_h=0.5,             # slow uptake (CTR1 + passive), hours
         partition=1.0,
         fit_target="k_damage_per_uM_h",
@@ -135,7 +135,7 @@ DRUGS: dict[str, Drug] = {
                "Chem Rev 99:2467); adduct repair t1/2 of hours (NER) sets repair_rate"),
     "doxorubicin": Drug(
         "doxorubicin", "topo2",
-        k_damage_per_uM_h=0.00794,    # FITTED: geo-mean of A549 + MCF7 fits to GDSC1 (validate_gdsc.py)
+        k_damage_per_uM_h=0.01749,    # FITTED: geo-mean of A549 + MCF7 fits to GDSC1 (validate_gdsc.py)
         s_phase_factor=3.0,           # TopII poison: DSBs mostly during replication
         pgp_substrate=True,           # classical P-gp substrate
         tau_uptake_h=0.5,
@@ -150,7 +150,7 @@ DRUGS: dict[str, Drug] = {
         pgp_substrate=True,           # classical P-gp substrate
         k_mitotic_death_per_h=0.3,
         tau_uptake_h=0.2,
-        partition=0.153,              # FITTED: geo-mean of A549 + MCF7 fits to GDSC2 (validate_gdsc.py)
+        partition=0.212,              # FITTED: geo-mean of A549 + MCF7 fits to GDSC2 (validate_gdsc.py)
         # The 72 h potency is set by the arrest threshold: once tubulin
         # occupancy passes theta_arrest every dividing cell stalls in M, so
         # the death rate barely moves the IC50. What does move it is how
