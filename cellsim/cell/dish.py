@@ -14,8 +14,12 @@ cell, unchanged. Space adds what a stirred population cannot have:
 * **Hypoxic quiescence and necrosis.** G1 progression slows with oxygen
   and stops below a threshold; near-anoxia kills by necrosis within
   hours, which leaves debris rather than a cleared apoptotic body.
-* **Inheritance.** A daughter takes its mother's heterogeneity (reserve,
-  uptake, cycle speed) and lineage, so clones form contiguous patches.
+* **Inheritance, and optionally evolution.** A daughter takes its
+  mother's heterogeneity (reserve, uptake, cycle speed) and lineage, so
+  clones form contiguous patches. With `DishParams.mutation_rate` a
+  daughter may instead differ heritably from its mother, which is what
+  lets resistance arise during treatment rather than only be selected
+  from the tail the population began with.
 
 Geometries
 ----------
@@ -93,6 +97,22 @@ class DishParams:
     # Small-molecule interstitial diffusivity, 1e-6 cm2/s (Nugent & Jain
     # 1984 Cancer Res 44:238), the same default as cellsim.cell.tissue.
     drug_D_um2_per_s: float = 100.0
+    # Heritable change at division. With probability `mutation_rate` a
+    # daughter's drug accumulation is multiplied by a log-normal factor of
+    # log-sd `mutation_effect_sd` (its reserve likewise), and the change is
+    # inherited by that daughter's own descendants. This is what makes
+    # resistance EVOLVE rather than merely be selected from the tail the
+    # population started with. Both default to 0, which leaves inheritance
+    # exactly clonal.
+    #
+    # The rate is a modelling choice, not a measurement: resistance here
+    # arises from many routes at once (expression changes, copy number,
+    # point mutations), whose combined rate per division is not a published
+    # constant. scripts/experiment_evolution.py reports what a given rate
+    # produces, against the 2-8x fold-resistance that derived lines
+    # actually show (McDermott et al. 2014 Front Oncol 4:40).
+    mutation_rate: float = 0.0
+    mutation_effect_sd: float = 0.0
 
     @property
     def site_volume_um3(self) -> float:
@@ -194,6 +214,9 @@ class DishRecord:
     radius_um: list = field(default_factory=list)       # equivalent sphere / disc of all occupied sites
     necrotic_radius_um: list = field(default_factory=list)
     hypoxic_frac: list = field(default_factory=list)    # live cells below o2_g1_full
+    mean_uptake: list = field(default_factory=list)     # live cells, 1 = the starting population
+    mean_reserve: list = field(default_factory=list)
+    n_mutations: list = field(default_factory=list)
     min_o2_mmHg: list = field(default_factory=list)
     confluence: list = field(default_factory=list)      # occupied share of the lattice
     blocked_divisions: list = field(default_factory=list)
@@ -218,6 +241,7 @@ class Dish:
         self.rng = np.random.default_rng(seed)
         self.t_h = 0.0
         self.blocked = 0
+        self.n_mutations = 0
 
         if isinstance(grid_sites, (tuple, list)):          # explicit lattice dimensions
             dims = tuple(int(v) for v in grid_sites)
@@ -477,8 +501,18 @@ class Dish:
         c.generation = np.concatenate([c.generation, c.generation[idx]])
         c.C_out = np.concatenate([c.C_out, c.C_out[idx]])
         c.forced_D = np.concatenate([c.forced_D, c.forced_D[idx]])
-        c.het_bcl2 = np.concatenate([c.het_bcl2, c.het_bcl2[idx]])
-        c.het_uptake = np.concatenate([c.het_uptake, c.het_uptake[idx]])
+        new_bcl2, new_uptake = c.het_bcl2[idx].copy(), c.het_uptake[idx].copy()
+        if self.dp.mutation_rate > 0 and self.dp.mutation_effect_sd > 0:
+            # One daughter may differ from its mother; the other keeps her
+            # values, so a division is at most one heritable change.
+            sd = self.dp.mutation_effect_sd
+            for arr in (new_bcl2, new_uptake):
+                hit = self.rng.random(len(arr)) < self.dp.mutation_rate
+                if hit.any():
+                    arr[hit] *= np.exp(self.rng.normal(0.0, sd, int(hit.sum())))
+                    self.n_mutations += int(hit.sum())
+        c.het_bcl2 = np.concatenate([c.het_bcl2, new_bcl2])
+        c.het_uptake = np.concatenate([c.het_uptake, new_uptake])
         if c.cycle_rate is not None:
             c.cycle_rate = np.concatenate([c.cycle_rate, c.cycle_rate[idx]])
         self.lineage = np.concatenate([self.lineage, self.lineage[idx]])
@@ -563,6 +597,9 @@ class Dish:
                              else dp.o2_medium_mmHg)
         r.confluence.append(float(np.mean(self.occ != EMPTY)))
         r.blocked_divisions.append(self.blocked)
+        r.mean_uptake.append(float(np.mean(c.het_uptake)) if n else float("nan"))
+        r.mean_reserve.append(float(np.mean(c.het_bcl2)) if n else float("nan"))
+        r.n_mutations.append(self.n_mutations)
 
     def snapshot(self) -> dict:
         """Plain-JSON state for a renderer (schema cellsim.dish.stream/v1)."""
