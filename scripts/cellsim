@@ -37,6 +37,7 @@ usage: cellsim <subcommand> [args...]
                 -> cellsim/cell/engine.py
 
   cell-stream one population under a dosing schedule -> JSON Lines for a UI
+  dish        cells in space (monolayer or spheroid) -> JSON Lines for a UI
                 -> cellsim/cell/stream.py
 
   validate-gdsc  fit one potency per drug, predict every line vs GDSC
@@ -216,6 +217,7 @@ case "${1:-}" in
         shift; exec python scripts/bench_cli.py "$@" ;;
     cell-sim)    shift; exec python -m cellsim.cell.engine "$@" ;;
     cell-stream) shift; exec python -m cellsim.cell.stream "$@" ;;
+    dish)        shift; exec python -m cellsim.cell.dish "$@" ;;
     validate-gdsc) shift; exec python scripts/validate_gdsc.py "$@" ;;
     dock)        shift; exec python -m cellsim.dock.batch "$@" ;;
     dock-one)    shift; exec python -m cellsim.dock.viewer "$@" ;;

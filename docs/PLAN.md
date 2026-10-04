@@ -206,15 +206,27 @@ These are validated against published *phenotypes* rather than a
 ten-line IC50 table, which is the kind of evidence that does not run
 into the ceiling above.
 
-- Space: lattice or off-lattice agents, diffusion of oxygen, glucose
-  and drug, a vessel source, contact inhibition. Reuse
-  `cellsim/cell/tissue.py` and `agents.py`.
-- Validate on spheroid growth curves from the literature and on the
-  Cell Tracking Challenge HeLa counts already in the repository.
-- New UI, web first (three.js or WebGPU) so it runs anywhere, reading
-  the engine's state stream; per-cell pathway readouts, dose schedules,
-  uncertainty bands, CSV export.
-- Three outside users: a course, an iGEM team, a lab.
+*Status, October 2026.* All four within-line targets are done and were
+re-measured over seeds before anything was built on them (one claim
+retracted, one qualified; `docs/VALIDATION.md`, "Phase 2: audited").
+
+- *Done.* Space: `cellsim/cell/dish.py` puts the engine's cells on a
+  lattice (monolayer or spheroid) with oxygen and drug diffusing from
+  the medium, contact inhibition, hypoxic quiescence and necrosis. Built
+  on the engine rather than on `agents.py`, whose closed-form fate rates
+  are not the validated biology. Glucose and a vessel source are not in
+  yet.
+- *Done, with misses on record.* Validated on the Cell Tracking Challenge
+  HeLa movie (colony size within 3-4 % at 46 h; the single-cell
+  cycle-time split is a miss) and calibrated on DLD-1 spheroids (growth
+  speed fixes the one spatial constant; the necrotic core is too large,
+  a miss).
+- *Done.* Web UI: `web/viewer/` renders both stream schemas in a
+  browser — 3-D cells, colour by state, cut-open spheroids, time
+  scrubbing, charts, CSV export. Uncertainty bands wait for Phase 3's
+  calibrated intervals.
+- Three outside users: a course, an iGEM team, a lab. Needs people, not
+  code; the hosted demo (Phase 3) is what makes it possible.
 
 ### Phase 3, credibility (target October 2027)
 

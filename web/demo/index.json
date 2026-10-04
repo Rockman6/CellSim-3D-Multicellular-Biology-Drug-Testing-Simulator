@@ -1,0 +1,7 @@
+[
+  {"file": "a549-monolayer-growth.jsonl.gz", "label": "A549 monolayer: growth to confluence (5 days)"},
+  {"file": "a549-monolayer-cisplatin.jsonl.gz", "label": "A549 monolayer: cisplatin 20 µM, 24-48 h"},
+  {"file": "dld1-spheroid-growth.jsonl.gz", "label": "DLD-1 spheroid: hypoxia and a necrotic core (6 days)"},
+  {"file": "dld1-spheroid-doxorubicin.jsonl.gz", "label": "DLD-1 spheroid: doxorubicin 2 µM, 72-96 h"},
+  {"file": "a549-population-paclitaxel.jsonl.gz", "label": "A549 well-mixed population: paclitaxel 24 h pulse"}
+]
