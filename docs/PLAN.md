@@ -241,13 +241,23 @@ retracted, one qualified; `docs/VALIDATION.md`, "Phase 2: audited").
 - JOSS paper for the software, a short validation preprint.
 - conda-forge package, documentation site, hosted demo.
 
-*In progress, October 2026.* The drug panel is built: ten drugs covering
-every mechanism the engine can express (DNA crosslink, TopII, TOP1 and
-antimetabolite S-phase damage, two taxanes, a vinca, and an MDM2
-inhibitor), each with one fitted constant and GDSC screens on our lines.
-Two mechanisms were added for it: S-phase-restricted damage, and MDM2
-inhibition with the HPV E6 route that explains why HeLa's wild-type p53
-does not respond.
+*Status, October 2026 — most of it done, honestly itemised.*
+
+| Item | State |
+|---|---|
+| Ten drugs x ten lines | **Done.** 91 held-out predictions. Phase-1 conclusion confirmed; the MDM2 exception found (11/11 lines, null 5/11). |
+| Combination schedules | **Done** in Phase 2, re-measured over seeds, and exposed through `cellsim.api.combination`. |
+| Resistance evolution | **Done.** Heritable change at division, with the homogeneous-start control that makes the claim testable. |
+| Uncertainty calibrated, coverage reported | **Done.** Leave-one-drug-out; within 15 points of nominal at 68/90/95 %. |
+| JOSS paper | **Draft** in `paper/`. Needs an ORCID and a release tag before submission. |
+| Validation preprint | **Not started.** `docs/VALIDATION.md` already holds the content; what a preprint needs beyond it is a figure set and a framing around the negative result (markers cannot rank lines; modelled mechanism can call response). |
+| conda-forge | **Recipe prepared** (`packaging/conda-forge/`), not submitted: the sdist must be on PyPI first, and submission is the owner's call. |
+| Documentation site | **Served by** `web/index.html` plus `docs/cell_tutorial.md`; no separate site generator, which would be machinery for its own sake at this size. |
+| Hosted demo | **Workflow ready** (`.github/workflows/pages.yml`), which simulates the demo runs at deploy time. Needs Pages enabled in repository settings once; its steps were verified locally against a pip-installed package. |
+
+The two mechanisms added for the panel were S-phase-restricted damage
+(TOP1 poisons and antimetabolites) and MDM2 inhibition, with the HPV E6
+route that explains why HeLa's wild-type p53 does not respond.
 
 ## After Phase 3: what makes this useful to a working cell biologist
 
