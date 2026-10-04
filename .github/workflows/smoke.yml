@@ -80,6 +80,14 @@ on:
         default: "false"
         type: boolean
 
+# One run per branch. Without this every push during a review stacks
+# another full conda build on top of the last — three were running at
+# once while this was written — and the older ones only ever report on
+# code that has been superseded.
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # One mega-job that runs chem + md-ligand + md-protein smoke gates
   # back-to-back under a single conda env. Environment setup (~5 min)
