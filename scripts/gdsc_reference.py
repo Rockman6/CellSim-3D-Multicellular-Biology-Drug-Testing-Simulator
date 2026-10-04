@@ -14,7 +14,7 @@ Then:
 
     python scripts/gdsc_reference.py --out benchmarks/cell/gdsc_reference.csv
 
-The emitted CSV is the *target* of the Phase-1 validation: one row per
+The emitted CSV is the *target* of the GDSC validation: one row per
 (drug, cell line) with the published IC50 in µM, the assay duration and
 the screen's maximum concentration, which bounds how far an IC50 above
 the top dose can be trusted.
@@ -37,9 +37,12 @@ DEFAULT_CSVS = [
     REPO_ROOT / "data" / "gdsc" / "GDSC2_fitted_dose_response_24Jul22.csv",
     REPO_ROOT / "data" / "gdsc" / "GDSC1_fitted_dose_response_24Jul22.csv",
 ]
-# GDSC drug names differ in case from ours.
+# GDSC drug names differ from ours in case and, for nutlin, form.
 DRUG_ALIASES = {"cisplatin": "Cisplatin", "doxorubicin": "Doxorubicin",
-                "paclitaxel": "Paclitaxel"}
+                "paclitaxel": "Paclitaxel", "etoposide": "Etoposide", "sn-38": "SN-38",
+                "gemcitabine": "Gemcitabine", "5-fluorouracil": "5-Fluorouracil",
+                "docetaxel": "Docetaxel", "vinorelbine": "Vinorelbine",
+                "nutlin-3a": "Nutlin-3a (-)"}
 # GDSC2 exposes cells to drug for 72 h before the CellTiter-Glo readout.
 GDSC_ASSAY_HOURS = 72.0
 
@@ -60,7 +63,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     want_drugs = {DRUG_ALIASES[d]: d for d in DRUGS}
-    want_lines = set(CELL_LINES)
+    # Match on each line's GDSC name. Exact matching on our own names
+    # silently dropped HCT116 (GDSC: HCT-116) until October 2026.
+    want_lines = {(cl.gdsc_name or name): name for name, cl in CELL_LINES.items()}
     rows: list[dict] = []
     for path in present:
         with path.open(newline="") as f:
@@ -68,10 +73,11 @@ def main(argv: list[str] | None = None) -> int:
                 if row["DRUG_NAME"] in want_drugs and row["CELL_LINE_NAME"] in want_lines:
                     ic50 = math.exp(float(row["LN_IC50"]))
                     top = float(row["MAX_CONC"])
+                    ours = want_lines[row["CELL_LINE_NAME"]]
                     rows.append({
                         "drug": want_drugs[row["DRUG_NAME"]],
-                        "cell_line": row["CELL_LINE_NAME"],
-                        "p53_functional": CELL_LINES[row["CELL_LINE_NAME"]].p53_functional,
+                        "cell_line": ours,
+                        "p53_functional": CELL_LINES[ours].p53_functional,
                         "ic50_uM": round(ic50, 4),
                         "auc": round(float(row["AUC"]), 4),
                         "max_conc_uM": top,

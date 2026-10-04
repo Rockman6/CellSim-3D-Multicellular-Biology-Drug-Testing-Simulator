@@ -13,19 +13,31 @@ authors = [{ name = "Henry" }]
 keywords = ["systems-biology", "pharmacology", "docking", "pkpd", "cell-simulation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
-# The scientific stack (RDKit, OpenMM, OpenFF, AutoDock Vina, xTB, fpocket,
-# AmberTools, PoseBusters, ...) is conda-only or conda-first, so it is
-# declared in environment.yml, not here. Workflow:
+# The CELL SIMULATOR needs only NumPy and SciPy, so
+#     pip install cellsim
+# is enough for `cellsim cell-sim`, `cellsim cell-stream`, `cellsim dish`
+# and everything under `cellsim.cell` — no conda, no compilers. This is
+# checked in CI on a bare virtual environment (tests/test_pip_install.py).
+#
+# The MOLECULAR layers (docking, MD, FEP, quantum, ADMET) depend on RDKit,
+# OpenMM, OpenFF, AutoDock Vina, xTB, fpocket, AmberTools and PoseBusters,
+# which are conda-only or conda-first and are declared in environment.yml:
 #     mamba env create -f environment.yml && conda activate cellsim
 #     pip install -e .          # registers the package + the `cellsim` command
-dependencies = []
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+plots = ["matplotlib>=3.7"]       # cellsim.cell.viewer only
 
 [project.urls]
 Homepage = "https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator"
