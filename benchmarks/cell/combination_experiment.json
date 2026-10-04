@@ -1,0 +1,37 @@
+{
+  "line": "A549",
+  "total_h": 72.0,
+  "conc_uM": {
+    "cisplatin": 15.0,
+    "paclitaxel": 0.04
+  },
+  "n_cells": 64,
+  "surviving_fraction": {
+    "cisplatin alone (36 h)": 0.5975609756097561,
+    "paclitaxel alone (36 h)": 0.40853658536585363,
+    "both, simultaneous": 0.3231707317073171,
+    "cisplatin -> paclitaxel": 0.34146341463414637,
+    "paclitaxel -> cisplatin": 0.36585365853658536
+  },
+  "independent_expectation": 0.2441255205234979,
+  "readout_sweep": [
+    {
+      "readout_h": 72.0,
+      "cis_first": 0.34146341463414637,
+      "pac_first": 0.36585365853658536,
+      "ratio": 0.9333333333333335
+    },
+    {
+      "readout_h": 96.0,
+      "cis_first": 0.3448275862068966,
+      "pac_first": 0.3505747126436782,
+      "ratio": 0.9836065573770492
+    },
+    {
+      "readout_h": 120.0,
+      "cis_first": 0.3473684210526316,
+      "pac_first": 0.3526315789473684,
+      "ratio": 0.9850746268656717
+    }
+  ]
+}

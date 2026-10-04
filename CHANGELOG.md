@@ -114,6 +114,26 @@
 - `scripts/experiment_expression_scale.py` added; its p-value routine
   was checked against scipy to 4 decimal places before use.
 
+### Added — Phase 2: real two-drug combinations
+- The engine carries one intracellular concentration per drug
+  (`state_width`, `N_BASE`), so a combination is a genuine two-drug run.
+  `simulate(line, [drugA, drugB], [c_a, c_b], ...)`; a single drug or
+  None behaves exactly as before and the whole suite is unchanged.
+- Antagonism reproduced and gated: cisplatin arrests the cycle via
+  p53 -> p21 and so removes the cells paclitaxel needs in mitosis. Every
+  arrangement kills 1.3-1.5x LESS than independent action predicts.
+  Nothing fitted; both halves were already in the engine.
+- The apparent sequence effect is an ARTEFACT, which is the more useful
+  result. Platinum-first looks better at a 72 h readout (ratio 0.93) and
+  the advantage dissolves as the readout lengthens (0.98 at 96 h, 0.99
+  at 120 h), because cisplatin acts slowly and placing it second
+  truncates its effect inside a fixed window. So the engine does NOT
+  reproduce a biological platinum/taxane sequence dependence; it exposes
+  the timing confound that fixed-endpoint assays fall into.
+- `tests/cell/test_combination_timing_smoke.py` (3 gates, 22 s) pins the
+  antagonism and the artefact, and deliberately does not assert a
+  sequence effect.
+
 ### Added — Phase 2: selection under treatment
 - `scripts/experiment_resistance.py` +
   `tests/cell/test_resistance_selection_smoke.py` (5 gates, 32 s).
