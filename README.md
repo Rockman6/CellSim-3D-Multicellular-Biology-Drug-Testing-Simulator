@@ -11,36 +11,36 @@ cell-line data. The molecular layer (docking, ADMET, quantum descriptors)
 feeds that engine as an input with provenance and a measured accuracy
 flag; it is not the product on its own.
 
-> **Status (October 2026).** Phases 0 and 1 of the [plan](docs/PLAN.md)
-> are closed. The July fixes are merged, the smoke suite is green, the
-> repository has one identity, and `cellsim/cell/` holds a validated
-> single-cell drug-response engine.
+> **Status (October 2026).** Phases 0–2 of the [plan](docs/PLAN.md) are
+> done and Phase 3 is in review. The smoke suite is green, the repository
+> has one identity, and `cellsim/cell/` holds a validated drug-response
+> engine that runs well-mixed or in space.
 >
 > **Phase 1 closed with a negative result that set the direction.** The
 > engine reproduces each drug's potency scale, but predicting *which
 > cell line* is more sensitive turned out to be unreachable: eleven
 > canonical markers, fitted optimally across 156–683 lines, explain only
 > 9–20 % of the difference between lines. So per-line ranking is out of
-> scope, and Phase 2 aims at what mechanism is actually good for —
+> scope, and Phase 2 aimed at what mechanism is actually good for —
 > **within-line dynamics**: dose schedule, wash-out, resistance under
-> selection, combination timing. The reasoning and numbers are in
-> [`docs/VALIDATION.md`](docs/VALIDATION.md).
+> selection, combination timing.
 >
-> **Phase 3 found the exception to that.** Across ten drugs and 91
-> held-out predictions the conclusion holds — except for the one drug
-> whose target is part of the modelled mechanism. An MDM2 inhibitor acts
-> by stabilising p53, and the engine calls all eleven lines correctly
-> (a constant gets five), including HeLa, whose TP53 is wild-type by
-> sequence but whose p53 is degraded by HPV E6 instead of MDM2. So: no
-> ranking lines for cytotoxics, but yes for a drug whose mechanism is
-> modelled.
+> **Phase 2 built the dish.** `cellsim dish` grows those cells in space —
+> a monolayer with contact inhibition, or a spheroid with oxygen and drug
+> diffusing in, hypoxic quiescence and a necrotic core — and
+> [`web/viewer/`](web/viewer/) renders the per-cell stream in a browser.
+> Every Phase-2 claim was re-measured over seeds and doses before the
+> dish was built on it; one was retracted and one qualified.
 >
-> **Phase 2 has its dish.** `cellsim dish` grows the engine's cells in
-> space — a monolayer with contact inhibition, or a spheroid with
-> oxygen and drug diffusing in, hypoxic quiescence and a necrotic core —
-> and [`web/viewer/`](web/viewer/) renders the per-cell stream in a
-> browser. Every Phase-2 claim was re-measured over seeds before the dish
-> was built on it, and one was retracted.
+> **Phase 3 found the exception to the Phase-1 result.** Across ten drugs
+> and 91 held-out predictions the conclusion holds — except for the one
+> drug whose target is part of the modelled mechanism. An MDM2 inhibitor
+> works by stabilising p53, and the engine calls all eleven lines
+> correctly (a constant gets five), including HeLa, whose TP53 is
+> wild-type by sequence but whose p53 is degraded by HPV E6 rather than
+> by MDM2. So: no ranking lines for cytotoxic drugs, but yes for a drug
+> whose mechanism is modelled. Every number is in
+> [`docs/VALIDATION.md`](docs/VALIDATION.md), misses included.
 >
 > The 2026 C++/Metal prototype lives in [`OLD/`](OLD/) as a biology
 > reference; it still builds and passes its 8 headless benchmarks, but
