@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase-1 validation: fit one potency constant per drug, predict every line.
+"""GDSC validation: fit one potency constant per drug, predict every line.
 
 Protocol (docs/PLAN.md, Phase 1 item 4):
 
@@ -65,6 +65,7 @@ class Target:
     lo: float
     hi: float
     n_screens: int
+    top: float = math.inf  # highest concentration any screen tested
 
 
 def load_targets(path: Path) -> dict[tuple[str, str], Target]:
@@ -77,24 +78,36 @@ def load_targets(path: Path) -> dict[tuple[str, str], Target]:
                 d["in"].append(float(r["ic50_uM"]))
     out = {}
     for key, d in raw.items():
+        top = max(d["tops"])
         if d["in"]:
             gm = math.exp(sum(math.log(v) for v in d["in"]) / len(d["in"]))
             out[key] = Target("value", gm, min(min(d["in"]), gm / MIN_SPAN),
-                              max(max(d["in"]), gm * MIN_SPAN), len(d["in"]))
+                              max(max(d["in"]), gm * MIN_SPAN), len(d["in"]), top)
         else:
-            top = max(d["tops"])
-            out[key] = Target("lower_bound", top, top / MIN_SPAN, math.inf, len(d["tops"]))
+            out[key] = Target("lower_bound", top, top / MIN_SPAN, math.inf, len(d["tops"]), top)
     return out
 
 
 # ── engine wrappers ───────────────────────────────────────────────────
 def predicted_ic50(line_name: str, drug, center_uM: float, *, n_cells: int,
                    k_cyc: dict[str, float], seed: int = 1, params: Params = Params()) -> float:
-    """IC50 from a 13-point log grid spanning 4 decades either side."""
+    """IC50 in two passes: a 13-point log grid over 4 decades either side
+    to bracket the crossing, then 9 points across the bracket. The single
+    coarse pass this replaced (4.6-fold steps) moved a fitted line's own
+    prediction by up to 15 % between runs."""
+    line = CELL_LINES[line_name]
     conc = center_uM * np.logspace(-4, 4, 13)
-    viab, _ = dose_response(CELL_LINES[line_name], drug, conc, n_cells_per_conc=n_cells,
+    viab, _ = dose_response(line, drug, conc, n_cells_per_conc=n_cells,
                             k_cyc=k_cyc[line_name], seed=seed, p=params)
-    return ic50_from_curve(conc, viab[1:])
+    first = ic50_from_curve(conc, viab[1:])
+    if not np.isfinite(first) or first <= conc[0]:
+        return first
+    i = int(np.searchsorted(conc, first))
+    fine = np.geomspace(conc[max(0, i - 1)], conc[min(len(conc) - 1, i)], 9)
+    viab, _ = dose_response(line, drug, fine, n_cells_per_conc=n_cells,
+                            k_cyc=k_cyc[line_name], seed=seed, p=params)
+    refined = ic50_from_curve(fine, viab[1:])
+    return refined if np.isfinite(refined) else first
 
 
 def with_gain(drug, gain: float):
@@ -213,6 +226,11 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
             ok_null = (t.lo <= null_ic <= t.hi) if t.kind == "value" else (null_ic >= t.lo)
             fold = (ic / t.center) if (t.kind == "value" and np.isfinite(ic)) else math.nan
             role = "fit" if ln in fit_on else "held-out"
+            # Sensitive = half kill reached inside the tested range. This is
+            # the readout that still counts lines the screen never killed.
+            observed_sensitive = t.kind == "value"
+            predicted_sensitive = bool(np.isfinite(ic) and ic <= t.top)
+            null_sensitive = bool(null_ic <= t.top)
             row = {"drug": drug_name, "cell_line": ln,
                    "p53_functional": CELL_LINES[ln].p53_functional, "role": role,
                    "reference_kind": t.kind, "reference_ic50_uM": round(t.center, 5),
@@ -222,7 +240,11 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
                    "predicted_ic50_uM": (round(ic, 5) if np.isfinite(ic) else "inf"),
                    "null_ic50_uM": round(null_ic, 5),
                    "fold_error": (round(fold, 3) if np.isfinite(fold) else ""),
-                   "pass": bool(ok), "null_pass": bool(ok_null)}
+                   "pass": bool(ok), "null_pass": bool(ok_null),
+                   "top_dose_uM": t.top, "observed_sensitive": observed_sensitive,
+                   "predicted_sensitive": predicted_sensitive,
+                   "class_correct": predicted_sensitive == observed_sensitive,
+                   "null_class_correct": null_sensitive == observed_sensitive}
             rows.append(row)
             drug_rows.append(row)
             mark = "PASS" if ok else "MISS"
@@ -247,7 +269,10 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
              "log10_rmse_null_heldout": _rmse([null_ic] * len(ref_ho), ref_ho),
              "n_heldout_in_range": len(ref_ho),
              "pass": sum(r["pass"] for r in drug_rows),
-             "null_pass": sum(r["null_pass"] for r in drug_rows), "n": len(drug_rows)}
+             "null_pass": sum(r["null_pass"] for r in drug_rows), "n": len(drug_rows),
+             "class_correct": sum(r["class_correct"] for r in drug_rows),
+             "null_class_correct": sum(r["null_class_correct"] for r in drug_rows),
+             "n_observed_resistant": sum(not r["observed_sensitive"] for r in drug_rows)}
         summary["drugs"][drug_name] = d
         say(f"   Spearman (lines with in-range reference) = {rho:.2f}")
         say(f"   log10 RMSE all lines: engine {d['log10_rmse_model']:.2f} vs null "
@@ -255,6 +280,9 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
             f"{d['log10_rmse_model_heldout']:.2f} vs null {d['log10_rmse_null_heldout']:.2f} "
             f"(n={len(ref_ho)})   span passes: engine {d['pass']}/{d['n']}, "
             f"null {d['null_pass']}/{d['n']}")
+        say(f"   sensitive-or-resistant calls: engine {d['class_correct']}/{d['n']}, null "
+            f"{d['null_class_correct']}/{d['n']} ({d['n_observed_resistant']} lines never "
+            f"reached half kill in the screen)")
 
     held = [r for r in rows if r["role"] == "held-out"]
     # Paired per-line comparison against the null. This is the exit gate:
@@ -283,10 +311,14 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
         "held_out_pass": sum(r["pass"] for r in held),
         "held_out_null_pass": sum(r["null_pass"] for r in held),
         "held_out_n": len(held),
+        "held_out_class_correct": sum(r["class_correct"] for r in held),
+        "held_out_null_class_correct": sum(r["null_class_correct"] for r in held),
         "drugs_beating_null_heldout": beats,
         "exit_gate_met": discriminates,
         "wall_s": round(time.time() - t_start, 1)})
-    say(f"\nheld-out predictions inside the GDSC span: engine "
+    say(f"\nheld-out sensitive/resistant calls: engine {summary['held_out_class_correct']}/"
+        f"{len(held)}, constant-IC50 null {summary['held_out_null_class_correct']}/{len(held)}")
+    say(f"held-out predictions inside the GDSC span: engine "
         f"{summary['held_out_pass']}/{len(held)}, constant-IC50 null "
         f"{summary['held_out_null_pass']}/{len(held)}   ({summary['wall_s']:.0f} s)")
     say(f"\nPaired per-line test vs the constant-IC50 null, held-out lines only:")

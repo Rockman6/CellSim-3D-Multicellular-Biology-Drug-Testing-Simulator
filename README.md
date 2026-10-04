@@ -54,6 +54,41 @@ flag; it is not the product on its own.
 The full set of numbers, with reproducers and caveats, is in
 [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
+## Quickstart: simulate cells in one minute
+
+The cell simulator needs only NumPy and SciPy, so it installs with plain
+pip — no conda, no compilers, no chemistry stack. (Checked in CI on a bare
+virtual environment: `tests/test_pip_install.py`.)
+
+```bash
+pip install cellsim                 # or: pip install -e . from a checkout
+
+# A dose-response curve and an IC50 for one line and drug.
+cellsim cell-sim --line A549 --drug cisplatin --hours 72
+
+# Grow a spheroid for five days and watch oxygen run out in its core.
+cellsim dish --line DLD-1 --geometry spheroid --hours 120 \
+    --cells 3000 --grid 48 --every 8 --out spheroid.jsonl
+
+# Open spheroid.jsonl in web/viewer/index.html (no server needed for a
+# local file: use the "Open .jsonl" button).
+```
+
+In Python:
+
+```python
+import numpy as np
+from cellsim.cell.engine import dose_response, ic50
+from cellsim.cell.library import get_drug, get_line
+
+line, drug = get_line("A549"), get_drug("paclitaxel")
+print(ic50(line, drug, guess_uM=0.03))              # 72 h continuous exposure
+print(ic50(line, drug, guess_uM=0.03, exposure_h=6))  # 6 h pulse, read at 72 h
+```
+
+The molecular layers (docking, MD, FEP, quantum) need the conda stack
+below.
+
 ## Quickstart: first docking screen in five minutes
 
 ```bash

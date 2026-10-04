@@ -230,10 +230,91 @@ retracted, one qualified; `docs/VALIDATION.md`, "Phase 2: audited").
 
 ### Phase 3, credibility (target October 2027)
 
-- Ten drugs × five lines; combination schedules; resistance evolution.
+- Ten drugs x five lines; combination schedules; resistance evolution.
 - Uncertainty calibrated per target class, with coverage reported.
 - JOSS paper for the software, a short validation preprint.
 - conda-forge package, documentation site, hosted demo.
+
+*In progress, October 2026.* The drug panel is built: ten drugs covering
+every mechanism the engine can express (DNA crosslink, TopII, TOP1 and
+antimetabolite S-phase damage, two taxanes, a vinca, and an MDM2
+inhibitor), each with one fitted constant and GDSC screens on our lines.
+Two mechanisms were added for it: S-phase-restricted damage, and MDM2
+inhibition with the HPV E6 route that explains why HeLa's wild-type p53
+does not respond.
+
+## After Phase 3: what makes this useful to a working cell biologist
+
+*Added October 2026. The list below is deliberately concrete; each item
+names the data it would be checked against, because an unvalidated
+feature is not an improvement.*
+
+**The gap to close first.** Everything validated so far uses OUR cell
+lines and OUR fitted constants. A biologist has their own line, their own
+plate reader, and their own drug. Nothing in the repository yet turns
+their numbers into a calibrated simulation of their cells. That is the
+single highest-value piece of work left, and it is Phase 4.
+
+### Phase 4 — the user's own cells
+
+- Read plate-reader exports (96/384-well with a plate map) and tidy CSV;
+  normalise to controls, fit four-parameter curves with bootstrap
+  confidence intervals.
+- Report GR metrics (GR50, GRmax, GR_AOC; Hafner et al. 2016 Nat Methods
+  13:521) for data and simulation alike, so fast- and slow-growing
+  cultures are compared fairly. The engine already produces the counts
+  these need.
+- Calibrate: fit the line's doubling time from its controls and each
+  drug's single constant from its curve, with uncertainty, and say
+  plainly when a curve cannot identify the constant.
+- Carry that uncertainty into every prediction (sample the posterior),
+  so schedules and combinations come out as bands, not lines.
+- Validation: hold out a concentration range or a time point from the
+  user's own plate and predict it; publish coverage of the bands.
+
+### Phase 5 — biology the engine still cannot express
+
+Each item is a mechanism with a validation target, ordered by how often
+a cell biologist would hit it:
+
+- **Quiescence at mitotic exit.** Real HeLa splits into fast cyclers and
+  cells that do not divide for days (Spencer et al. 2013 Cell 155:369);
+  the engine's cells all cycle. This is already a recorded miss against
+  the Cell Tracking Challenge movie, and it changes every
+  schedule-dependence answer.
+- **Drug retention after wash-out.** The engine empties a cell as fast as
+  it fills it, so no short exposure can kill. Tissue data say otherwise
+  (Kuh et al. 2000 JPET 293:761 for paclitaxel). Validate against the
+  published 1 h exposure IC50s the engine currently cannot reproduce.
+- **Glucose, lactate and pH** in the dish, which set the necrotic
+  boundary as much as oxygen does. Validate against Freyer & Sutherland's
+  EMT6/Ro spheroids, where viable rim thickness was measured at four
+  glucose and two oxygen levels.
+- **Senescence** as a fate distinct from death, since DNA-damage agents
+  produce it at the doses used clinically.
+- **Resistance by mutation**, not only selection from a pre-existing
+  tail: heritable changes at division, validated against the fold-
+  resistance range that pulsed and continuous selection actually produce
+  (2-8x; McDermott et al. 2014 Front Oncol 4:40).
+
+### Phase 6 — the parts that make it a tool others use
+
+- A notebook-first API (`cellsim.api`) that returns data frames, because
+  biologists live in notebooks and R, not in a CLI.
+- Hosted demo and documentation site; conda-forge and PyPI releases with
+  a pinned environment.
+- Worked tutorials that answer real questions end to end: "should I pulse
+  or hold", "when will my culture regrow", "does my combination
+  antagonise".
+- An experiment-design mode: given a question and a plate budget, propose
+  the concentrations and time points that would best distinguish the
+  competing answers.
+
+### What stays out of scope
+
+Ranking cell lines by sensitivity from markers (measured as unreachable,
+see above); clinical dosing advice; and anything that claims to replace
+the experiment rather than help design it.
 
 ## Keep / kill
 
