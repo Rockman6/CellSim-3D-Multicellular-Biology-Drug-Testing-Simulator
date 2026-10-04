@@ -17,12 +17,13 @@ What is gated:
   lengthens, because cisplatin acts slowly and placing it second
   truncates its effect inside a fixed window.
 
-What is deliberately NOT gated: a biological sequence effect. The engine
-does not produce one once the readout is long enough, and a test
-asserting otherwise would be pinning an artefact.
+What is deliberately NOT gated: a biological sequence effect. With both
+drugs at their IC50 the engine produces none, and above that the one it
+produces mostly fades with a longer readout; the gates pin exactly that.
 """
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -38,7 +39,11 @@ K = calibrate_cycle_scale(LINE, P)
 N_CELLS = 64
 HALF, FULL = 36.0, 72.0
 CIS, PAC = 15.0, 0.04
-CISPLATIN, PACLITAXEL = get_drug("cisplatin"), get_drug("paclitaxel")
+# Held at the potency the doses were designed for (the fit before the
+# October 2026 refit); both drugs enter the engine only as potency x
+# concentration, so this is exactly a rescaling of CIS and PAC.
+CISPLATIN = dataclasses.replace(get_drug("cisplatin"), k_damage_per_uM_h=0.000951)
+PACLITAXEL = dataclasses.replace(get_drug("paclitaxel"), partition=0.153)
 PAIR = [CISPLATIN, PACLITAXEL]
 
 
@@ -76,22 +81,49 @@ def test_a_cytostatic_antagonises_a_phase_specific_partner():
         "the combination should still beat either drug alone")
 
 
-def test_the_apparent_sequence_effect_is_a_readout_artefact():
-    """Giving the slow drug second truncates its effect inside a fixed
-    window. Lengthening the readout must shrink the ordering difference
-    toward 1 — so a sequence claim read off a single endpoint would be
-    an artefact of when the assay stopped."""
+# Engine 72 h IC50 at the design potency above (cellsim.cell.engine.ic50).
+IC50_CIS, IC50_PAC = 13.24, 0.0418
+SEEDS = (1, 2, 3)
+
+
+def _ordering_ratio(cis_uM: float, pac_uM: float) -> tuple[float, float]:
+    """Mean over seeds of cisplatin-first / paclitaxel-first survival at a
+    72 h and a 120 h readout. One 128-cell run carries +-0.02-0.03 of
+    noise on this ratio — the size of the effect itself at matched
+    doses — so it is only ever read as an average over seeds."""
     def cis_first(t):
-        return (CIS, 0.0) if t < HALF else ((0.0, PAC) if t < FULL else (0.0, 0.0))
+        return (cis_uM, 0.0) if t < HALF else ((0.0, pac_uM) if t < FULL else (0.0, 0.0))
 
     def pac_first(t):
-        return (0.0, PAC) if t < HALF else ((CIS, 0.0) if t < FULL else (0.0, 0.0))
+        return (0.0, pac_uM) if t < HALF else ((cis_uM, 0.0) if t < FULL else (0.0, 0.0))
+    r72, r120 = [], []
+    for seed in SEEDS:
+        a = simulate(LINE, PAIR, 0.0, t_end_h=120.0, n_cells=128, k_cyc=K, p=P,
+                     dose_fn=cis_first, record_every_h=24.0, seed=seed).alive_weight[:, 0]
+        b = simulate(LINE, PAIR, 0.0, t_end_h=120.0, n_cells=128, k_cyc=K, p=P,
+                     dose_fn=pac_first, record_every_h=24.0, seed=seed).alive_weight[:, 0]
+        r72.append(a[3] / b[3])
+        r120.append(a[5] / b[5])
+    return float(sum(r72) / len(r72)), float(sum(r120) / len(r120))
 
-    short = _surviving(PAIR, cis_first, 72.0) / _surviving(PAIR, pac_first, 72.0)
-    long = _surviving(PAIR, cis_first, 120.0) / _surviving(PAIR, pac_first, 120.0)
-    assert short < 0.98, f"expected an apparent ordering effect at 72 h, got {short:.2f}"
-    assert abs(long - 1.0) < abs(short - 1.0), (
-        f"the effect should shrink with a longer readout: {short:.2f} -> {long:.2f}")
+
+def test_no_ordering_effect_with_both_drugs_at_their_ic50():
+    """The engine must not invent a sequence effect: with each drug at its
+    own IC50 the two orders leave the same colony at any readout."""
+    r72, r120 = _ordering_ratio(IC50_CIS, IC50_PAC)
+    assert abs(r72 - 1.0) < 0.05 and abs(r120 - 1.0) < 0.05, (
+        f"ordering ratio {r72:.3f} at 72 h, {r120:.3f} at 120 h; expected ~1")
+
+
+def test_an_ordering_effect_above_ic50_fades_with_a_longer_readout():
+    """With cisplatin above its IC50 the platinum-first order looks better
+    at 72 h, but the gap shrinks once the slow drug given second has had
+    time to act — so a sequence claim read off one fixed endpoint would
+    mostly be measuring when the assay stopped."""
+    r72, r120 = _ordering_ratio(1.25 * IC50_CIS, IC50_PAC)
+    assert r72 < 0.95, f"expected an apparent ordering effect at 72 h, got {r72:.3f}"
+    assert r120 - r72 > 0.03, (
+        f"the effect should fade with a longer readout: {r72:.3f} -> {r120:.3f}")
 
 
 if __name__ == "__main__":

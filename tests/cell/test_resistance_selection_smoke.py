@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Phase-2 gates: treatment selects, and the schedule decides how hard.
+"""Phase-2 gates: treatment selects, and the schedule decides on what.
 
 Within-line, so the per-line prediction ceiling in docs/VALIDATION.md
 does not apply. Each representative cell in the engine is a lineage
 carrying its own anti-apoptotic reserve and drug accumulation, and a
 lineage that survives keeps those values as it doubles — so selection
-should emerge without being modelled explicitly.
+emerges without being modelled explicitly.
 
-The trade-off under test is the dose-intensity one: concentrating the
-same total exposure into brief high-dose pulses kills more, and leaves a
-more resistant remnant behind. How strongly depends on whether the drug
-is concentration-driven or exposure-time-driven, which
-`test_schedule_smoke.py` establishes separately.
+Selection is measured on a trait grid (cellsim.cell.selection), not by
+averaging the few random lineages a harsh schedule leaves: an earlier
+version of these gates did that, rested on one or two surviving
+lineages, and asserted the opposite of what the exact measurement
+shows. The trade-off under test, at matched total exposure:
+
+* continuous low-dose exposure sets a damage steady state, and whether
+  it stays below threshold depends on how much drug a cell takes up, so
+  it selects mainly on accumulation;
+* intermittent high-dose pulses push everyone over threshold briefly,
+  and what decides survival is whether the apoptotic reserve can absorb
+  the transient, so selection shifts toward the reserve.
 
 Scope limits, stated so a passing test is not over-read: heterogeneity
 is drawn once, so this is selection from a pre-existing tail rather than
@@ -19,6 +26,7 @@ evolution of new resistance, and lineages do not compete for space.
 """
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -27,109 +35,99 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from cellsim.cell.engine import Params, calibrate_cycle_scale, simulate  # noqa: E402
+from cellsim.cell.engine import Params, calibrate_cycle_scale  # noqa: E402
 from cellsim.cell.library import get_drug, get_line  # noqa: E402
+from cellsim.cell.selection import pulsed, summarize, survival_map  # noqa: E402
 
 LINE = get_line("A549")
 P = Params()
 K = calibrate_cycle_scale(LINE, P)
-N_CELLS = 96
 HOURS = 7 * 24.0
+RESERVE = np.geomspace(0.5, 3.0, 7)
+UPTAKE = np.geomspace(0.15, 1.5, 7)
+
+# These phenotypes belong to the mechanism, not to the fitted potency, so
+# each drug is held at the potency its doses were designed for (the fit
+# before the October 2026 refit). Cisplatin and paclitaxel enter the
+# engine only as potency x concentration, so this is exactly a rescaling
+# of the doses, and refitting the library cannot carry a dose across a
+# threshold and break a test that is about shape.
+DESIGN_POTENCY = {"cisplatin": {"k_damage_per_uM_h": 0.000951},
+                  "paclitaxel": {"partition": 0.153}}
+DOSE_UM = {"cisplatin": 15.0, "paclitaxel": 0.04}   # ~1x IC50 at design potency
 
 
-def _pulsed(conc, on_h, off_h, total_h):
-    segs, t = [], 0.0
-    while t < total_h:
-        segs.append((t, conc))
-        segs.append((min(t + on_h, total_h), 0.0))
-        t += on_h + off_h
-    return lambda th: next(c for s, c in reversed(segs) if th >= s - 1e-12)
+def _drug(name: str):
+    return dataclasses.replace(get_drug(name), **DESIGN_POTENCY[name])
 
 
-def _run(drug, dose_fn):
-    res = simulate(LINE, drug, 0.0, t_end_h=HOURS, n_cells=N_CELLS, seed=1, p=P,
-                   k_cyc=K, dose_fn=dose_fn, record_every_h=24.0)
-    pop = res.final
-    w = pop.weight * pop.alive
-    if w.sum() <= 0:
-        return {"alive": 0.0, "reserve": float("nan"), "uptake": float("nan"),
-                "resistance": float("nan")}
-    reserve = float(np.average(pop.het_bcl2, weights=w))
-    uptake = float(np.average(pop.het_uptake, weights=w))
-    # A lineage can be resistant two ways: hold a bigger anti-apoptotic
-    # reserve, or accumulate less drug. The combined score is the ratio,
-    # so either route raises it and a comparison is not blind to one.
-    return {"alive": float(w.sum()), "reserve": reserve, "uptake": uptake,
-            "resistance": reserve / uptake if uptake > 0 else float("inf")}
+_CACHE: dict = {}
 
 
-def test_treatment_enriches_the_resistant_tail():
-    """Survivors must be a biased sample: higher anti-apoptotic reserve
-    and lower drug accumulation than the population that started, whose
-    means are 1.0 by construction."""
-    out = _run(get_drug("cisplatin"), lambda th: 15.0)
-    assert out["alive"] > 0, "nothing survived; cannot measure selection"
-    assert out["reserve"] > 1.02, (
-        f"survivors not enriched for anti-apoptotic reserve ({out['reserve']:.3f})")
-    assert out["uptake"] < 0.98, (
-        f"survivors not enriched for low drug accumulation ({out['uptake']:.3f})")
+def _arm(name: str, arm: str) -> dict:
+    """Selection summary for one drug and arm (cached across gates)."""
+    key = (name, arm)
+    if key not in _CACHE:
+        c = DOSE_UM[name]
+        fn = {"continuous": lambda t_h: c, "pulsed": pulsed(3.0 * c),
+              "untreated": lambda t_h: 0.0}[arm]
+        S = survival_map(LINE, _drug(name), fn, hours=HOURS, reps=2, k_cyc=K, p=P,
+                         reserve=RESERVE, uptake=UPTAKE)
+        _CACHE[key] = summarize(S, reserve=RESERVE, uptake=UPTAKE, sigma=P.het_sigma)
+    return _CACHE[key]
 
 
 def test_untreated_population_is_not_selected():
-    """Specificity: with no drug the means must stay at 1.0."""
-    out = _run(get_drug("cisplatin"), lambda th: 0.0)
-    assert abs(out["reserve"] - 1.0) < 0.05, out["reserve"]
-    assert abs(out["uptake"] - 1.0) < 0.05, out["uptake"]
+    """Specificity: with no drug every grid point survives and the
+    survivors are the starting population."""
+    s = _arm("cisplatin", "untreated")
+    assert abs(s["population_survival"] - 1.0) < 1e-9, s["population_survival"]
+    assert abs(s["survivor_mean_reserve"] - s["baseline_mean_reserve"]) < 1e-9
+    assert abs(s["survivor_mean_uptake"] - s["baseline_mean_uptake"]) < 1e-9
 
 
-def test_pulsing_kills_more_but_selects_harder():
-    """Dose intensity trade-off, at MATCHED total exposure: 3x the
-    concentration for a third of the time kills more of a
-    concentration-driven drug, and leaves a more resistant remnant."""
-    drug = get_drug("cisplatin")
-    cont = _run(drug, lambda th: 15.0)
-    puls = _run(drug, _pulsed(45.0, 24.0, 48.0, HOURS))
-    assert puls["alive"] < cont["alive"], (
-        f"pulsed should kill more at matched exposure: {puls['alive']:.3g} "
-        f"vs continuous {cont['alive']:.3g}")
-    if puls["alive"] > 0:
-        assert puls["resistance"] > cont["resistance"], (
-            f"the harder-killing arm should leave the more resistant remnant: "
-            f"score {puls['resistance']:.3f} vs {cont['resistance']:.3f}")
+def test_treatment_enriches_the_resistant_tail():
+    """Survivors of continuous exposure must accumulate less drug than
+    the population that started."""
+    s = _arm("cisplatin", "continuous")
+    assert 0.0 < s["population_survival"] < 1.0, s["population_survival"]
+    assert s["survivor_mean_uptake"] < 0.9 * s["baseline_mean_uptake"], (
+        f"survivors not enriched for low drug accumulation ({s['survivor_mean_uptake']:.3f})")
 
 
-def test_dose_intensity_decides_which_kind_of_resistance_is_selected():
-    """A mechanistic prediction worth pinning. Against a brief 3x dose the
-    anti-apoptotic reserve cannot save a cell, so survival depends almost
-    entirely on accumulating less drug; a low continuous dose lets the
-    reserve matter too. So the high-intensity arm should select far more
-    sharply on uptake than on reserve."""
-    drug = get_drug("cisplatin")
-    cont = _run(drug, lambda th: 15.0)
-    puls = _run(drug, _pulsed(45.0, 24.0, 48.0, HOURS))
-    assert puls["alive"] > 0, "pulsed arm left nothing to measure"
-    assert puls["uptake"] < cont["uptake"], (
-        f"high-intensity dosing should select harder on drug accumulation: "
-        f"{puls['uptake']:.3f} vs {cont['uptake']:.3f}")
-    # and it does so without needing the reserve channel at all
-    assert puls["uptake"] < 0.5, (
-        f"expected strong selection on accumulation, got {puls['uptake']:.3f}")
+def test_pulsing_kills_more_at_matched_exposure():
+    """Dose intensity: the same total exposure as 3x the concentration
+    for a third of the time kills more of a concentration-driven drug."""
+    cont, puls = _arm("cisplatin", "continuous"), _arm("cisplatin", "pulsed")
+    assert puls["population_survival"] < 0.5 * cont["population_survival"], (
+        f"pulsed {puls['population_survival']:.3g} vs continuous "
+        f"{cont['population_survival']:.3g}")
+
+
+def test_pulsing_shifts_selection_toward_the_apoptotic_reserve():
+    """The corrected direction. Continuous exposure selects mainly on
+    accumulation; brief high-dose pulses select far harder on the
+    reserve, because a reserve can absorb a transient but not a
+    sustained insult."""
+    cont, puls = _arm("cisplatin", "continuous"), _arm("cisplatin", "pulsed")
+    assert puls["survivor_mean_reserve"] > cont["survivor_mean_reserve"] + 0.3, (
+        f"pulsed survivors' reserve {puls['survivor_mean_reserve']:.3f} vs continuous "
+        f"{cont['survivor_mean_reserve']:.3f}")
+    assert puls["uptake_over_reserve"] < cont["uptake_over_reserve"], (
+        f"boundary should tilt toward the reserve under pulsing: |b_u/b_r| "
+        f"{puls['uptake_over_reserve']:.2f} vs continuous {cont['uptake_over_reserve']:.2f}")
 
 
 def test_an_exposure_limited_drug_gains_least_from_pulsing():
     """Consistency with test_schedule_smoke.py: paclitaxel needs cells to
     transit mitosis while the drug is present, so compressing the same
-    exposure into a third of the time wastes part of it. Its advantage
-    from pulsing must be smaller than a concentration-driven drug's."""
-    def gain(drug, conc):
-        cont = _run(drug, lambda th, c=conc: c)
-        puls = _run(drug, _pulsed(conc * 3.0, 24.0, 48.0, HOURS))
-        return cont["alive"] / max(puls["alive"], 1e-9)
-    pac_gain = gain(get_drug("paclitaxel"), 0.04)
-    cis_gain = gain(get_drug("cisplatin"), 15.0)
-    assert pac_gain < cis_gain, (
-        f"paclitaxel should gain less from pulsing than cisplatin: "
-        f"{pac_gain:.1f}x vs {cis_gain:.1f}x")
+    exposure into a third of the time wastes part of it. Its gain from
+    pulsing must be far smaller than a concentration-driven drug's."""
+    def gain(name):
+        return (_arm(name, "continuous")["population_survival"]
+                / max(_arm(name, "pulsed")["population_survival"], 1e-9))
+    pac, cis = gain("paclitaxel"), gain("cisplatin")
+    assert pac < 0.5 * cis, f"paclitaxel gains {pac:.2f}x from pulsing vs cisplatin {cis:.2f}x"
 
 
 if __name__ == "__main__":

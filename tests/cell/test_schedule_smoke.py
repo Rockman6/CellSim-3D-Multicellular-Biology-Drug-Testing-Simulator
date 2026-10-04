@@ -24,17 +24,35 @@ Kept small (few windows, few cells) so it runs in CI; the full sweep is
 """
 from __future__ import annotations
 
+import dataclasses
+import math
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from cellsim.cell.engine import calibrate_cycle_scale, ic50  # noqa: E402
 from cellsim.cell.library import get_drug, get_line  # noqa: E402
 from cellsim.cell.stream import Schedule, run_stream  # noqa: E402
 
 LINE = get_line("A549")
+K = calibrate_cycle_scale(LINE)
 N_CELLS = 48
+
+# These phenotypes belong to the mechanism, not to the fitted potency, so
+# each drug is held at the potency its doses were designed for (the fit
+# before the October 2026 refit). Cisplatin and paclitaxel enter the
+# engine only as potency x concentration, so this is exactly a rescaling
+# of the doses, and refitting the library cannot carry a dose across a
+# threshold and break a test that is about shape.
+DESIGN_POTENCY = {"cisplatin": {"k_damage_per_uM_h": 0.000951},
+                  "doxorubicin": {"k_damage_per_uM_h": 0.00794},
+                  "paclitaxel": {"partition": 0.153}}
+
+
+def _drug(name: str):
+    return dataclasses.replace(get_drug(name), **DESIGN_POTENCY[name])
 
 
 def _surviving(drug, conc_uM: float, hours: float, seed: int = 1) -> float:
@@ -46,17 +64,28 @@ def _surviving(drug, conc_uM: float, hours: float, seed: int = 1) -> float:
             / max(control[-1]["population"]["alive_weight"], 1e-12))
 
 
-def test_paclitaxel_is_far_more_exposure_time_limited_than_cisplatin():
-    """At a fixed concentration above threshold, lengthening the exposure
-    should help a tubulin binder much more than a platinum agent, because
-    only the former needs cells to transit mitosis while it is present."""
-    short_h, long_h = 3.0, 72.0
-    pac, cis = get_drug("paclitaxel"), get_drug("cisplatin")
-    pac_ratio = _surviving(pac, 0.1, short_h) / max(_surviving(pac, 0.1, long_h), 1e-9)
-    cis_ratio = _surviving(cis, 20.0, short_h) / max(_surviving(cis, 20.0, long_h), 1e-9)
-    assert pac_ratio > 5 * cis_ratio, (
-        f"paclitaxel should be far more exposure-time limited: "
-        f"ratio {pac_ratio:.1f}x vs cisplatin {cis_ratio:.1f}x")
+def test_cisplatin_short_exposures_follow_concentration_times_time():
+    """Ozawa et al. (Cancer Res 1989 49:3823) measured cisplatin's kill as
+    governed by C x T: the concentration needed for an iso-effect halves
+    when exposure doubles (slope -1 on log-log). Over 1-4 h, before
+    repair has time to matter, the engine must reproduce that law."""
+    cis = _drug("cisplatin")
+    c1 = ic50(LINE, cis, guess_uM=400.0, exposure_h=1.0, n_cells_per_conc=16, k_cyc=K)
+    c4 = ic50(LINE, cis, guess_uM=100.0, exposure_h=4.0, n_cells_per_conc=16, k_cyc=K)
+    slope = math.log(c4 / c1) / math.log(4.0)
+    assert -1.25 < slope < -0.75, (
+        f"C50 {c1:.3g} uM at 1 h vs {c4:.3g} uM at 4 h: slope {slope:.2f}, expected ~ -1")
+
+
+def test_a_short_paclitaxel_pulse_cannot_reach_half_kill_at_any_dose():
+    """Time dependence in its starkest form: a tubulin binder kills only
+    cells that attempt mitosis while it is present, so a 6 h pulse cannot
+    halve an asynchronous colony however high the concentration (here
+    ~70x the 72 h IC50), while a DNA-damage agent can do it in 1 h
+    (previous gate). Georgiadis et al. 1997 (Clin Cancer Res 3:449)
+    likewise found no half kill below 32 uM for 3 h paclitaxel."""
+    surv = _surviving(_drug("paclitaxel"), 3.0, 6.0)
+    assert surv > 0.5, f"6 h paclitaxel at 3 uM left only {surv:.3f}"
 
 
 def test_spreading_a_fixed_dose_too_thin_switches_paclitaxel_off():
@@ -64,7 +93,7 @@ def test_spreading_a_fixed_dose_too_thin_switches_paclitaxel_off():
     24 h drops the concentration below the tubulin occupancy that
     triggers arrest, and the drug stops working — which is why AUC is
     the wrong exposure metric for this class."""
-    pac = get_drug("paclitaxel")
+    pac = _drug("paclitaxel")
     auc = 1.8                                  # µM·h
     mid = _surviving(pac, auc / 24.0, 24.0)    # 0.075 µM for 24 h
     thin = _surviving(pac, auc / 72.0, 72.0)   # 0.025 µM for 72 h, at threshold
@@ -80,7 +109,7 @@ def test_a_fixed_dose_has_an_interior_best_schedule_for_paclitaxel():
     reach mitosis, too dilute and the drug never engages — so the best
     split of a fixed AUC lies in between. This is a prediction of the
     mechanism, not a fitted result."""
-    pac = get_drug("paclitaxel")
+    pac = _drug("paclitaxel")
     auc = 1.8
     windows = (3.0, 24.0, 72.0)
     surv = [_surviving(pac, auc / w, w) for w in windows]
@@ -94,7 +123,7 @@ def test_continuous_exposure_beats_an_early_washout_at_equal_concentration():
     """Sanity in the other direction: at the SAME concentration, leaving
     the drug on longer must not help less than washing it out early."""
     for name, conc in (("cisplatin", 20.0), ("doxorubicin", 0.2), ("paclitaxel", 0.1)):
-        drug = get_drug(name)
+        drug = _drug(name)
         early = _surviving(drug, conc, 6.0)
         full = _surviving(drug, conc, 72.0)
         assert full <= early + 1e-9, (

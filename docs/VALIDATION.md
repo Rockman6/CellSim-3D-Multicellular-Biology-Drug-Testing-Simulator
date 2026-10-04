@@ -177,7 +177,9 @@ both TP53-mutant lines are held out. Results in
 `benchmarks/cell/gdsc_validation_results.csv` and `…_summary.json`.
 
 Ten cell lines (five TP53 wild-type, five mutant), fitted on A549 and
-MCF7 only, so eight lines are held out.
+MCF7 only, so eight lines are held out. The table is the first ten-line
+run, before the apoptotic buffer and the efflux channel were built (see
+below); the current engine's figures follow it.
 
 | Drug | Fitted constant | Engine in span | Null in span | log10 RMSE engine (held-out) | log10 RMSE null |
 |---|---|:-:|:-:|:-:|:-:|
@@ -185,6 +187,13 @@ MCF7 only, so eight lines are held out.
 | doxorubicin | `k_damage_per_uM_h` = 0.00794 | 8/10 | 8/10 | 0.45 (n=8) | 0.46 |
 | paclitaxel | `partition` = 0.153 | 10/10 | 8/10 | 0.31 (n=8) | 0.35 |
 | **held-out** | | **22/25** | 18/25 | | |
+
+With the current engine (buffer and efflux on, library refitted
+October 2026 to cisplatin 0.001181, doxorubicin 0.01749, paclitaxel
+partition 0.212): held-out in span **20/25** against the null's 18/25;
+held-out log10 RMSE 0.65 / 0.43 / 0.32 against the null's
+0.47 / 0.46 / 0.35; paired test 10 : 11, p = 1.0
+(`benchmarks/cell/gdsc_validation_summary.json`).
 
 ### Exit gate: NOT met
 
@@ -201,9 +210,10 @@ the noise on eight points. The gate is now the paired sign test, which
 cannot pass on a difference that small, and the whole set is ten lines.
 
 **What is solid.** The engine puts each drug's potency on the right
-scale from one fitted constant: 22 of 25 held-out predictions land
-inside GDSC's replicate span against the null's 18, and A549 cisplatin
-predicts 9.0 µM against 9.8 measured. Paclitaxel is the best case,
+scale from one fitted constant: 22 of 25 held-out predictions landed
+inside GDSC's replicate span against the null's 18 in this run (20 of 25
+with the current engine), and A549 cisplatin predicts 9.0 µM against
+9.8 measured. Paclitaxel is the best case,
 10/10 in span and the lowest error of the three.
 
 **What is missing, now measured.** Line-to-line variation. The only
@@ -431,151 +441,190 @@ on no per-line marker at all.
 Re-run `cellsim validate-gdsc` after each; the gate is the paired sign
 test, not the RMSE table.
 
+## Phase 2: audited before building on it (October 2026)
+
+The library's three fitted potency constants predated the apoptotic
+buffer and the efflux channel, although its docstring said re-running
+the fit reproduced them within 1 %. Refitting under the current defaults
+moved them 1.2–2.2× (cisplatin k_damage 0.000951 → 0.001181,
+doxorubicin 0.00794 → 0.01749, paclitaxel partition 0.153 → 0.212).
+That silently moved every Phase-2 dose relative to its drug's potency,
+and re-running the experiments showed which headlines were properties of
+the mechanism and which were properties of one dose or one random seed.
+
+Two changes make that class of error structural rather than lucky.
+Experiments now state doses as multiples of each drug's own engine IC50,
+computed at run time (`cellsim.cell.engine.ic50`), so a refit cannot
+change what a design means. Tests pin the potency their doses were
+designed at; cisplatin and paclitaxel enter the engine only as potency ×
+concentration, so for them this is exactly a rescaling of the dose.
+
+| Claim as first published | Status | What re-measurement shows |
+|---|---|---|
+| Pulsing selects a pharmacokinetic escape (low uptake), not an apoptotic one | **Retracted: backwards** | It rested on ONE surviving lineage for cisplatin and two for doxorubicin. Measured exactly on a trait grid, continuous exposure selects on accumulation and pulsing shifts selection toward the apoptotic reserve, for all three drugs. |
+| The sequence effect is a readout artefact (0.93 → 0.98 → 0.99) | **Qualified** | A single-seed reading; one 128-cell run carries ±0.02–0.03 on that ratio. Over five seeds there is no ordering effect with both drugs at their IC50, and ~12 % at 72 h with cisplatin at 1.25× its IC50, shrinking to ~3 % by 120–144 h. |
+| Exposure-time ranking 242× / 17× / 7.6× (3 h ÷ 72 h survival) | **Replaced** | The ratio depends on the dose chosen, and once no drug acts within 3 h it reduces to 1/S(72 h). The iso-effect curve below replaces it; the ranking holds. |
+| Antagonism 1.32–1.50× | Confirmed | 1.29–1.35 (±0.08 over seeds) with both drugs at their IC50, rising to 1.6–1.9 with more cisplatin. |
+
 ## Phase 2: schedule dependence (within-line, no marker needed)
 
-The first Phase-2 result, and the kind of evidence the ceiling above
-does not apply to: everything here is one cell line compared against
-itself under different schedules.
+Everything here is one cell line compared against itself under
+different schedules, so the per-line ceiling above does not apply.
 
-**Same total dose, delivered differently.** Holding AUC fixed at 1.8
-µM·h of paclitaxel and varying the split between concentration and
-hours (A549, 72 h assay, surviving fraction; `scripts/experiment_schedule.py`):
+**The measurement is the iso-effect curve**: for each exposure time T,
+the concentration C50(T) that halves the 72 h cell count when the drug
+is washed out at T (A549; `scripts/experiment_schedule.py`). If killing
+were governed by AUC, C50 × T would be constant and log C50 against
+log T would have slope −1.
 
-| exposure | 3 h | 12 h | 24 h | **36 h** | 48 h | 72 h |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| concentration (µM) | 0.60 | 0.15 | 0.075 | **0.05** | 0.0375 | 0.025 |
-| surviving fraction | 1.00 | 0.79 | 0.48 | **0.28** | 0.69 | 1.00 |
+| Drug (72 h IC50) | 1 h | 3 h | 6 h | 12 h | 24 h | 72 h | slope, 1–6 h | shortest exposure reaching half kill |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| cisplatin (10.7 µM) | 326 | 120 | 59.1 | 30.6 | 16.3 | 10.4 | **−0.95** | 1 h |
+| doxorubicin (0.063 µM) | 2.06 | 0.68 | 0.34 | 0.17 | 0.089 | 0.060 | **−1.01** | 1 h |
+| paclitaxel (0.030 µM) | none | none | none | none | 0.037 | 0.030 | — | **24 h** |
 
-**Both extremes fail, for different mechanistic reasons.** Too brief and
-few cells reach the mitosis the drug acts on. Too dilute and tubulin
-occupancy never crosses the threshold that triggers arrest — at 72 h the
-0.025 µM arm sits right at it and does nothing at all. The optimum in
-between is a prediction of the mechanism, not a fitted result, and it
-reproduces across seeds.
+(C50 in µM; "none" = no concentration reaches half kill.)
 
-This is why **AUC is the wrong exposure metric for this class**, which
-is the documented clinical finding: paclitaxel efficacy tracks time
-above a threshold concentration rather than AUC or peak (Gianni 1995
-J Clin Oncol 13:180; Huizing 1993 J Clin Oncol 11:2127).
+**Cisplatin and doxorubicin are AUC-governed over short exposures**:
+C50 × T stays at 326–367 µM·h for cisplatin from 1 to 12 h and at
+2.0–2.1 µM·h for doxorubicin from 1 to 24 h, then rises as repair
+outpaces slow accumulation. Ozawa et al. measured exactly this C × T
+law for cisplatin (WiDr cells; Cancer Res 1989 49:3823) and time
+dependence instead for phase-specific agents.
 
-**Exposure-time dependence, ranked.** At a fixed concentration above
-each drug's threshold, how many times more cells survive a 3 h exposure
-than a 72 h one:
+**Paclitaxel is time-governed**: no exposure shorter than 24 h halves
+the colony at ANY concentration, because only cells that attempt
+mitosis while the drug is present are affected. At a fixed AUC both
+extremes therefore fail, for different reasons — too brief and few
+cells reach mitosis, too dilute and tubulin occupancy never crosses the
+arrest threshold — and the best split is interior (C50 × T is 0.88 µM·h
+at 24 h against 2.1 at 72 h). That is the documented clinical finding
+that taxane efficacy follows time above a threshold concentration
+rather than AUC (Gianni 1995 J Clin Oncol 13:180; Huizing 1993 J Clin
+Oncol 11:2127).
 
-| Drug | 3 h ÷ 72 h | best split of a fixed AUC |
-|---|:-:|:-:|
-| paclitaxel | **242×** | 36 h |
-| doxorubicin | 17× | 18 h |
-| cisplatin | 7.6× | 12 h |
+Against published exposure-duration studies, matched by assay:
 
-The ordering is the published one. Paclitaxel is the textbook
-schedule-dependent agent because killing requires mitotic transit while
-the drug is present; cisplatin forms adducts on contact and is
-comparatively concentration-driven. Nothing in the engine was fitted to
-produce this — it falls out of the cell-cycle and arrest mechanism.
+| Study | Published | Engine | Verdict |
+|---|---|---|---|
+| Ozawa 1989, cisplatin, WiDr | C × T governs (slope −1) | slope −0.95 over 1–6 h | agrees |
+| Liebmann 1993 (Br J Cancer 68:1104), 8 lines, clonogenic | 24 h kill saturates above ~50 nM | 0.46 / 0.43 / 0.40 / 0.49 surviving at 0.05 / 0.2 / 1 / 5 µM | agrees |
+| Liebmann 1993 | 24 → 72 h exposure raises cytotoxicity 5–200× | C50 0.037 → 0.030 µM (1.2×) | **miss** |
+| Georgiadis 1997 (Clin Cancer Res 3:449), 14 NSCLC lines, MTT, read at 120 h: 3 / 24 / 120 h exposure | IC50 > 32 / 9.4 / 0.027 µM | none / 0.036 / 0.029 µM (A549) | 3 h agrees; 120 h agrees but is inherited from the GDSC fit; **24 h misses by 260×** |
 
-Gated by `tests/cell/test_schedule_smoke.py` (4 gates, 38 s).
+**The miss, stated plainly.** Both studies say a 24 h paclitaxel
+exposure is far weaker than a 72–120 h one; the engine says it is
+nearly as good. The engine kills almost every cell that reaches
+mitosis inside the 24 h window. The likely causes are that its cells
+cycle almost in lockstep (real cycle times vary by 20–30 % and include
+slow-cycling cells that a 24 h window misses) and that cells slipping
+out of mitotic arrest re-enter the cycle instead of arresting as
+tetraploids. Drug retention after washout cannot be the cause, because
+it would make short exposures stronger, not weaker. Open; recorded so
+the schedule result is not over-read.
+
+Gated by `tests/cell/test_schedule_smoke.py` (5 gates, 38 s): the C × T
+slope for cisplatin, the 6 h paclitaxel pulse that cannot reach half
+kill, the sub-threshold thin split, the interior optimum, and
+continuous-beats-washout.
 
 ## Phase 2: selection, and what the schedule selects *for*
 
-Also within-line. Each representative cell in the engine is a lineage
-carrying its own anti-apoptotic reserve and drug accumulation, and a
-surviving lineage keeps those as it doubles — so selection emerges
-without being modelled explicitly. It does, and in the right direction.
+Each representative cell is a lineage carrying its own anti-apoptotic
+reserve (Bcl-2 multiplier) and drug accumulation (uptake multiplier),
+and a surviving lineage keeps both as it doubles, so selection emerges
+without being modelled.
 
-**Treatment leaves a biased sample.** After a week of cisplatin the
-survivors' mean anti-apoptotic reserve has risen above the starting
-population's 1.0 and their mean drug accumulation has fallen. Untreated
-controls stay at 1.0, so this is the drug and not drift.
+**Measured exactly, not sampled.** `cellsim.cell.selection` runs a
+13 × 13 grid of trait values (six cells per point, random cycle phases)
+through each schedule, records survival as a function of trait, and
+integrates that map against the population's log-normal trait
+distribution. That gives the survivors' expected means however rare
+survival is; a logistic fit gives the boundary's steepness along each
+axis, and |b_uptake / b_reserve| says which trait decides survival.
 
-**Dose intensity changes how hard, and along which axis.** The same
-total exposure given as 3× the concentration for a third of the time
-(A549, 7 days, cisplatin):
+Two weeks, A549, matched total exposure: continuous at the drug's own
+72 h IC50 versus 3× IC50 for 24 h then 48 h drug-free
+(`scripts/experiment_resistance.py`):
 
-| Arm | alive weight | mean reserve | mean accumulation | combined score |
-|---|:-:|:-:|:-:|:-:|
-| continuous | 3456 | 1.15 | 0.61 | 1.87 |
-| pulsed 1 d on / 2 d off | **256** | 0.95 | **0.33** | **2.88** |
+| Drug | Arm | Expected survival | Survivors' reserve | Survivors' uptake | \|b_u / b_r\| |
+|---|---|:-:|:-:|:-:|:-:|
+| cisplatin | continuous | 0.235 | 1.01 | 0.64 | 5.2 |
+| | pulsed 1 d / 2 d | 0.0016 | **1.88** | 0.50 | **1.35** |
+| doxorubicin | continuous | 0.070 | 1.21 | 0.56 | 1.8 |
+| | pulsed 1 d / 2 d | 0.0014 | **2.45** | 0.76 | **0.91** |
+| paclitaxel | continuous | 0.476 | 1.00 | 0.75 | uptake only |
+| | pulsed 1 d / 2 d | 0.45 | 1.14 | 0.98 | **0.39** |
 
-Pulsing kills **13× more** at matched exposure and leaves a remnant that
-is more resistant overall — but note *which* kind of resistance. Against
-a brief triple dose the anti-apoptotic reserve cannot save a cell, so
-survival depends almost entirely on accumulating less drug; the reserve
-channel is not selected at all. A low continuous dose lets both matter.
+(1.00 = no selection.)
 
-That is the dose-intensity trade-off made mechanical: the schedule that
-kills more selects harder, and selects for a *pharmacokinetic* escape
-rather than an apoptotic one.
+**Continuous exposure selects on drug accumulation.** A sustained dose
+sets a damage steady state, and whether it stays under threshold depends
+on how much drug a cell takes up; for cisplatin the reserve barely moves
+(1.01). **Pulsing shifts selection toward the apoptotic reserve.** A
+brief high dose pushes nearly every cell over threshold for a while, and
+what decides survival is whether the reserve can absorb the transient —
+it can buffer a pulse but not a siege.
 
-**Consistent with the schedule result.** Over 14 days, pulsing helps
-cisplatin and doxorubicin enormously and paclitaxel least, because
-compressing exposure wastes a drug that needs cells to transit mitosis
-while it is present. The two experiments were built independently and
-agree.
+**Pulsing kills far more of a concentration-driven drug**: 143× fewer
+survivors for cisplatin and 49× for doxorubicin at matched exposure,
+but 1.06× for paclitaxel, which wastes a compressed exposure because it
+needs cells to transit mitosis while it is present — the same mechanism
+as the schedule result, measured independently.
 
-**What this cannot show, stated so a passing test is not over-read.**
-The engine draws its heterogeneity once, so this is selection from a
-pre-existing resistant tail, not evolution of new resistance by
-mutation. Lineages also grow without a carrying capacity, so sensitive
-and resistant cells never compete for space — which means
-adaptive-therapy results, where keeping a sensitive population alive
-suppresses a resistant one, are out of reach here by construction.
-`cellsim/cell/agents.py` is the module with a lattice and contact
-inhibition, and is where that question belongs.
+**A prediction an experimental lab can test.** Pulsed and continuous
+selection are the two standard ways resistant lines are derived
+(McDermott et al. 2014 Front Oncol 4:40). The engine predicts that the
+continuously derived line resists mainly by accumulating less drug
+(e.g. raised efflux), and the pulse-derived one mainly by a larger
+apoptotic reserve (lower mitochondrial priming on BH3 profiling).
 
-Gated by `tests/cell/test_resistance_selection_smoke.py` (5 gates, 32 s).
+**What this cannot show.** Heterogeneity is drawn once, so this is
+selection from a pre-existing tail, not evolution of new resistance;
+lineages grow without a carrying capacity, so they never compete, and
+adaptive-therapy questions are out of reach until the spatial dish.
 
-## Phase 2: combinations, and a confound the engine exposes
+Gated by `tests/cell/test_resistance_selection_smoke.py` (5 gates,
+18 s), on a 7 × 7 trait grid.
 
-The engine now carries one intracellular concentration per drug, so a
-combination is a real two-drug run rather than two single-drug runs
-compared. Every arm below gives each drug for 36 h at the same
-concentration in the same cell line; only the timing differs, which is a
-question no correlation over cell lines can address.
+## Phase 2: combinations, and a timing confound
 
-**Antagonism, and it is robust.** Cisplatin damages DNA, driving
-p53 → p21 and arresting the cycle. Paclitaxel kills only cells that
-attempt mitosis while it is present. So the platinum removes the very
-cells the taxane needs (A549, 72 h, surviving fraction):
+The engine carries one intracellular concentration per drug, so a
+combination is a real two-drug run. Every arm gives each drug for 36 h
+at the same concentration in the same line; only the timing differs.
+Five seeds × 256 cells, mean ± sd over seeds
+(`scripts/experiment_combination.py`):
 
-| Arm | surviving | vs independent |
+| | Both at 1× IC50 | Cisplatin 1.25× IC50 |
 |---|:-:|:-:|
-| cisplatin alone | 0.598 | |
-| paclitaxel alone | 0.409 | |
-| independent expectation | 0.244 | — |
-| both together | 0.323 | **1.32× antagonistic** |
-| cisplatin → paclitaxel | 0.341 | 1.40× antagonistic |
-| paclitaxel → cisplatin | 0.366 | 1.50× antagonistic |
+| together ÷ independent expectation | 1.29 ± 0.08 | 1.64 ± 0.07 |
+| cisplatin → paclitaxel ÷ independent | 1.34 ± 0.08 | 1.68 ± 0.08 |
+| paclitaxel → cisplatin ÷ independent | 1.35 ± 0.06 | 1.92 ± 0.17 |
 
-Every arrangement kills less than independent action predicts, which is
-the textbook result for a cytostatic paired with a phase-specific agent.
-Nothing was fitted to produce it: the arrest comes from the p53 → p21
-axis ported from the C++ prototype, the mitosis requirement from the
-tubulin occupancy threshold.
+**Antagonism is robust.** Every arrangement kills less than independent
+action predicts, and more so with more cisplatin, because the platinum
+arrests the cycle through p53 → p21 and removes the cells paclitaxel
+needs in mitosis — the textbook interaction of a cytostatic with a
+phase-specific agent. Nothing was fitted to produce it.
 
-**The sequence effect is an artefact, and that is the more useful
-finding.** At a 72 h readout the platinum-first arm looks better. It
-does not survive a longer one:
+**The ordering effect is small, dose-dependent, and mostly timing.**
+Cisplatin-first survival divided by paclitaxel-first survival:
 
-| readout | cis → pac | pac → cis | ratio |
-|---|:-:|:-:|:-:|
-| 72 h | 0.341 | 0.366 | **0.93** |
-| 96 h | 0.345 | 0.351 | 0.98 |
-| 120 h | 0.347 | 0.353 | 0.99 |
+| Readout | 72 h | 96 h | 120 h | 144 h |
+|---|:-:|:-:|:-:|:-:|
+| both at 1× IC50 | 0.99 ± 0.02 | 1.00 ± 0.02 | 1.00 ± 0.02 | 1.01 ± 0.02 |
+| cisplatin 1.25× IC50 | **0.88 ± 0.06** | 0.93 ± 0.05 | 0.96 ± 0.03 | 0.97 ± 0.03 |
 
-The cause is kinetic. Cisplatin acts slowly — adducts, then p53, then
-commitment — so placing it second truncates its effect inside a fixed
-window. The apparent ordering advantage is a confound between *when the
-drug was given* and *how long it had left to act*.
+With both drugs at their IC50 there is no ordering effect at all. With
+more cisplatin the platinum-first order looks ~12 % better at 72 h, and
+most of that disappears once the slow drug given second has had time to
+act. So the engine does not reproduce a biological platinum/taxane
+sequence dependence; what it shows is how a fixed-endpoint assay can
+confound "the order matters" with "the second drug had less time".
 
-So, stated plainly: **the engine reproduces the antagonism and does not
-reproduce a biological platinum/taxane sequence dependence.** What it
-does instead is expose a trap that fixed-endpoint combination assays
-fall into, which is worth more than a claim it cannot support. The test
-suite pins the antagonism and pins the artefact; it deliberately does
-not assert a sequence effect.
-
-Gated by `tests/cell/test_combination_timing_smoke.py` (3 gates, 22 s).
+Gated by `tests/cell/test_combination_timing_smoke.py` (4 gates, 41 s):
+two-drug state, antagonism, no ordering effect at matched IC50 (3-seed
+mean), and the fade of the above-IC50 ordering effect with readout.
 
 ## GDSC reference data (the Phase-1 validation target)
 
