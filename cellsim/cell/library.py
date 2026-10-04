@@ -104,7 +104,9 @@ CELL_LINES: dict[str, CellLine] = {
                       source="ATCC HTB-38 ~20-23 h; TP53 p.R273H (CVCL_0320)"),
     "SW480": CellLine("SW480", 26.0, False, "colon",
                       efflux_level=1.69,
-                      source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546)"),
+                      source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546). "
+                             "NOT screened in GDSC 8.4 (which has SW48 and SW620), so "
+                             "it has no IC50 reference here"),
     "HeLa": CellLine("HeLa", 31.0, True, "cervix",
                      efflux_level=9.79, p53_mdm2_independent_deg_per_h=10.0,
                      source="Doubling 1.3 d (Cellosaurus CVCL_0030, PubMed 29156801; DSMZ "
@@ -151,7 +153,9 @@ CELL_LINES: dict[str, CellLine] = {
                       efflux_level=16.02,
                       source="TP53 p.S241F (CVCL_0248). Doubling time reported 15, 20, "
                              "25.3, 33 and 48 h (Cellosaurus); median 25 h used, "
-                             "uncertainty ~1.8x"),
+                             "uncertainty ~1.8x. NOT screened in GDSC 8.4, so it has "
+                             "no IC50 reference here; its sister line HCT-15 is, but "
+                             "they are different cultures"),
 }
 
 

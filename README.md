@@ -26,6 +26,15 @@ flag; it is not the product on its own.
 > selection, combination timing. The reasoning and numbers are in
 > [`docs/VALIDATION.md`](docs/VALIDATION.md).
 >
+> **Phase 3 found the exception to that.** Across ten drugs and 91
+> held-out predictions the conclusion holds — except for the one drug
+> whose target is part of the modelled mechanism. An MDM2 inhibitor acts
+> by stabilising p53, and the engine calls all eleven lines correctly
+> (a constant gets five), including HeLa, whose TP53 is wild-type by
+> sequence but whose p53 is degraded by HPV E6 instead of MDM2. So: no
+> ranking lines for cytotoxics, but yes for a drug whose mechanism is
+> modelled.
+>
 > **Phase 2 has its dish.** `cellsim dish` grows the engine's cells in
 > space — a monolayer with contact inhibition, or a spheroid with
 > oxygen and drug diffusing in, hypoxic quiescence and a necrotic core —
@@ -46,6 +55,7 @@ flag; it is not the product on its own.
 | Target-class reliability (`cellsim/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
 | ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `cellsim/chem/admet.py` |
 | CYP3A4 site of metabolism (`cellsim som`) | xTB C–H bond-dissociation ranking with a heme-accessibility re-rank | 2/3 on the bundled literature set; blind to N-dealkylation. **Advisory only.** |
+| Calibrated uncertainty (`scripts/calibrate_cell_uncertainty.py`) | Every predicted IC50 comes with an interval whose coverage has been scored | Leave-one-drug-out: ±2.6× covers 64 % (68 % nominal), ±4.8× covers 85 % (90 %), ±6.5× covers 95 % (95 %). Wide on purpose — GDSC's own replicate screens disagree by a median 5.3× |
 | Cell drug-response engine (`cellsim cell-sim`, `cellsim cell-stream`) | Pick a cell line, a drug and a **dose schedule**; get the colony over time, viability, and a per-cell state stream (JSON Lines) for a UI. Built for *within-line* questions: schedule, wash-out, resistance, combinations | Each drug's potency scale is right (A549 cisplatin 10.9 µM vs 9.8 measured; 20/25 held-out predictions inside GDSC's replicate span). **Ranking one cell line against another is explicitly out of scope** — measured as unreachable from canonical markers ([why](docs/VALIDATION.md)). |
 | Spatial dish (`cellsim dish`) and web viewer (`web/viewer/`) | Grow cells as a monolayer or a spheroid under a dose schedule; oxygen and drug fields, contact inhibition, hypoxic quiescence, necrosis, clones. Open the JSON Lines stream in the viewer: 3-D cells coloured by phase, p53, caspase-3, oxygen or lineage, time scrubbing, charts, CSV export | Field solvers match closed forms (Grimes's 233 µm oxygen limit; the analytic slab profile). Re-running the Cell Tracking Challenge HeLa movie: colony size within 3–4 % at 46 h. Spheroid growth **calibrated** on DLD-1 (one constant). **Open misses:** the spheroid's necrotic core is too large, and real HeLa splits into fast cyclers and non-dividers, which the engine does not ([details](docs/VALIDATION.md)). |
 | Cell-level PK/PD modules (`cellsim/cell`) | Occupancy, permeation, pH trapping, efflux, binding sink, tissue penetration, fate, resistance, clearance, cell cycle, lattice agents | Each module is checked against its analytic limit (22 tests). |
@@ -87,6 +97,10 @@ washout("A549", "cisplatin", 20.0, 12.0)  # a 12 h pulse, then recovery
 combination("A549", "cisplatin", "paclitaxel", 10.0, 0.03)   # vs independent action
 spheroid("DLD-1", days=6)                 # size, hypoxia, necrotic core over time
 ```
+
+[`docs/cell_tutorial.md`](docs/cell_tutorial.md) walks through a real
+question end to end — *should I pulse this drug or leave it on?* — with
+every command run and its actual output.
 
 `exposure()` is the one worth knowing about: it returns `inf` where no
 concentration reaches half kill, which is the honest answer for a taxane

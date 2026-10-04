@@ -168,6 +168,12 @@ No UI work until this exists.
 
    DECISION: per-line IC50 prediction is not a goal this engine can
    reach with available inputs, and is dropped as the headline metric.
+   Phase 3 confirmed this on ten drugs (34 wins to 39 losses over 91
+   held-out predictions) and found the exception it does NOT cover:
+   where the drug's target is itself part of the modelled mechanism —
+   an MDM2 inhibitor acting through p53 — the engine calls all eleven
+   lines correctly against a constant's five, HeLa included, whose
+   wild-type TP53 would mislead a genotype-only model.
    Phase 2 re-aims at within-line dynamics -- schedule dependence,
    wash-out recovery, resistance under selection, combination timing --
    where the mechanism is load-bearing and no per-line marker is
