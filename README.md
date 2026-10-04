@@ -85,8 +85,9 @@ full screen and, in §8, says which target classes to trust.
 |---|---|---|
 | 0 — done | July fixes merged, CI green, one identity, honest validation page | Oct 2026 |
 | 1 | Single-cell drug-response engine with one state object and one integrator: cell cycle and p53 axis ported from `OLD/`, death that actually executes, `cellsim/cell` PK on top. Calibrated against GDSC dose-response for cisplatin, doxorubicin and paclitaxel. Headless state stream for any UI. | Jan 2027 |
-| 2 | The dish: spatial colony, diffusion, drug penetration, contact inhibition, validated on spheroid growth curves; new web UI reading the engine stream; first outside users | Apr 2027 |
-| 3 | Ten drugs × five lines, combinations and resistance, calibrated uncertainty, JOSS paper, conda-forge | Oct 2027 |
+| 2 — code done | The dish: spatial colony, diffusion, drug penetration, contact inhibition, validated on the CTC HeLa movie and calibrated on DLD-1 spheroids; web viewer reading the engine stream. Outside users still to find | Apr 2027 |
+| 3 — in progress | Ten drugs × ten lines, combinations and evolved resistance, calibrated uncertainty with coverage, JOSS paper, conda-forge | Oct 2027 |
+| 4 | **Your own cells**: import a plate reader export, fit this line's own constants with uncertainty, and get predictions as bands rather than lines ([plan](docs/PLAN.md)) | 2028 |
 
 Details, the keep/kill list and success metrics: [`docs/PLAN.md`](docs/PLAN.md).
 
