@@ -25,11 +25,14 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
+      - "cellsim/api.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
       - "tests/web/**"
+      - "tests/test_pip_install.py"
       - "web/**"
+      - "pyproject.toml"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
@@ -55,11 +58,14 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
+      - "cellsim/api.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
       - "tests/web/**"
+      - "tests/test_pip_install.py"
       - "web/**"
+      - "pyproject.toml"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -291,6 +297,9 @@ jobs:
             echo "== $t"
             python -u "$t"
           done
+
+      - name: the cell simulator installs and runs from pip alone (bare venv, no conda)
+        run: python -u tests/test_pip_install.py
 
       - name: web viewer reads real streams (both schemas, plain and gzipped)
         run: |
