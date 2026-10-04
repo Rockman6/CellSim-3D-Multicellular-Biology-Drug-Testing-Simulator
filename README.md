@@ -26,6 +26,13 @@ flag; it is not the product on its own.
 > selection, combination timing. The reasoning and numbers are in
 > [`docs/VALIDATION.md`](docs/VALIDATION.md).
 >
+> **Phase 2 has its dish.** `cellsim dish` grows the engine's cells in
+> space — a monolayer with contact inhibition, or a spheroid with
+> oxygen and drug diffusing in, hypoxic quiescence and a necrotic core —
+> and [`web/viewer/`](web/viewer/) renders the per-cell stream in a
+> browser. Every Phase-2 claim was re-measured over seeds before the dish
+> was built on it, and one was retracted.
+>
 > The 2026 C++/Metal prototype lives in [`OLD/`](OLD/) as a biology
 > reference; it still builds and passes its 8 headless benchmarks, but
 > its UI is retired and a new interface is planned on top of the Python
@@ -39,7 +46,8 @@ flag; it is not the product on its own.
 | Target-class reliability (`cellsim/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
 | ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `cellsim/chem/admet.py` |
 | CYP3A4 site of metabolism (`cellsim som`) | xTB C–H bond-dissociation ranking with a heme-accessibility re-rank | 2/3 on the bundled literature set; blind to N-dealkylation. **Advisory only.** |
-| Cell drug-response engine (`cellsim cell-sim`, `cellsim cell-stream`) | Pick a cell line, a drug and a **dose schedule**; get the colony over time, viability, and a per-cell state stream (JSON Lines) for a UI. Built for *within-line* questions: schedule, wash-out, resistance, combinations | Each drug's potency scale is right (A549 cisplatin 9.5 µM vs 9.8 measured; 20/25 held-out predictions inside GDSC's replicate span). **Ranking one cell line against another is explicitly out of scope** — measured as unreachable from canonical markers ([why](docs/VALIDATION.md)). |
+| Cell drug-response engine (`cellsim cell-sim`, `cellsim cell-stream`) | Pick a cell line, a drug and a **dose schedule**; get the colony over time, viability, and a per-cell state stream (JSON Lines) for a UI. Built for *within-line* questions: schedule, wash-out, resistance, combinations | Each drug's potency scale is right (A549 cisplatin 10.9 µM vs 9.8 measured; 20/25 held-out predictions inside GDSC's replicate span). **Ranking one cell line against another is explicitly out of scope** — measured as unreachable from canonical markers ([why](docs/VALIDATION.md)). |
+| Spatial dish (`cellsim dish`) and web viewer (`web/viewer/`) | Grow cells as a monolayer or a spheroid under a dose schedule; oxygen and drug fields, contact inhibition, hypoxic quiescence, necrosis, clones. Open the JSON Lines stream in the viewer: 3-D cells coloured by phase, p53, caspase-3, oxygen or lineage, time scrubbing, charts, CSV export | Field solvers match closed forms (Grimes's 233 µm oxygen limit; the analytic slab profile). Re-running the Cell Tracking Challenge HeLa movie: colony size within 3–4 % at 46 h. Spheroid growth **calibrated** on DLD-1 (one constant). **Open misses:** the spheroid's necrotic core is too large, and real HeLa splits into fast cyclers and non-dividers, which the engine does not ([details](docs/VALIDATION.md)). |
 | Cell-level PK/PD modules (`cellsim/cell`) | Occupancy, permeation, pH trapping, efflux, binding sink, tissue penetration, fate, resistance, clearance, cell cycle, lattice agents | Each module is checked against its analytic limit (22 tests). |
 | Alchemical FEP (`cellsim/fep`) | Hydration and binding ΔG scaffolds on openmmtools + MBAR | **Experimental, not a product path.** FreeSolv-12 MAE 1.42 kcal/mol on 10/12 with a size-dependent bias (no barostat). Binding ΔG has never produced a number on a real binder. |
 

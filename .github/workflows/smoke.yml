@@ -28,6 +28,8 @@ on:
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
+      - "tests/web/**"
+      - "web/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
@@ -56,6 +58,8 @@ on:
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
+      - "tests/web/**"
+      - "web/**"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -287,6 +291,16 @@ jobs:
             echo "== $t"
             python -u "$t"
           done
+
+      - name: web viewer reads real streams (both schemas, plain and gzipped)
+        run: |
+          set -e
+          python -m cellsim.cell.dish --line A549 --geometry monolayer --drug cisplatin \
+            --schedule "12:20,24:0" --hours 36 --cells 40 --grid 20 --every 6 --out /tmp/dish.jsonl
+          python -m cellsim.cell.stream --line A549 --drug paclitaxel --schedule "0:0.05" \
+            --hours 12 --cells 8 --every 6 --out /tmp/pop.jsonl
+          gzip -kf /tmp/dish.jsonl
+          node tests/web/viewer_stream_check.js /tmp/dish.jsonl /tmp/dish.jsonl.gz /tmp/pop.jsonl
 
   scale:
     name: scale (workflow_dispatch only)

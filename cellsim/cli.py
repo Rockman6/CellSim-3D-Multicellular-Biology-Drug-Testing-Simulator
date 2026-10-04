@@ -46,6 +46,7 @@ MODULES: dict[str, str] = {
     "uq-sobol": "cellsim.uq.sobol",
     "cell-sim": "cellsim.cell.engine",
     "cell-stream": "cellsim.cell.stream",
+    "dish": "cellsim.cell.dish",
 }
 
 # subcommand -> script under <repo>/scripts
@@ -64,6 +65,7 @@ USAGE = """usage: cellsim <subcommand> [args...]
   Cell drug-response engine (Phase 1)
     cell-sim      dose-response of one cell line to one drug -> viability + IC50
     cell-stream   one population under a dosing schedule -> per-tick JSON Lines for a UI
+    dish          cells in space (monolayer or spheroid) -> per-cell JSON Lines for a UI
     validate-gdsc fit one potency per drug on p53-wt lines, predict the rest vs GDSC
 
   Screening and triage

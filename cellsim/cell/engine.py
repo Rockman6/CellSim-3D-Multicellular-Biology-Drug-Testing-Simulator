@@ -182,6 +182,14 @@ class Params:
     # p53-only model and over a constant-IC50 null.
     p73_gain: float = 0.1
     p73_atm_on: float = 0.5
+    # Cell-to-cell variability of cycle duration: each cell's interphase
+    # time is scaled by a log-normal factor of mean 1 and this coefficient
+    # of variation. Real cycles vary: HeLa in the Cell Tracking Challenge
+    # time-lapse (Fluo-N2DL-HeLa) completes cycles with CV 0.22-0.33, a
+    # lower bound because a 46 h movie truncates long cycles
+    # (scripts/ctc_reference.py). 0 keeps every cell on the same clock and
+    # every earlier result unchanged.
+    cycle_cv: float = 0.0
 
 
 # ── small helpers ─────────────────────────────────────────────────────
@@ -234,7 +242,8 @@ def random_cycle_state(rng: np.random.Generator) -> np.ndarray:
 def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
         p: Params, k_cyc: float) -> np.ndarray:
     """dY/dt for every cell (vectorised). `aux` carries the per-cell
-    non-ODE inputs: C_out (µM), in_M, arrest_h, forced_D (or NaN)."""
+    non-ODE inputs: C_out (µM), arrest_h, forced_D (or NaN), the
+    heterogeneity multipliers, and optionally a growth signal `gs`."""
     dY = np.zeros_like(Y)
     f53 = 1.0 if line.p53_functional else 0.0
 
@@ -268,6 +277,21 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     dY[:, 5] = (2.50 * Cdc25 * (1 + CycB * 0.8) - CycB * (0.18 + APC_Cdc20 * 2.5)) * (1 - p21e * 0.3)
     dY[:, 6] = -p21 * 0.18
     dY[:, :7] *= k_cyc
+    # Growth signal per cell (0-1), set by the spatial dish for contact
+    # inhibition and hypoxia; absent in a well-mixed population. It scales
+    # progression through G1 only: S, G2 and M run their fixed course, so
+    # a cell already past the restriction point finishes its cycle and its
+    # daughters wait in G1 (quiescence) until the signal returns. Simply
+    # lowering cyclin D synthesis would not do it, because this cycle's
+    # Rb/E2F/cyclin E feedback restarts itself without cyclin D. PhysiCell
+    # modulates the same G1 -> S transition with oxygen (Ghaffarizadeh et
+    # al. 2018 PLoS Comput Biol 14:e1005991).
+    g1_signal = aux.get("gs")
+    if g1_signal is not None:
+        dY[:, :7] *= np.where(phase == 0, g1_signal, 1.0)[:, None]
+    cycle_rate = aux.get("cycle_rate")
+    if cycle_rate is not None:
+        dY[:, :7] *= cycle_rate[:, None]
     # p53 -> p21 (El-Deiry 1993) + p53-independent CHK1/2 S/G2 term
     dY[:, 6] += p.p21_k_max * _hill8(p53, p.p21_K_hill) * f53
     chk = (D > p.chk_damage_threshold) & ((phase == 1) | (phase == 2))
@@ -346,6 +370,7 @@ class Population:
     het_bcl2: np.ndarray             # per-cell Bcl-2 reserve multiplier (mean 1)
     het_uptake: np.ndarray           # per-cell drug-accumulation multiplier (mean 1)
     t_h: float = 0.0
+    cycle_rate: Optional[np.ndarray] = None   # per-cell cycle speed (None = all 1)
 
 
 @dataclass
@@ -404,7 +429,7 @@ def _lognormal_mean_one(rng: np.random.Generator, sigma: float, n: int) -> np.nd
 
 def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.random.Generator,
                     forced_D: Optional[float] = None, het_sigma: float = 0.0,
-                    n_drugs: int = 1) -> Population:
+                    n_drugs: int = 1, cycle_cv: float = 0.0) -> Population:
     # C_out is (n_cells,) for one drug, or (n_cells, n_drugs) for several.
     C = np.asarray(C_out, dtype=float)
     C = (np.broadcast_to(C, (n_cells,)).copy() if n_drugs <= 1
@@ -421,10 +446,63 @@ def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.rando
     # random draw, and therefore every earlier result, unchanged.
     het_bcl2 = _lognormal_mean_one(rng, het_sigma, n_cells)
     het_uptake = _lognormal_mean_one(rng, het_sigma, n_cells)
+    # Drawn last, and only when asked for, so cycle_cv=0 leaves every
+    # earlier random draw unchanged. The duration factor has mean 1; the
+    # rate is its reciprocal.
+    cycle_rate = None
+    if cycle_cv > 0:
+        s = np.sqrt(np.log(1.0 + cycle_cv ** 2))
+        cycle_rate = 1.0 / np.exp(rng.normal(-0.5 * s * s, s, n_cells))
     return Population(Y=Y, weight=np.ones(n_cells), alive=np.ones(n_cells, bool),
                       in_M=np.zeros(n_cells, bool), t_in_M=np.zeros(n_cells),
                       arrest_h=np.zeros(n_cells), generation=np.zeros(n_cells, int),
-                      C_out=C, forced_D=fD, het_bcl2=het_bcl2, het_uptake=het_uptake)
+                      C_out=C, forced_D=fD, het_bcl2=het_bcl2, het_uptake=het_uptake,
+                      cycle_rate=cycle_rate)
+
+
+def _cell_events(pop: "Population", drug, p: Params, dt_h: float) -> tuple[np.ndarray, np.ndarray]:
+    """Mitosis, mitotic arrest, slippage and death after one integration
+    step, for any set of cells.
+
+    Dividing cells are reset to early G1 (both daughters start identical)
+    and returned in `divide`; what a division means for the population is
+    the caller's business — `simulate` doubles a representative cell's
+    weight, the spatial dish places a daughter on the lattice. Dying cells
+    are marked dead and returned in `die`."""
+    Y = pop.Y
+    ready = (Y[:, IX["CycB"]] > 0.25) & (Y[:, IX["p21"]] < 0.35) & (Y[:, IX["CycA"]] > 0.30)
+    enter = pop.alive & ~pop.in_M & ready & (Y[:, IX["D"]] < p.g2m_damage_block)
+    pop.in_M[enter] = True
+    pop.t_in_M[enter] = 0.0
+    pop.t_in_M[pop.in_M] += dt_h
+    arrested = np.zeros(len(Y), bool)
+    for i, dg in enumerate(_as_drug_tuple(drug)):
+        if dg.mechanism != "tubulin":
+            continue
+        ci = Y[:, N_BASE + i]
+        theta = ci / (ci + dg.Kd_tubulin_uM)
+        arrested = arrested | (pop.in_M & (theta > dg.theta_arrest))
+    pop.arrest_h[arrested] += dt_h
+    pop.arrest_h[~pop.in_M] = 0.0
+    divide = pop.alive & pop.in_M & ~arrested & (pop.t_in_M >= p.m_duration_h)
+    if divide.any():
+        Y[divide, :7] = fresh_cycle_state()
+        Y[divide, IX["p21"]] = np.maximum(0.02, Y[divide, IX["p21"]] * 0.2)
+        pop.generation[divide] += 1
+        pop.in_M[divide] = False
+        pop.t_in_M[divide] = 0.0
+    slip = pop.alive & arrested & (pop.t_in_M >= p.slippage_h)
+    if slip.any():
+        Y[slip, :7] = fresh_cycle_state()
+        Y[slip, IX["D"]] = np.minimum(2.0, Y[slip, IX["D"]] + p.slippage_damage)
+        pop.in_M[slip] = False
+        pop.t_in_M[slip] = 0.0
+        pop.arrest_h[slip] = 0.0
+    die = pop.alive & (Y[:, IX["C3"]] > p.c3_commit)
+    if die.any():
+        pop.alive[die] = False
+        pop.in_M[die] = False
+    return divide, die
 
 
 def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.ndarray],
@@ -452,7 +530,7 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     drugs = _as_drug_tuple(drug)
     n_drugs = max(1, len(drugs))
     pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma,
-                          n_drugs=n_drugs)
+                          n_drugs=n_drugs, cycle_cv=p.cycle_cv)
     if traits is not None:
         pop.het_bcl2[:] = np.asarray(traits["bcl2"], float)
         pop.het_uptake[:] = np.asarray(traits["uptake"], float)
@@ -466,6 +544,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
         k_cyc = calibrate_cycle_scale(line, p)
     aux = {"C_out": pop.C_out, "arrest_h": pop.arrest_h, "forced_D": pop.forced_D,
            "het_bcl2": pop.het_bcl2, "het_uptake": pop.het_uptake}
+    if pop.cycle_rate is not None:
+        aux["cycle_rate"] = pop.cycle_rate
     n_steps = int(round(t_end_h / dt_h))
     rec_stride = max(1, int(round(record_every_h / dt_h)))
     T = n_steps // rec_stride + 1
@@ -505,43 +585,11 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
             _apply_dose(pop.t_h)               # aux["C_out"] is this same array
         _rk4(pop.Y, aux, line, drug, p, k_cyc, dt_h)
         pop.t_h += dt_h
-        Y = pop.Y
-        # ── mitosis bookkeeping ──
-        ready = (Y[:, IX["CycB"]] > 0.25) & (Y[:, IX["p21"]] < 0.35) & (Y[:, IX["CycA"]] > 0.30)
-        enter = pop.alive & ~pop.in_M & ready & (Y[:, IX["D"]] < p.g2m_damage_block)
-        pop.in_M[enter] = True
-        pop.t_in_M[enter] = 0.0
-        pop.t_in_M[pop.in_M] += dt_h
-        arrested = np.zeros(n_cells, bool)
-        for i, dg in enumerate(_as_drug_tuple(drug)):
-            if dg.mechanism != "tubulin":
-                continue
-            ci = Y[:, N_BASE + i]
-            theta = ci / (ci + dg.Kd_tubulin_uM)
-            arrested = arrested | (pop.in_M & (theta > dg.theta_arrest))
-        pop.arrest_h[arrested] += dt_h
-        pop.arrest_h[~pop.in_M] = 0.0
-        divide = pop.alive & pop.in_M & ~arrested & (pop.t_in_M >= p.m_duration_h)
+        divide, die = _cell_events(pop, drug, p, dt_h)
         if divide.any():
-            Y[divide, :7] = fresh_cycle_state()
-            Y[divide, IX["p21"]] = np.maximum(0.02, Y[divide, IX["p21"]] * 0.2)
-            pop.weight[divide] *= 2.0
-            pop.generation[divide] += 1
-            pop.in_M[divide] = False
-            pop.t_in_M[divide] = 0.0
-        slip = pop.alive & arrested & (pop.t_in_M >= p.slippage_h)
-        if slip.any():
-            Y[slip, :7] = fresh_cycle_state()
-            Y[slip, IX["D"]] = np.minimum(2.0, Y[slip, IX["D"]] + p.slippage_damage)
-            pop.in_M[slip] = False
-            pop.t_in_M[slip] = 0.0
-            pop.arrest_h[slip] = 0.0
-        # ── death ──
-        die = pop.alive & (Y[:, IX["C3"]] > p.c3_commit)
+            pop.weight[divide] *= 2.0          # a representative cell stands for both daughters
         if die.any():
-            pop.alive[die] = False
             dead_weight += np.bincount(groups[die], weights=pop.weight[die], minlength=n_groups)
-            pop.in_M[die] = False
         if step % rec_stride == 0:
             record(step // rec_stride)
     return SimResult(t_axis, alive_w, groups, group_C, mean_p53, phase_frac, deaths, pop)
