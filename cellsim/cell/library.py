@@ -54,6 +54,11 @@ class Drug:
     # also what the GDSC correlation shows (ABCB1 significant for the
     # first two, absent for cisplatin).
     pgp_substrate: bool = False
+    # Total drug a cell holds at equilibrium (free + bound) relative to the
+    # medium. Used only by the spatial dish, where it is the sink that
+    # slows penetration into tissue: every cell layer must fill before
+    # drug passes deeper. Order-of-magnitude inputs, flagged per drug.
+    accumulation_ratio: float = 1.0
     fit_target: str = ""             # which field is fitted, if any
     source: str = ""
 
@@ -88,9 +93,13 @@ CELL_LINES: dict[str, CellLine] = {
     "SW480": CellLine("SW480", 26.0, False, "colon",
                       efflux_level=1.69,
                       source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546)"),
-    "HeLa": CellLine("HeLa", 20.0, True, "cervix",
+    "HeLa": CellLine("HeLa", 31.0, True, "cervix",
                      efflux_level=9.79,
-                     source="CTC Fluo-N2DL-HeLa ~20 h; TP53 wild-type but HPV18 E6-degraded "
+                     source="Doubling 1.3 d (Cellosaurus CVCL_0030, PubMed 29156801; DSMZ "
+                            "~48 h); the Cell Tracking Challenge HeLa movie's own counts "
+                            "double every 27-31 h (scripts/ctc_reference.py). An earlier "
+                            "20 h here was the mean of its COMPLETE cycles, which a 46 h "
+                            "movie biases short. TP53 wild-type but HPV18 E6-degraded "
                             "(functionally hypomorphic; modelled as functional, flagged)"),
 
     # ── Added 2026-10 to test the p53-independent death route against
@@ -118,6 +127,17 @@ CELL_LINES: dict[str, CellLine] = {
                            source="TP53 p.R248W homozygous (CVCL_0428). Doubling time "
                                   "reported 26 h to 40 h depending on conditions; 30 h "
                                   "used, uncertainty ~1.5x"),
+
+    # ── Added 2026-10 for the spatial dish: the line whose spheroids have
+    # a measured oxygen consumption rate and diffusion limit (Grimes et al.
+    # 2014 J R Soc Interface 11:20131124) and whose multicellular layers
+    # are the standard drug-penetration model (Phillips et al. 1998 Br J
+    # Cancer 77:2112). High ABCB1, like its sister line HCT-15.
+    "DLD-1": CellLine("DLD-1", 25.0, False, "colon",
+                      efflux_level=16.02,
+                      source="TP53 p.S241F (CVCL_0248). Doubling time reported 15, 20, "
+                             "25.3, 33 and 48 h (Cellosaurus); median 25 h used, "
+                             "uncertainty ~1.8x"),
 }
 
 
@@ -130,6 +150,7 @@ DRUGS: dict[str, Drug] = {
         k_damage_per_uM_h=0.001181,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
         tau_uptake_h=0.5,             # slow uptake (CTR1 + passive), hours
         partition=1.0,
+        accumulation_ratio=2.0,       # Pt accumulates only a few-fold over medium (order of magnitude)
         fit_target="k_damage_per_uM_h",
         source="Pt-DNA adducts form in proportion to intracellular Pt (Jamieson & Lippard 1999 "
                "Chem Rev 99:2467); adduct repair t1/2 of hours (NER) sets repair_rate"),
@@ -140,6 +161,7 @@ DRUGS: dict[str, Drug] = {
         pgp_substrate=True,           # classical P-gp substrate
         tau_uptake_h=0.5,
         partition=10.0,               # weak base + DNA intercalation: high intracellular accumulation
+        accumulation_ratio=100.0,     # DNA-bound anthracycline, 10-100x (Gigli 1988); order of magnitude
         fit_target="k_damage_per_uM_h",
         source="TopII poison, S-phase-dependent DSBs (Nitiss 2009 Nat Rev Cancer 9:338); "
                "nuclear accumulation 10-100x (Gigli 1988 Cancer Res 48:4100)"),
@@ -156,6 +178,7 @@ DRUGS: dict[str, Drug] = {
         # the death rate barely moves the IC50. What does move it is how
         # much free drug the cell holds, i.e. uptake against efflux and
         # sequestration, so that is the one constant fitted.
+        accumulation_ratio=100.0,     # microtubule-bound, saturable (Kuh et al. 2000 JPET 293:761); order of magnitude
         fit_target="partition",
         source="Microtubule stabiliser -> SAC-dependent mitotic arrest; death or slippage after "
                "many hours (Gascoigne & Taylor 2008 Cancer Cell 14:111)"),

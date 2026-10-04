@@ -1,0 +1,154 @@
+:root {
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --ink: #1d1f23;
+  --muted: #5f6670;
+  --line: #d9dce1;
+  --accent: #2463eb;
+  --stage: #eef0f3;
+  --chart-grid: #e6e8ec;
+  --c-live: #2463eb;
+  --c-apo: #ec4899;
+  --c-nec: #6b7280;
+  --c-g1: #2463eb;
+  --c-s: #16a34a;
+  --c-g2: #d97706;
+  --c-m: #dc2626;
+  --c-o2: #0891b2;
+  --c-drug: #9333ea;
+  --radius: 8px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317;
+    --panel: #181b20;
+    --ink: #e7e9ec;
+    --muted: #9aa3ad;
+    --line: #2b3038;
+    --accent: #6b9bff;
+    --stage: #0c0e11;
+    --chart-grid: #262a31;
+    --c-live: #6b9bff;
+    --c-g1: #6b9bff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317;
+  --panel: #181b20;
+  --ink: #e7e9ec;
+  --muted: #9aa3ad;
+  --line: #2b3038;
+  --accent: #6b9bff;
+  --stage: #0c0e11;
+  --chart-grid: #262a31;
+  --c-live: #6b9bff;
+  --c-g1: #6b9bff;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 var(--font);
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+.brand { font-size: 15px; }
+.loaders { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.fine { font-size: 12px; margin: 12px 0 0; }
+
+.button, select, button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.button:hover, select:hover { border-color: var(--accent); }
+button:disabled, select:disabled, input:disabled { opacity: 0.5; cursor: default; }
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  min-height: 0;
+}
+
+#stage-wrap { position: relative; background: var(--stage); min-height: 320px; }
+#stage { position: absolute; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; }
+
+.drop {
+  position: absolute;
+  inset: 24px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 16px;
+}
+.drop.hover { border-color: var(--accent); color: var(--ink); }
+
+.legend, .inspect {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+  max-width: calc(100% - 32px);
+}
+.legend { left: 16px; bottom: 16px; }
+.inspect { right: 16px; top: 16px; min-width: 180px; }
+.inspect table { border-collapse: collapse; }
+.inspect td { padding: 1px 6px 1px 0; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.ramp { width: 160px; height: 10px; border-radius: 2px; margin: 4px 0; }
+
+#panel {
+  min-width: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+}
+.meta { margin-bottom: 10px; overflow-wrap: anywhere; }
+.controls { display: grid; gap: 8px; margin-bottom: 8px; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row input[type="range"] { flex: 1; min-width: 0; }
+.check { display: inline-flex; align-items: center; gap: 4px; }
+
+.chart { margin: 12px 0 0; }
+.chart figcaption { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.chart svg { width: 100%; height: 130px; display: block; }
+.chart svg text { fill: var(--muted); font-size: 10px; font-family: var(--font); }
+.chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .series { fill: none; stroke-width: 1.8; }
+.chart .cursor { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+
+@media (max-width: 860px) {
+  main { grid-template-columns: minmax(0, 1fr); grid-template-rows: 60vh auto; }
+  #panel { border-left: none; border-top: 1px solid var(--line); }
+}
