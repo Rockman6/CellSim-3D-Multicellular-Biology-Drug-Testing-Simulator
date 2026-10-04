@@ -1,5 +1,45 @@
 # CellSim — Changelog
 
+## Unreleased — Phase 2 audit: refit, then re-measure everything
+
+### Fixed
+- The library's fitted potency constants predated the apoptotic buffer
+  and the efflux channel, though the docstring said a re-run reproduced
+  them within 1 %. Refitted under the current defaults: cisplatin
+  k_damage 0.000951 -> 0.001181, doxorubicin 0.00794 -> 0.01749,
+  paclitaxel partition 0.153 -> 0.212 (`scripts/validate_gdsc.py`).
+
+### Changed
+- Experiments state doses as multiples of each drug's own engine IC50,
+  computed at run time, so refitting the library cannot change what a
+  design means. Tests pin the potency their doses were designed at
+  (exactly a dose rescaling for cisplatin and paclitaxel).
+- `scripts/experiment_schedule.py` now measures the iso-effect curve
+  C50(T) for exposures of 1-72 h and compares it with Ozawa 1989,
+  Liebmann 1993 and Georgiadis 1997, including one documented miss
+  (24 h paclitaxel exposure is far too effective in the engine).
+- `scripts/experiment_combination.py` reports five seeds and two dose
+  designs, mean +- sd.
+
+### Corrected (see docs/VALIDATION.md, "Phase 2: audited")
+- RETRACTED: "pulsing selects a pharmacokinetic escape, not an apoptotic
+  one". It rested on one surviving lineage. Measured exactly on a trait
+  grid, the direction is the reverse for all three drugs: continuous
+  exposure selects on drug accumulation, pulsing shifts selection
+  toward the apoptotic reserve.
+- QUALIFIED: the platinum/taxane ordering effect. Absent with both drugs
+  at their IC50; ~12 % at 72 h with cisplatin at 1.25x IC50, fading to
+  ~3 % by 120-144 h. The earlier "0.93 -> 0.98 -> 0.99" was one seed.
+- REPLACED: the "242x / 17x / 7.6x" exposure-time ranking, which
+  depended on the dose chosen. The iso-effect curve keeps the ranking.
+
+### Added
+- `cellsim.cell.engine.ic50` (two-pass IC50), `exposure_h` on
+  `dose_response`/`ic50` (pulse then wash-out), and `traits=` on
+  `simulate` to set each cell's heterogeneity instead of drawing it.
+- `cellsim/cell/selection.py`: survival landscapes over trait space and
+  exact expected selection under the population's trait distribution.
+
 ## Unreleased — Phase 1, first validation cycle
 
 ### Added
