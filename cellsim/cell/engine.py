@@ -433,7 +433,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
              forced_D: Optional[float] = None, p: Params = Params(),
              k_cyc: Optional[float] = None, record_every_h: float = 1.0,
              dose_fn: Optional[Callable[[float], float]] = None,
-             on_record: Optional[Callable[["Population", float], None]] = None) -> SimResult:
+             on_record: Optional[Callable[["Population", float], None]] = None,
+             traits: Optional[dict] = None) -> SimResult:
     """Integrate a population for t_end_h. `C_out_uM` may be a per-cell
     vector; `groups` labels cells (e.g. by concentration) for readouts.
 
@@ -441,12 +442,20 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     concentration (µM) before each step, which is how dosing schedules
     and wash-outs are expressed. `on_record(pop, t_h)` is called at every
     record tick with the live population (read-only use), which is what
-    `cellsim.cell.stream` turns into a per-tick state stream for a UI."""
+    `cellsim.cell.stream` turns into a per-tick state stream for a UI.
+
+    `traits`, if given, sets each cell's heterogeneity multipliers
+    instead of drawing them: {"bcl2": (n_cells,), "uptake": (n_cells,)}.
+    Mapping outcome against chosen traits measures selection exactly,
+    where random draws only sample it."""
     rng = np.random.default_rng(seed)
     drugs = _as_drug_tuple(drug)
     n_drugs = max(1, len(drugs))
     pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma,
                           n_drugs=n_drugs)
+    if traits is not None:
+        pop.het_bcl2[:] = np.asarray(traits["bcl2"], float)
+        pop.het_uptake[:] = np.asarray(traits["uptake"], float)
     if groups is None:
         groups = np.zeros(n_cells, int)
     n_groups = int(groups.max()) + 1
@@ -540,14 +549,23 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
 
 def dose_response(line: CellLine, drug: Drug, conc_uM: np.ndarray, *, t_end_h: float = 72.0,
                   n_cells_per_conc: int = 96, dt_h: float = 0.02, seed: int = 1,
-                  p: Params = Params(), k_cyc: Optional[float] = None) -> tuple[np.ndarray, SimResult]:
+                  p: Params = Params(), k_cyc: Optional[float] = None,
+                  exposure_h: Optional[float] = None) -> tuple[np.ndarray, SimResult]:
     """Viability at t_end_h for each concentration (index 0 is the
-    untreated control, prepended automatically). One simulation."""
+    untreated control, prepended automatically). One simulation.
+
+    `exposure_h`, if given, washes the drug out at that time and reads
+    the plate at t_end_h, which is how exposure-duration studies are run
+    (e.g. a 3 h or 24 h pulse read at 72 h)."""
     conc = np.concatenate([[0.0], np.asarray(conc_uM, float)])
     groups = np.repeat(np.arange(len(conc)), n_cells_per_conc)
     C_out = conc[groups]
+    dose_fn = None
+    if exposure_h is not None:
+        none = np.zeros_like(C_out)
+        dose_fn = lambda t_h: C_out if t_h < exposure_h - 1e-9 else none  # noqa: E731
     res = simulate(line, drug, C_out, t_end_h=t_end_h, n_cells=len(groups), dt_h=dt_h,
-                   seed=seed, groups=groups, p=p, k_cyc=k_cyc)
+                   seed=seed, groups=groups, p=p, k_cyc=k_cyc, dose_fn=dose_fn)
     return res.viability(), res
 
 
@@ -566,6 +584,34 @@ def ic50_from_curve(conc_uM: np.ndarray, viability: np.ndarray) -> float:
             f = (v[i - 1] - 0.5) / max(v[i - 1] - v[i], 1e-12)
             return float(np.exp(lc0 + f * (lc1 - lc0)))
     return float("inf")
+
+
+def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 72.0,
+         n_cells_per_conc: int = 48, seed: int = 1, p: Params = Params(),
+         k_cyc: Optional[float] = None, exposure_h: Optional[float] = None) -> float:
+    """The engine's continuous-exposure IC50 (µM) for one line and drug.
+
+    Two passes: a 17-point grid over eight decades around `guess_uM`
+    (3.2-fold steps) to bracket the crossing, then 13 points across that
+    bracket (1.1-fold steps). Experiments use it to state doses as
+    multiples of a drug's own potency, which keeps a design meaningful
+    when the library's fitted constants are refitted. `exposure_h` gives
+    the IC50 of a pulse washed out at that time and read at t_end_h; it
+    is +inf when no concentration reaches half kill."""
+    if k_cyc is None:
+        k_cyc = calibrate_cycle_scale(line, p)
+    coarse = guess_uM * np.logspace(-4, 4, 17)
+    viab, _ = dose_response(line, drug, coarse, t_end_h=t_end_h, n_cells_per_conc=n_cells_per_conc,
+                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h)
+    first = ic50_from_curve(coarse, viab[1:])
+    if not np.isfinite(first) or first <= coarse[0]:
+        return first
+    i = int(np.searchsorted(coarse, first))
+    fine = np.geomspace(coarse[max(0, i - 1)], coarse[min(len(coarse) - 1, i)], 13)
+    viab, _ = dose_response(line, drug, fine, t_end_h=t_end_h, n_cells_per_conc=n_cells_per_conc,
+                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h)
+    refined = ic50_from_curve(fine, viab[1:])
+    return refined if np.isfinite(refined) else first
 
 
 # ── CLI ───────────────────────────────────────────────────────────────

@@ -123,8 +123,9 @@ No UI work until this exists.
    0.45 vs 0.46 — noise. The gate is now a paired per-line sign test.
 
    What IS established: each drug's potency scale, from one fitted
-   constant, with 22 of 25 held-out predictions inside GDSC's replicate
-   span against the null's 18.
+   constant, with 20 of 25 held-out predictions inside GDSC's replicate
+   span against the null's 18 (22 of 25 before the buffer and efflux
+   channels).
 
    What the measurement says is missing, now pinned down: the engine has
    no channel through which lines can differ. Sweeping each per-line
