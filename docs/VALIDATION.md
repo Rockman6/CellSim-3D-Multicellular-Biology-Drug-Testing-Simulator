@@ -488,7 +488,13 @@ log T would have slope −1.
 | doxorubicin (0.063 µM) | 2.06 | 0.68 | 0.34 | 0.17 | 0.089 | 0.060 | **−1.01** | 1 h |
 | paclitaxel (0.030 µM) | none | none | none | none | 0.037 | 0.030 | — | **24 h** |
 
-(C50 in µM; "none" = no concentration reaches half kill.)
+(C50 in µM; "none" = no concentration reaches half kill. **These are
+single-seed figures and carry about ±20 %** — repeating the run with a
+different seed moves each by 1.16–1.35×, for the reason set out under
+"Which published claims that ±20 % actually touches" below. Read them to
+one or two significant figures. The *slope* is not affected, because the
+seed shifts the whole curve together rather than tilting it, which is
+the point of that section.)
 
 **Cisplatin and doxorubicin are AUC-governed over short exposures**:
 C50 × T stays at 326–367 µM·h for cisplatin from 1 to 12 h and at
@@ -1048,8 +1054,9 @@ Phase-3 experiments were built: every one of them compares arms inside a
 run rather than quoting a number from one.
 
 What it does NOT justify is the single C50 figures quoted in the
-schedule table above, which carry an unstated ±20 % and should be read
-as one significant figure.
+schedule table above. They carried an unstated ±20 % until this audit;
+the table now says so, and they should be read to one or two
+significant figures.
 
 ### What a calibrated prediction is actually worth
 
