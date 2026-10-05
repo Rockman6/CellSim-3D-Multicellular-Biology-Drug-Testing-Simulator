@@ -1,0 +1,559 @@
+{
+ "line": "A549",
+ "drug": "cisplatin",
+ "perturbations": [
+  0.5,
+  2.0
+ ],
+ "plate_noise_sd": 0.05,
+ "pulse_hours": 12.0,
+ "readout_hours": 72.0,
+ "n_trials": 20,
+ "coverage": 0.8,
+ "median_band_width": 0.4346590909090909,
+ "median_constant_ratio": 0.8391575881067559,
+ "median_abs_point_error": 0.19573170731707323,
+ "usable": true,
+ "trials": [
+  {
+   "perturbation": 0.5,
+   "trial": 0,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.00046553573406441304,
+   "constant_ratio": 0.7883755022259323,
+   "constant_ci": [
+    0.00037514833441961397,
+    0.0005777008713798007
+   ],
+   "measured_ic50_uM": 23.15091104394824,
+   "measured_ic50_ci": [
+    18.523427219022764,
+    28.453217304045314
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.2682926829268293,
+   "holdout_truth_spread": 0.2164772727272727,
+   "holdout_band": [
+    0.2625,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.5613636363636363,
+   "point_error": 0.29268292682926833
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 1,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0004913495047130122,
+   "constant_ratio": 0.8320906091668285,
+   "constant_ci": [
+    0.00039595015983345425,
+    0.0005473505043716886
+   ],
+   "measured_ic50_uM": 21.65437335424957,
+   "measured_ic50_ci": [
+    19.50819190343808,
+    27.302646558242113
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.36585365853658536,
+   "holdout_truth_spread": 0.1875,
+   "holdout_band": [
+    0.4146341463414634,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.575,
+   "covered": false,
+   "band_width": 0.40922949002217296,
+   "point_error": 0.2091463414634146
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 2,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0004782684940059902,
+   "constant_ratio": 0.809938177825555,
+   "constant_ci": [
+    0.00044107812791523203,
+    0.0005935014339898908
+   ],
+   "measured_ic50_uM": 22.318421724768545,
+   "measured_ic50_ci": [
+    18.307003142559324,
+    24.551706841065023
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.32926829268292684,
+   "holdout_truth_spread": 0.17272727272727273,
+   "holdout_band": [
+    0.2625,
+    0.6875
+   ],
+   "holdout_point": 0.575,
+   "covered": true,
+   "band_width": 0.425,
+   "point_error": 0.2457317073170731
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 3,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0004913495047130122,
+   "constant_ratio": 0.8320906091668285,
+   "constant_ci": [
+    0.00044107812791523203,
+    0.0005935014339898908
+   ],
+   "measured_ic50_uM": 21.789514231932007,
+   "measured_ic50_ci": [
+    18.248428896027722,
+    24.407423563908445
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.36585365853658536,
+   "holdout_truth_spread": 0.2,
+   "holdout_band": [
+    0.3,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.575,
+   "covered": true,
+   "band_width": 0.4329545454545454,
+   "point_error": 0.2091463414634146
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 4,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.00046553573406441304,
+   "constant_ratio": 0.7883755022259323,
+   "constant_ci": [
+    0.00037514833441961397,
+    0.0005777008713798007
+   ],
+   "measured_ic50_uM": 23.354685565575284,
+   "measured_ic50_ci": [
+    18.393400260297348,
+    28.48044467475064
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.2682926829268293,
+   "holdout_truth_spread": 0.1960227272727273,
+   "holdout_band": [
+    0.24375,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.55,
+   "covered": true,
+   "band_width": 0.5801136363636363,
+   "point_error": 0.28170731707317076
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 5,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0004913495047130122,
+   "constant_ratio": 0.8320906091668285,
+   "constant_ci": [
+    0.00044107812791523203,
+    0.0005935014339898908
+   ],
+   "measured_ic50_uM": 21.722710195953603,
+   "measured_ic50_ci": [
+    18.26072016104041,
+    24.29062460082696
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.36585365853658536,
+   "holdout_truth_spread": 0.1875,
+   "holdout_band": [
+    0.3,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.575,
+   "covered": true,
+   "band_width": 0.4329545454545454,
+   "point_error": 0.2091463414634146
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 6,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.00040677970086561686,
+   "constant_ratio": 0.6888733291543047,
+   "constant_ci": [
+    0.0003554393635729493,
+    0.00045314195354080226
+   ],
+   "measured_ic50_uM": 26.516660454139306,
+   "measured_ic50_ci": [
+    23.64101243936267,
+    30.055676584800512
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.18292682926829268,
+   "holdout_truth_spread": 0.2534090909090909,
+   "holdout_band": [
+    0.4125,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.55,
+   "covered": false,
+   "band_width": 0.32045454545454544,
+   "point_error": 0.36707317073170737
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 7,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0005777008713798007,
+   "constant_ratio": 0.9783249303637607,
+   "constant_ci": [
+    0.0005047882911114329,
+    0.0006264108516255087
+   ],
+   "measured_ic50_uM": 18.710985900955542,
+   "measured_ic50_ci": [
+    17.132550882733806,
+    21.252705760860948
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.55,
+   "holdout_truth_spread": 0.09977827050997778,
+   "holdout_band": [
+    0.4146341463414634,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.55,
+   "covered": true,
+   "band_width": 0.318320399113082,
+   "point_error": 0.0
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 8,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0005623209611295829,
+   "constant_ratio": 0.9522793583904875,
+   "constant_ci": [
+    0.00045314195354080226,
+    0.0006097341541250319
+   ],
+   "measured_ic50_uM": 19.284889204109184,
+   "measured_ic50_ci": [
+    17.84876145845794,
+    23.61505815531746
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.4878048780487805,
+   "holdout_truth_spread": 0.12727272727272732,
+   "holdout_band": [
+    0.4146341463414634,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.55,
+   "covered": true,
+   "band_width": 0.40922949002217296,
+   "point_error": 0.06219512195121957
+  },
+  {
+   "perturbation": 0.5,
+   "trial": 9,
+   "true_constant": 0.0005905,
+   "calibrated_constant": 0.0005777008713798007,
+   "constant_ratio": 0.9783249303637607,
+   "constant_ci": [
+    0.0005047882911114329,
+    0.0006264108516255087
+   ],
+   "measured_ic50_uM": 18.66162667656041,
+   "measured_ic50_ci": [
+    17.09985562821333,
+    21.413233774912964
+   ],
+   "true_ic50_uM": 23.856359278616367,
+   "holdout_truth": 0.55,
+   "holdout_truth_spread": 0.09977827050997778,
+   "holdout_band": [
+    0.43902439024390244,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.293930155210643,
+   "point_error": 0.01097560975609757
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 0,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.00210961411520478,
+   "constant_ratio": 0.8931473815430906,
+   "constant_ci": [
+    0.00179428126560671,
+    0.0024803645896432987
+   ],
+   "measured_ic50_uM": 5.095860717891945,
+   "measured_ic50_ci": [
+    4.305379404362541,
+    6.056093241989327
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.4146341463414634,
+   "holdout_truth_spread": 0.1670454545454546,
+   "holdout_band": [
+    0.3125,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.5113636363636364,
+   "point_error": 0.14634146341463422
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 1,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.00210961411520478,
+   "constant_ratio": 0.8931473815430906,
+   "constant_ci": [
+    0.00179428126560671,
+    0.0025482044665347836
+   ],
+   "measured_ic50_uM": 5.121787525890786,
+   "measured_ic50_ci": [
+    4.217955060816442,
+    5.912166020258632
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.4146341463414634,
+   "holdout_truth_spread": 0.1443181818181818,
+   "holdout_band": [
+    0.2875,
+    0.7560975609756098
+   ],
+   "holdout_point": 0.55,
+   "covered": true,
+   "band_width": 0.4685975609756098,
+   "point_error": 0.13536585365853665
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 2,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.00210961411520478,
+   "constant_ratio": 0.8931473815430906,
+   "constant_ci": [
+    0.0017465127989212306,
+    0.002414330787953821
+   ],
+   "measured_ic50_uM": 5.063843669479528,
+   "measured_ic50_ci": [
+    4.410264362392308,
+    6.171227327290501
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.4146341463414634,
+   "holdout_truth_spread": 0.1670454545454546,
+   "holdout_band": [
+    0.3875,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.575,
+   "covered": true,
+   "band_width": 0.43636363636363634,
+   "point_error": 0.16036585365853656
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 3,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.001998782427364266,
+   "constant_ratio": 0.8462245670466834,
+   "constant_ci": [
+    0.0017465127989212306,
+    0.0026895013871612106
+   ],
+   "measured_ic50_uM": 5.375664154208138,
+   "measured_ic50_ci": [
+    4.041757340584255,
+    6.0817142470866035
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.36585365853658536,
+   "holdout_truth_spread": 0.1875,
+   "holdout_band": [
+    0.19375,
+    0.7560975609756098
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.5623475609756098,
+   "point_error": 0.19512195121951226
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 4,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.00216731368181753,
+   "constant_ratio": 0.9175756485256267,
+   "constant_ci": [
+    0.00179428126560671,
+    0.0024803645896432987
+   ],
+   "measured_ic50_uM": 4.961339021674481,
+   "measured_ic50_ci": [
+    4.281710264997589,
+    6.015124239153078
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.4625,
+   "holdout_truth_spread": 0.1649113082039912,
+   "holdout_band": [
+    0.3625,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.46136363636363636,
+   "point_error": 0.09847560975609759
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 5,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.00179428126560671,
+   "constant_ratio": 0.7596449049986072,
+   "constant_ci": [
+    0.0016107032041264252,
+    0.002226591375900752
+   ],
+   "measured_ic50_uM": 5.98307838837292,
+   "measured_ic50_ci": [
+    4.794417046777522,
+    6.595174470694514
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.2682926829268293,
+   "holdout_truth_spread": 0.2085227272727273,
+   "holdout_band": [
+    0.2625,
+    0.7102272727272727
+   ],
+   "holdout_point": 0.5609756097560976,
+   "covered": true,
+   "band_width": 0.4477272727272727,
+   "point_error": 0.29268292682926833
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 6,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.0020534506621759695,
+   "constant_ratio": 0.8693694590076078,
+   "constant_ci": [
+    0.0018433562365507846,
+    0.0028386331656417487
+   ],
+   "measured_ic50_uM": 5.222828059105332,
+   "measured_ic50_ci": [
+    3.8354357300376813,
+    5.902056937207122
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.4146341463414634,
+   "holdout_truth_spread": 0.16022727272727272,
+   "holdout_band": [
+    0.18125,
+    0.7102272727272727
+   ],
+   "holdout_point": 0.575,
+   "covered": true,
+   "band_width": 0.5289772727272727,
+   "point_error": 0.16036585365853656
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 7,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.0022874903604530477,
+   "constant_ratio": 0.968454852012298,
+   "constant_ci": [
+    0.0018433562365507846,
+    0.0026895013871612106
+   ],
+   "measured_ic50_uM": 4.721587969967208,
+   "measured_ic50_ci": [
+    3.9516276752070567,
+    5.7694126924771565
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.55,
+   "holdout_truth_spread": 0.10144124168514412,
+   "holdout_band": [
+    0.3125,
+    0.8238636363636364
+   ],
+   "holdout_point": 0.55,
+   "covered": true,
+   "band_width": 0.5113636363636364,
+   "point_error": 0.0
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 8,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.0019455696041446094,
+   "constant_ratio": 0.8236958527284545,
+   "constant_ci": [
+    0.0017000160539291224,
+    0.002226591375900752
+   ],
+   "measured_ic50_uM": 5.54808163852853,
+   "measured_ic50_ci": [
+    4.792389508219429,
+    6.326646412508541
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.35365853658536583,
+   "holdout_truth_spread": 0.17272727272727273,
+   "holdout_band": [
+    0.3625,
+    0.7329545454545454
+   ],
+   "holdout_point": 0.55,
+   "covered": false,
+   "band_width": 0.3704545454545454,
+   "point_error": 0.1963414634146342
+  },
+  {
+   "perturbation": 2.0,
+   "trial": 9,
+   "true_constant": 0.002362,
+   "calibrated_constant": 0.0018937734456485568,
+   "constant_ratio": 0.8017669117902442,
+   "constant_ci": [
+    0.0017465127989212306,
+    0.002226591375900752
+   ],
+   "measured_ic50_uM": 5.634235980387152,
+   "measured_ic50_ci": [
+    4.83998146164621,
+    6.223502444889923
+   ],
+   "true_ic50_uM": 4.627245914469459,
+   "holdout_truth": 0.3048780487804878,
+   "holdout_truth_spread": 0.1977272727272727,
+   "holdout_band": [
+    0.3125,
+    0.6875
+   ],
+   "holdout_point": 0.575,
+   "covered": false,
+   "band_width": 0.375,
+   "point_error": 0.27012195121951216
+  }
+ ]
+}

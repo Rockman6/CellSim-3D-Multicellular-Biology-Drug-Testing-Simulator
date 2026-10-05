@@ -80,7 +80,7 @@ def simulated_plate(line, drug, centre_uM, *, n_cells, rng, k_cyc, p):
     return conc, noisy
 
 
-def pulse_survival(line, drug, conc_uM, *, n_cells, k_cyc, p, seed=1):
+def pulse_survival(line, drug, conc_uM, *, n_cells, k_cyc, p, seed=1):  # noqa: D401
     """The held-out quantity: surviving fraction after a short pulse."""
     def dose(t_h):
         return conc_uM if t_h < PULSE_HOURS - 1e-9 else 0.0
@@ -122,20 +122,31 @@ def one_trial(perturb: float, trial: int, *, n_cells: int, cal_cells: int,
     except ValueError:
         return None
 
-    # 4-5. a condition none of the above involved
+    # 4-5. a condition none of the above involved. The band spans the
+    # calibrated interval AND seeds, because the engine's own run-to-run
+    # variability is as large as the calibration's (see predict_band).
     pulse_conc = 3.0 * fit.ic50_uM
-    band = [pulse_survival(line, cal.drug_at(w), pulse_conc, n_cells=n_cells,
-                           k_cyc=k, p=p) for w in ("low", "value", "high")]
-    truth = pulse_survival(line, truth_drug, pulse_conc, n_cells=n_cells, k_cyc=k, p=p)
-    lo, hi = min(band), max(band)
+    seeds = (1, 2, 3)
+    from cellsim.calibrate import predict_band
+    band_out = predict_band(
+        cal, lambda d, sd: pulse_survival(line, d, pulse_conc, n_cells=n_cells,
+                                          k_cyc=k, p=p, seed=sd), seeds=seeds)
+    lo, hi = band_out["range"]
+    band = [band_out["low"], band_out["value"], band_out["high"]]
+    # The truth is itself a stochastic quantity; its median over the same
+    # seeds is what the band is asked to contain.
+    truth_runs = [pulse_survival(line, truth_drug, pulse_conc, n_cells=n_cells,
+                                 k_cyc=k, p=p, seed=sd) for sd in seeds]
+    truth = float(np.median(truth_runs))
+    truth_spread = float(max(truth_runs) - min(truth_runs))
     return {"perturbation": perturb, "trial": trial,
             "true_constant": float(v_true), "calibrated_constant": cal.value,
             "constant_ratio": float(cal.value / v_true),
             "constant_ci": list(cal.ci),
             "measured_ic50_uM": fit.ic50_uM, "measured_ic50_ci": list(fit.ic50_ci),
             "true_ic50_uM": float(centre),
-            "holdout_truth": truth, "holdout_band": [lo, hi],
-            "holdout_point": band[1],
+            "holdout_truth": truth, "holdout_truth_spread": truth_spread,
+            "holdout_band": [lo, hi], "holdout_point": band[1],
             "covered": bool(lo <= truth <= hi),
             "band_width": float(hi - lo),
             "point_error": float(band[1] - truth)}
@@ -182,6 +193,9 @@ def main(argv=None) -> int:
     print(f"  held-out band covered:     {cov:.0%} of trials")
     print(f"  median band width:         {width:.3f} surviving fraction")
     print(f"  median point error:        {np.median(err):.3f}")
+    ts = np.array([r["holdout_truth_spread"] for r in rows])
+    print(f"  the truth's OWN seed spread: median {np.median(ts):.3f} — the engine is "
+          f"stochastic,\n{'':29}so no band can be narrower than this and still be honest")
     verdict = cov >= 0.7 and width < 0.5
     print(f"\nA calibrated prediction of an unseen condition is "
           f"{'USABLE' if verdict else 'NOT yet usable'}: the band contains the truth "
