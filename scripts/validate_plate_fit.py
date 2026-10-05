@@ -59,13 +59,17 @@ def study(conc: np.ndarray, noise: float, trials: int, n_boot: int) -> dict:
     """Fit `trials` noisy realisations of a known curve; count coverage."""
     rng = np.random.default_rng(abs(hash((noise, len(conc), trials))) % 2**32)
     clean = curve(conc)
-    hit = miss_low = miss_high = 0
+    hit = miss_low = miss_high = refused = 0
     widths, errors, extrap = [], [], 0
     for t in range(trials):
         v = clean + rng.normal(0.0, noise, len(conc))
         try:
             f = fit_4pl(conc, v, n_boot=n_boot, seed=t)
         except ValueError:
+            # Refusing a plate that cannot support a fit is the correct
+            # outcome, not a failure: counted separately so a row of
+            # refusals is not mistaken for a row of bad coverage.
+            refused += 1
             continue
         if not np.isfinite(f.ic50_ci[0]):
             continue
@@ -81,6 +85,7 @@ def study(conc: np.ndarray, noise: float, trials: int, n_boot: int) -> dict:
         extrap += bool(f.extrapolated)
     n = hit + miss_low + miss_high
     return {"n_points": len(conc), "noise_sd": noise, "n_fits": n,
+            "n_refused": refused,
             "coverage": hit / n if n else float("nan"),
             "missed_low": miss_low, "missed_high": miss_high,
             "median_ci_width_fold": float(np.median(widths)) if widths else float("nan"),
@@ -124,24 +129,29 @@ def main(argv=None) -> int:
               f"{r['median_ci_width_fold']:>9.2f}x{r['median_bias_fold']:>8.2f}")
 
     print("\nC) whether the tested range actually brackets the IC50 (noise sd 0.05)")
-    print(f"{'range uM':>16}{'fits':>7}{'coverage':>10}{'CI width':>10}{'extrapolated':>14}")
-    print("-" * 57)
+    print(f"{'range uM':>16}{'fits':>7}{'refused':>9}{'coverage':>10}"
+          f"{'CI width':>10}{'extrapolated':>14}")
+    print("-" * 66)
     for lo, hi in ((0.01, 100.0), (0.1, 30.0), (0.001, 0.5), (10.0, 1000.0)):
         r = study(np.geomspace(lo, hi, 10), 0.05, trials, n_boot)
         r["range_uM"] = [lo, hi]
         report["range"].append(r)
         label = f"{lo:g}-{hi:g}"
-        print(f"{label:>16}{r['n_fits']:>7}{r['coverage']:>10.0%}"
-              f"{r['median_ci_width_fold']:>9.2f}x{r['n_extrapolated']:>14}")
+        cov = f"{r['coverage']:.0%}" if r["n_fits"] else "-"
+        wid = f"{r['median_ci_width_fold']:.2f}x" if r["n_fits"] else "-"
+        print(f"{label:>16}{r['n_fits']:>7}{r['n_refused']:>9}{cov:>10}"
+              f"{wid:>10}{r['n_extrapolated']:>14}")
 
     ok = [r for r in report["noise"] if r["noise_sd"] <= 0.10]
     calibrated = all(abs(r["coverage"] - NOMINAL) <= 0.10 for r in ok)
     report["calibrated_within_10_points"] = bool(calibrated)
     print(f"\nCalibrated at realistic noise (every level within 10 points of 95 %): "
           f"{'YES' if calibrated else 'NO'}")
-    print("Rows C show what a badly chosen concentration range does: the fit still\n"
-          "returns a number, the interval still looks narrow, and the truth is\n"
-          "outside it. That is why fit_4pl flags extrapolated fits explicitly.")
+    print("Rows C are about the concentration range. A range that brackets the IC50\n"
+          "behaves; one that sits entirely to one side is refused outright, because\n"
+          "a flat plate cannot locate a midpoint; one that only clips the response\n"
+          "still fits, and those are the dangerous ones — a number, a narrow\n"
+          "interval, and the truth outside it. Hence FitResult.extrapolated.")
     if not a.no_write:
         OUT_JSON.write_text(json.dumps(report, indent=1, default=float) + "\n")
         print(f"\nwrote {OUT_JSON.relative_to(REPO_ROOT)}")
