@@ -1,0 +1,500 @@
+{
+ "n_heldout": 73,
+ "drugs": [
+  "5-fluorouracil",
+  "cisplatin",
+  "docetaxel",
+  "doxorubicin",
+  "etoposide",
+  "gemcitabine",
+  "nutlin-3a",
+  "paclitaxel",
+  "sn-38",
+  "vinorelbine"
+ ],
+ "gdsc_replicate_spread_fold": 5.262820512820513,
+ "levels": {
+  "68%": 1.0,
+  "90%": 1.645,
+  "95%": 1.96
+ },
+ "per_drug": {
+  "5-fluorouracil": {
+   "n": 5,
+   "width_log10_from_other_drugs": 0.4297121389286782,
+   "own_rmse_log10": 0.20157960355609622,
+   "coverage": {
+    "68%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 2.6897513795297683
+    },
+    "90%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 5.091860167187875
+    },
+    "95%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 6.954017708736961
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 2.722632646583333
+    },
+    "90%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 5.194658278868763
+    },
+    "95%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 7.12161568752563
+    }
+   }
+  },
+  "cisplatin": {
+   "n": 5,
+   "width_log10_from_other_drugs": 0.4146514822557189,
+   "own_rmse_log10": 0.5821458947304452,
+   "coverage": {
+    "68%": {
+     "covered": 2,
+     "n": 5,
+     "coverage": 0.4,
+     "interval_fold": 2.598073793552721
+    },
+    "90%": {
+     "covered": 3,
+     "n": 5,
+     "coverage": 0.6,
+     "interval_fold": 4.809519482360415
+    },
+    "95%": {
+     "covered": 4,
+     "n": 5,
+     "coverage": 0.8,
+     "interval_fold": 6.497060415157641
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 2,
+     "n": 5,
+     "coverage": 0.4,
+     "interval_fold": 2.636335203361107
+    },
+    "90%": {
+     "covered": 4,
+     "n": 5,
+     "coverage": 0.8,
+     "interval_fold": 4.926585615851462
+    },
+    "95%": {
+     "covered": 5,
+     "n": 5,
+     "coverage": 1.0,
+     "interval_fold": 6.685920875068589
+    }
+   }
+  },
+  "docetaxel": {
+   "n": 9,
+   "width_log10_from_other_drugs": 0.4176183913971942,
+   "own_rmse_log10": 0.4888070878212088,
+   "coverage": {
+    "68%": {
+     "covered": 5,
+     "n": 9,
+     "coverage": 0.5555555555555556,
+     "interval_fold": 2.6158834571705993
+    },
+    "90%": {
+     "covered": 7,
+     "n": 9,
+     "coverage": 0.7777777777777778,
+     "interval_fold": 4.8638733051453995
+    },
+    "95%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 6.584640170424193
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 2.7173877365655468
+    },
+    "90%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 5.178206914499015
+    },
+    "95%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 7.094750998321778
+    }
+   }
+  },
+  "doxorubicin": {
+   "n": 9,
+   "width_log10_from_other_drugs": 0.42048132078192907,
+   "own_rmse_log10": 0.37764904784511577,
+   "coverage": {
+    "68%": {
+     "covered": 6,
+     "n": 9,
+     "coverage": 0.6666666666666666,
+     "interval_fold": 2.633184686678703
+    },
+    "90%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 4.916904494615468
+    },
+    "95%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 6.670269616572007
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 7,
+     "n": 9,
+     "coverage": 0.7777777777777778,
+     "interval_fold": 2.6587913668374923
+    },
+    "90%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 4.995806487078736
+    },
+    "95%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 6.797999831479141
+    }
+   }
+  },
+  "etoposide": {
+   "n": 8,
+   "width_log10_from_other_drugs": 0.39791250636284475,
+   "own_rmse_log10": 0.5214140264719362,
+   "coverage": {
+    "68%": {
+     "covered": 4,
+     "n": 8,
+     "coverage": 0.5,
+     "interval_fold": 2.4998416889947603
+    },
+    "90%": {
+     "covered": 6,
+     "n": 8,
+     "coverage": 0.75,
+     "interval_fold": 4.514046962084963
+    },
+    "95%": {
+     "covered": 7,
+     "n": 8,
+     "coverage": 0.875,
+     "interval_fold": 6.02432665554365
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 4,
+     "n": 8,
+     "coverage": 0.5,
+     "interval_fold": 2.548046809738017
+    },
+    "90%": {
+     "covered": 5,
+     "n": 8,
+     "coverage": 0.625,
+     "interval_fold": 4.658125406067511
+    },
+    "95%": {
+     "covered": 5,
+     "n": 8,
+     "coverage": 0.625,
+     "interval_fold": 6.254124293455146
+    }
+   }
+  },
+  "gemcitabine": {
+   "n": 8,
+   "width_log10_from_other_drugs": 0.43555316861807747,
+   "own_rmse_log10": 0.1488276463743022,
+   "coverage": {
+    "68%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 2.7261714707707987
+    },
+    "90%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 5.2057698329947595
+    },
+    "95%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 7.1397698161828345
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 7,
+     "n": 8,
+     "coverage": 0.875,
+     "interval_fold": 2.7543859085149482
+    },
+    "90%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 5.29469290671369
+    },
+    "95%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 7.285319190145758
+    }
+   }
+  },
+  "nutlin-3a": {
+   "n": 3,
+   "width_log10_from_other_drugs": 0.425470661649729,
+   "own_rmse_log10": 0.23456006360818732,
+   "coverage": {
+    "68%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 2.6636101530409975
+    },
+    "90%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 5.010709655998312
+    },
+    "95%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 6.822169364560376
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 2.7119744420655576
+    },
+    "90%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 5.161248854095137
+    },
+    "95%": {
+     "covered": 3,
+     "n": 3,
+     "coverage": 1.0,
+     "interval_fold": 7.067075988211927
+    }
+   }
+  },
+  "paclitaxel": {
+   "n": 9,
+   "width_log10_from_other_drugs": 0.4194769652430864,
+   "own_rmse_log10": 0.3739327564764583,
+   "coverage": {
+    "68%": {
+     "covered": 5,
+     "n": 9,
+     "coverage": 0.5555555555555556,
+     "interval_fold": 2.6271021826191276
+    },
+    "90%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 4.898234894233119
+    },
+    "95%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 6.640103546806364
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 7,
+     "n": 9,
+     "coverage": 0.7777777777777778,
+     "interval_fold": 2.739653227941905
+    },
+    "90%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 5.248186435608835
+    },
+    "95%": {
+     "covered": 9,
+     "n": 9,
+     "coverage": 1.0,
+     "interval_fold": 7.209138464149746
+    }
+   }
+  },
+  "sn-38": {
+   "n": 9,
+   "width_log10_from_other_drugs": 0.38683257609991906,
+   "own_rmse_log10": 0.6362391579515823,
+   "coverage": {
+    "68%": {
+     "covered": 4,
+     "n": 9,
+     "coverage": 0.4444444444444444,
+     "interval_fold": 2.4368712044664145
+    },
+    "90%": {
+     "covered": 6,
+     "n": 9,
+     "coverage": 0.6666666666666666,
+     "interval_fold": 4.328521586327948
+    },
+    "95%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 5.7304911895991975
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 4,
+     "n": 9,
+     "coverage": 0.4444444444444444,
+     "interval_fold": 2.5470178866704454
+    },
+    "90%": {
+     "covered": 7,
+     "n": 9,
+     "coverage": 0.7777777777777778,
+     "interval_fold": 4.655031579128604
+    },
+    "95%": {
+     "covered": 8,
+     "n": 9,
+     "coverage": 0.8888888888888888,
+     "interval_fold": 6.2491753340194816
+    }
+   }
+  },
+  "vinorelbine": {
+   "n": 8,
+   "width_log10_from_other_drugs": 0.42123270629664245,
+   "own_rmse_log10": 0.448385327757634,
+   "coverage": {
+    "68%": {
+     "covered": 5,
+     "n": 8,
+     "coverage": 0.625,
+     "interval_fold": 2.637744379383104
+    },
+    "90%": {
+     "covered": 7,
+     "n": 8,
+     "coverage": 0.875,
+     "interval_fold": 4.930918243895593
+    },
+    "95%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 6.692927249318358
+    }
+   },
+   "null_coverage": {
+    "68%": {
+     "covered": 4,
+     "n": 8,
+     "coverage": 0.5,
+     "interval_fold": 2.651453816553196
+    },
+    "90%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 4.973146924917967
+    },
+    "95%": {
+     "covered": 8,
+     "n": 8,
+     "coverage": 1.0,
+     "interval_fold": 6.761277660239175
+    }
+   }
+  }
+ },
+ "pooled": {
+  "68%": {
+   "nominal": 0.68,
+   "observed": 0.6438356164383562,
+   "n": 73,
+   "mean_interval_fold": 2.604895759125183,
+   "null_observed": 0.6986301369863014,
+   "null_mean_interval_fold": 2.6647603673494067
+  },
+  "90%": {
+   "nominal": 0.9,
+   "observed": 0.8493150684931506,
+   "n": 73,
+   "mean_interval_fold": 4.833050904800497,
+   "null_observed": 0.9041095890410958,
+   "null_mean_interval_fold": 5.0163393244426935
+  },
+  "95%": {
+   "nominal": 0.95,
+   "observed": 0.9452054794520548,
+   "n": 73,
+   "mean_interval_fold": 6.537090810851078,
+   "null_observed": 0.9315068493150684,
+   "null_mean_interval_fold": 6.832935090137792
+  }
+ },
+ "calibrated_within_15_points": true
+}

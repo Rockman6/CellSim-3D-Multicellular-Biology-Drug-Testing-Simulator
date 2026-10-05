@@ -1,5 +1,57 @@
 # CellSim — Changelog
 
+## Unreleased — Phase 3: ten drugs, calibrated intervals, evolved resistance
+
+### Added
+- Ten-drug panel covering every mechanism the engine can express, each
+  with one fitted constant and GDSC screens on our lines: + etoposide,
+  sn-38, gemcitabine, 5-fluorouracil, docetaxel, vinorelbine, nutlin-3a.
+  Two new mechanisms for it: 's_phase' (damage only where replication
+  forks are moving) and 'mdm2' (an inhibitor occupying MDM2's p53
+  pocket), plus CellLine.p53_mdm2_independent_deg_per_h for the HPV E6
+  route.
+- `scripts/calibrate_cell_uncertainty.py`: prediction intervals scored
+  leave-one-drug-out, so no width is tested on the errors that built it.
+- `DishParams.mutation_rate` / `mutation_effect_sd`: heritable change at
+  division, so resistance can arise during treatment rather than only be
+  selected. `scripts/experiment_evolution.py` and its homogeneous-start
+  control.
+- `cellsim/api.py`: five tidy-table functions for notebook use
+  (curve, exposure, washout, combination, spheroid) plus lines/drugs.
+- `docs/cell_tutorial.md`: one real question answered end to end, every
+  command run and its actual output pasted in.
+- `web/index.html` landing page; `.github/workflows/pages.yml`, which
+  simulates the demo runs at deploy time instead of committing them;
+  `packaging/conda-forge/meta.yaml` (prepared, not submitted).
+- `tests/test_pip_install.py`: builds a bare venv, pip-installs the
+  project and runs the simulator there, asserting RDKit is absent — the
+  gate behind "the cell simulator needs only NumPy and SciPy".
+
+### Results
+- The Phase-1 conclusion holds at ten drugs: engine closer than a
+  constant-IC50 null on 34 held-out lines, further on 39, p = 0.64.
+- THE EXCEPTION: nutlin-3a, whose target is part of the mechanism. All
+  eleven lines called correctly (nine held out) against the null's five,
+  including HeLa, resistant despite wild-type TP53 because HPV E6
+  degrades p53 independently of MDM2.
+- Intervals calibrated within 15 points of nominal at 68/90/95 %.
+- Resistance evolves from an identical population (1.85x) where
+  selection alone can produce nothing, and a hard pulsed schedule
+  eradicates before it gets started.
+
+### Fixed
+- `tests/cell/test_gdsc_targets_smoke.py` asserted the reference covered
+  exactly three named drugs, so it would have passed while validating
+  nothing as the panel grew. It now checks against the library, and
+  immediately found DLD-1 and SW480 match no GDSC screens — both
+  genuinely absent from release 8.4, now recorded rather than silently
+  substituted with a sister line.
+- `scripts/gdsc_reference.py` matched cell-line names exactly, silently
+  dropping HCT116 (GDSC: HCT-116). New `CellLine.gdsc_name`.
+- The IC50 estimator used a single 4.6-fold-step grid, which moved a
+  fitted line's own prediction by up to 15 % between runs; it is now
+  two-pass.
+
 ## Unreleased — Phase 2: the dish
 
 ### Added

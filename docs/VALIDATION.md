@@ -197,6 +197,11 @@ held-out log10 RMSE 0.65 / 0.43 / 0.32 against the null's
 
 ### Exit gate: NOT met
 
+*Re-measured at ten drugs in Phase 3 (below): 34 wins to 39 losses over
+91 held-out predictions, p = 0.64. The conclusion holds, and the larger
+panel also found the one exception — a drug whose target is part of the
+modelled mechanism, where the engine does call lines correctly.*
+
 Paired per-line comparison against the null on held-out lines: the
 engine is closer on **10**, the null is closer on **11**, two-sided sign
 test **p = 1.0**. The engine does not yet tell cell lines apart better
@@ -733,6 +738,142 @@ Cancer 33:1291, cannot be used: the engine keeps no paclitaxel in a cell
 after wash-out, and kills nothing with exposures under 24 h).
 
 Gated by `tests/cell/test_dish_smoke.py` (7 gates, 20 s).
+## Phase 3: ten drugs, and the one place the engine does tell lines apart
+
+The panel is ten drugs across eleven lines — 91 held-out predictions
+against 25 in Phase 1 — chosen so that every mechanism the engine can
+express is covered and each has GDSC screens on our lines. Each carries
+exactly one fitted constant, fitted on the clean TP53 wild-type lines and
+applied unchanged everywhere else (`scripts/validate_gdsc.py`).
+
+| Drug | Mechanism | Fitted | In GDSC span | Sensitive/resistant call | Spearman |
+|---|---|---|:-:|:-:|:-:|
+| cisplatin | DNA adduct | `k_damage` 0.00118 | 8/11 | 6/11 | −0.03 |
+| doxorubicin | TopII | `k_damage` 0.0175 | 9/11 | 11/11 | 0.58 |
+| etoposide | TopII | `k_damage` 0.00958 | 6/10 | 10/10 | 0.41 |
+| sn-38 | TOP1, S phase | `k_damage` 2.07 | 8/11 | 11/11 | −0.19 |
+| gemcitabine | antimetabolite | `k_damage` 1.23 | 10/11 | 10/11 | 0.72 |
+| 5-fluorouracil | antimetabolite | `k_damage` 0.00313 | 9/11 | 6/11 | 0.94 |
+| paclitaxel | tubulin | `partition` 0.212 | 9/11 | 10/11 | −0.06 |
+| docetaxel | tubulin | `partition` 0.274 | 7/11 | 11/11 | 0.03 |
+| vinorelbine | tubulin | `partition` 0.302 | 7/11 | 10/11 | 0.44 |
+| **nutlin-3a** | **MDM2** | `partition` 0.013 | **11/11** | **11/11** (null 5/11) | −0.30 |
+
+**The Phase-1 conclusion survives the larger panel, and is now much
+better measured.** On held-out lines the engine is closer than a
+constant-IC50 null on 34 and further on 39 (sign test p = 0.64), and
+lands inside GDSC's replicate span 67 times against the null's 68. Ten
+drugs and 91 predictions say the same thing three drugs and 25 said:
+**the engine reproduces each drug's potency scale and does not rank cell
+lines better than a single number.** That is now a result rather than a
+small-sample suspicion.
+
+**But the panel also found the exception, and it is the informative
+one.** Nutlin-3a is the only drug whose line-to-line differences are
+*mechanism* rather than an unmeasured marker: it blocks MDM2, so p53
+accumulates without any DNA damage, and whether that kills depends on
+whether functional p53 is there to accumulate. The engine gets all
+eleven lines right, nine of them held out, where the null gets five:
+
+| Line | TP53 | Engine | GDSC | |
+|---|---|---|---|---|
+| A549, MCF7, HCT116, HT-1080, U-2-OS | wild-type | sensitive | sensitive | ✓ |
+| HT-29, MDA-MB-231, MDA-MB-468, MIA-PaCa-2, T47D | mutant | resistant | resistant | ✓ |
+| **HeLa** | **wild-type** | **resistant** | **resistant** | ✓ |
+
+HeLa is the sharp one. Its TP53 is wild-type by sequence, so a model
+reading the genotype would call it sensitive and be wrong. HPV18 E6 hands
+p53 to the E6AP ligase instead of MDM2, and in cervical cancer cells that
+switch is complete (Hengstermann et al. 2001 PNAS 98:1218), so blocking
+MDM2 cannot rescue a protein that is no longer being degraded by MDM2.
+That route is in the engine as `CellLine.p53_mdm2_independent_deg_per_h`,
+and switching it off makes the engine predict HeLa sensitive — the
+specificity check is in the test suite.
+
+Nothing about this was fitted to the p53 split: nutlin's one fitted
+constant is its partition coefficient, fitted on two wild-type lines.
+
+**So the honest statement is narrower and more useful than either
+extreme.** The engine cannot rank lines for cytotoxic drugs, because the
+differences there live in markers it cannot see. It *can* call which
+lines respond to a drug whose target is part of the modelled mechanism,
+including a line whose genotype points the wrong way. That is the case
+for building more mechanism rather than more markers.
+
+Gated by `tests/cell/test_mdm2_p53_smoke.py` (4 gates, 8 s).
+
+## Phase 3: how wrong is a predicted IC50?
+
+A prediction without an interval is not usable, and an interval that has
+never been scored is not an interval
+(`scripts/calibrate_cell_uncertainty.py`). The width comes from the
+spread of held-out log10 errors; the test is **leave-one-drug-out**, so
+each drug is scored with a width built only from the other nine. Scoring
+a width on the errors that built it would read as well calibrated however
+badly it generalised.
+
+| Nominal | Engine interval | Engine coverage | Null interval | Null coverage |
+|---|:-:|:-:|:-:|:-:|
+| 68 % | ±2.6× | 64 % | ±2.7× | 70 % |
+| 90 % | ±4.8× | 85 % | ±5.0× | 90 % |
+| 95 % | ±6.5× | **95 %** | ±6.8× | 93 % |
+
+Every level lands within 15 points of nominal, so the stated interval
+means what it says. Two things to read with it. The intervals are wide —
+a factor of five at 90 % — and that is the honest width given that most
+line-to-line variation is not in the markers the engine can see; GDSC's
+own replicate screens of the same line and drug disagree by a median
+5.3×, which is the floor nothing can honestly go below. And the null's
+intervals are just as narrow at the same coverage, which is the same
+finding as the paired test, now in the uncertainty picture: the engine's
+*point* predictions are not better than a constant per drug, so neither
+are its error bars.
+
+## Phase 3: resistance that evolves, not only resistance selected
+
+Everything before this could select from the spread a population already
+had: heterogeneity was drawn once, so every lineage that survived had
+been resistant from the start. `DishParams.mutation_rate` lets a daughter
+differ heritably from her mother, and the control that makes the claim
+testable is a **homogeneous start** — identical cells, so selection has
+nothing to act on (`scripts/experiment_evolution.py`, A549 + cisplatin,
+seven days, fold against the untreated arm of the same condition):
+
+| Start | Mutation | Schedule | Survivors | Accumulation | Reserve | IC50 |
+|---|---|---|:-:|:-:|:-:|:-:|
+| identical | off | continuous | **0** | — | — | — |
+| identical | off | pulsed 3× | **0** | — | — | — |
+| identical | on | continuous | 230 | **0.61** | 1.03 | **1.85×** |
+| identical | on | pulsed 3× | **0** (10 mutations first) | — | — | — |
+| spread 0.3 | off | continuous | 2535 | 0.68 | 1.05 | 1.29× |
+| spread 0.3 | on | pulsed 3× | 27 | 0.56 | **1.75** | **2.18×** |
+
+Four things follow, and the first is the control:
+
+1. **Identical cells with no heritable change are eradicated.** No
+   resistance is possible when there is neither standing variation nor
+   mutation, which is what makes the rest of the table mean something.
+2. **Resistance arises where nothing was there to select.** From
+   identical cells, continuous exposure leaves survivors that accumulate
+   40 % less drug and need 1.85× the dose.
+3. **A hard intermittent schedule can win the race.** The same total
+   exposure given as brief 3× pulses eradicates the identical population
+   after only ten mutations have occurred — resistance never gets
+   started.
+4. **Where standing variation exists, pulsing leaves the most resistant
+   remnant**, and selects on the apoptotic reserve (1.75) rather than on
+   accumulation. That is what the corrected Phase-2 selection measurement
+   found by a completely different method.
+
+Fold-resistance reaches 1.3–2.2×, against the two- to eight-fold that
+derived lines actually reach (McDermott et al. 2014 Front Oncol 4:40), so
+the assumed mutation rate is if anything conservative. It is a modelling
+choice, not a measurement: resistance here arises from many routes at
+once whose combined rate per division is not a published constant, and
+the script reports what a given rate produces rather than claiming one.
+
+Gated by `tests/cell/test_evolution_smoke.py` (4 gates, 18 s), including
+the control that identical cells without mutation cannot drift.
 
 ## GDSC reference data (the Phase-1 validation target)
 

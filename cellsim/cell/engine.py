@@ -302,7 +302,15 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     atm_target = 1.0 / (1.0 + np.exp(-p.atm_gain * (D - p.atm_threshold)))
     dY[:, 7] = (atm_target - ATM) / p.atm_tau_h
     eff_mdm2 = MDM2 * (1.0 - ATM * p.atm_shield)
-    dY[:, 8] = s * (p.p53_k_basal - p.p53_k_deg * eff_mdm2 / (p.p53_Kd + p53) * p53)
+    # An MDM2 inhibitor (nutlin class) occupies the p53-binding pocket, so
+    # only the unoccupied fraction of MDM2 can degrade p53 (Vassilev et
+    # al. 2004 Science 303:844).
+    for i, dg in enumerate(drugs):
+        if dg.mechanism == "mdm2":
+            ci = Cin_all[i]
+            eff_mdm2 = eff_mdm2 * (1.0 - ci / (ci + dg.Kd_target_uM))
+    dY[:, 8] = s * (p.p53_k_basal - p.p53_k_deg * eff_mdm2 / (p.p53_Kd + p53) * p53
+                    - line.p53_mdm2_independent_deg_per_h * p53)
     dY[:, 9] = s * (p.mdm2_k_basal + p.mdm2_k_max * _hill8(p53, p.mdm2_K_hill) * f53
                     - p.mdm2_k_mrna_deg * mRNA)
     dY[:, 10] = s * (p.mdm2_k_translate * mRNA - p.mdm2_k_prot_deg * MDM2)
@@ -315,6 +323,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
             dD = dD + dg.k_damage_per_uM_h * ci
         elif dg.mechanism == "topo2":
             dD = dD + dg.k_damage_per_uM_h * ci * np.where(phase == 1, dg.s_phase_factor, 1.0)
+        elif dg.mechanism == "s_phase":
+            # TOP1 poisons and antimetabolites damage DNA only where forks
+            # are moving: a TOP1 cleavage complex becomes a double-strand
+            # break when a replication fork runs into it (Pommier 2006 Nat
+            # Rev Cancer 6:789); nucleotide analogues act on synthesis.
+            dD = dD + dg.k_damage_per_uM_h * ci * (phase == 1)
     forced = aux["forced_D"]
     dY[:, 11] = np.where(np.isnan(forced), dD, 0.0)
 
