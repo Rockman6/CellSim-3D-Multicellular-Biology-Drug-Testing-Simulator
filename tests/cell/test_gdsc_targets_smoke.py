@@ -23,10 +23,36 @@ _spec.loader.exec_module(vg)
 
 TARGETS = vg.load_targets(vg.REFERENCE_CSV)
 
+# Library lines that GDSC release 8.4 does not screen at all. Listed
+# explicitly so that a line vanishing from the reference is either
+# deliberate or a test failure, never a silent name mismatch — which is
+# how HCT116 (GDSC: HCT-116) went missing for months.
+#   DLD-1  absent entirely; its sister line HCT-15 is present, but they
+#          are not the same culture and substituting one would be exactly
+#          the provenance error this file exists to catch.
+#   SW480  absent; GDSC has SW48 and SW620, neither of which is SW480.
+NOT_IN_GDSC = {"DLD-1", "SW480"}
 
-def test_reference_covers_the_three_drugs():
+
+def test_reference_covers_every_drug_and_line_in_the_library():
+    """The reference must cover the whole library, not a fixed list: when
+    the panel grew from three drugs to ten, a hard-coded set here would
+    have passed while silently validating nothing new. The same mistake
+    in scripts/gdsc_reference.py dropped HCT116 for months, because GDSC
+    calls it HCT-116 and the matching was exact."""
+    from cellsim.cell.library import CELL_LINES, DRUGS
     drugs = {d for (d, _) in TARGETS}
-    assert drugs == {"cisplatin", "doxorubicin", "paclitaxel"}, drugs
+    assert drugs == set(DRUGS), f"missing {set(DRUGS) - drugs}, extra {drugs - set(DRUGS)}"
+    lines = {ln for (_, ln) in TARGETS}
+    missing = set(CELL_LINES) - lines - NOT_IN_GDSC
+    # Not every line is screened with every drug, but a line absent
+    # entirely is either a name that failed to match (a bug) or one GDSC
+    # does not screen (listed above, with the check that it really is
+    # absent rather than renamed).
+    assert not missing, f"no GDSC screens matched for {sorted(missing)}"
+    for drug in DRUGS:
+        n = sum(1 for (d, _) in TARGETS if d == drug)
+        assert n >= 5, f"{drug} has only {n} lines; too few to validate against"
 
 
 def test_span_is_at_least_three_fold_either_side():

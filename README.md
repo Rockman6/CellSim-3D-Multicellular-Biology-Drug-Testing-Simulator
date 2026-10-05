@@ -11,27 +11,36 @@ cell-line data. The molecular layer (docking, ADMET, quantum descriptors)
 feeds that engine as an input with provenance and a measured accuracy
 flag; it is not the product on its own.
 
-> **Status (October 2026).** Phases 0 and 1 of the [plan](docs/PLAN.md)
-> are closed. The July fixes are merged, the smoke suite is green, the
-> repository has one identity, and `cellsim/cell/` holds a validated
-> single-cell drug-response engine.
+> **Status (October 2026).** Phases 0–2 of the [plan](docs/PLAN.md) are
+> done and Phase 3 is in review. The smoke suite is green, the repository
+> has one identity, and `cellsim/cell/` holds a validated drug-response
+> engine that runs well-mixed or in space.
 >
 > **Phase 1 closed with a negative result that set the direction.** The
 > engine reproduces each drug's potency scale, but predicting *which
 > cell line* is more sensitive turned out to be unreachable: eleven
 > canonical markers, fitted optimally across 156–683 lines, explain only
 > 9–20 % of the difference between lines. So per-line ranking is out of
-> scope, and Phase 2 aims at what mechanism is actually good for —
+> scope, and Phase 2 aimed at what mechanism is actually good for —
 > **within-line dynamics**: dose schedule, wash-out, resistance under
-> selection, combination timing. The reasoning and numbers are in
-> [`docs/VALIDATION.md`](docs/VALIDATION.md).
+> selection, combination timing.
 >
-> **Phase 2 has its dish.** `cellsim dish` grows the engine's cells in
-> space — a monolayer with contact inhibition, or a spheroid with
-> oxygen and drug diffusing in, hypoxic quiescence and a necrotic core —
-> and [`web/viewer/`](web/viewer/) renders the per-cell stream in a
-> browser. Every Phase-2 claim was re-measured over seeds before the dish
-> was built on it, and one was retracted.
+> **Phase 2 built the dish.** `cellsim dish` grows those cells in space —
+> a monolayer with contact inhibition, or a spheroid with oxygen and drug
+> diffusing in, hypoxic quiescence and a necrotic core — and
+> [`web/viewer/`](web/viewer/) renders the per-cell stream in a browser.
+> Every Phase-2 claim was re-measured over seeds and doses before the
+> dish was built on it; one was retracted and one qualified.
+>
+> **Phase 3 found the exception to the Phase-1 result.** Across ten drugs
+> and 91 held-out predictions the conclusion holds — except for the one
+> drug whose target is part of the modelled mechanism. An MDM2 inhibitor
+> works by stabilising p53, and the engine calls all eleven lines
+> correctly (a constant gets five), including HeLa, whose TP53 is
+> wild-type by sequence but whose p53 is degraded by HPV E6 rather than
+> by MDM2. So: no ranking lines for cytotoxic drugs, but yes for a drug
+> whose mechanism is modelled. Every number is in
+> [`docs/VALIDATION.md`](docs/VALIDATION.md), misses included.
 >
 > The 2026 C++/Metal prototype lives in [`OLD/`](OLD/) as a biology
 > reference; it still builds and passes its 8 headless benchmarks, but
@@ -46,6 +55,7 @@ flag; it is not the product on its own.
 | Target-class reliability (`cellsim/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
 | ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `cellsim/chem/admet.py` |
 | CYP3A4 site of metabolism (`cellsim som`) | xTB C–H bond-dissociation ranking with a heme-accessibility re-rank | 2/3 on the bundled literature set; blind to N-dealkylation. **Advisory only.** |
+| Calibrated uncertainty (`scripts/calibrate_cell_uncertainty.py`) | Every predicted IC50 comes with an interval whose coverage has been scored | Leave-one-drug-out: ±2.6× covers 64 % (68 % nominal), ±4.8× covers 85 % (90 %), ±6.5× covers 95 % (95 %). Wide on purpose — GDSC's own replicate screens disagree by a median 5.3× |
 | Cell drug-response engine (`cellsim cell-sim`, `cellsim cell-stream`) | Pick a cell line, a drug and a **dose schedule**; get the colony over time, viability, and a per-cell state stream (JSON Lines) for a UI. Built for *within-line* questions: schedule, wash-out, resistance, combinations | Each drug's potency scale is right (A549 cisplatin 10.9 µM vs 9.8 measured; 20/25 held-out predictions inside GDSC's replicate span). **Ranking one cell line against another is explicitly out of scope** — measured as unreachable from canonical markers ([why](docs/VALIDATION.md)). |
 | Spatial dish (`cellsim dish`) and web viewer (`web/viewer/`) | Grow cells as a monolayer or a spheroid under a dose schedule; oxygen and drug fields, contact inhibition, hypoxic quiescence, necrosis, clones. Open the JSON Lines stream in the viewer: 3-D cells coloured by phase, p53, caspase-3, oxygen or lineage, time scrubbing, charts, CSV export | Field solvers match closed forms (Grimes's 233 µm oxygen limit; the analytic slab profile). Re-running the Cell Tracking Challenge HeLa movie: colony size within 3–4 % at 46 h. Spheroid growth **calibrated** on DLD-1 (one constant). **Open misses:** the spheroid's necrotic core is too large, and real HeLa splits into fast cyclers and non-dividers, which the engine does not ([details](docs/VALIDATION.md)). |
 | Cell-level PK/PD modules (`cellsim/cell`) | Occupancy, permeation, pH trapping, efflux, binding sink, tissue penetration, fate, resistance, clearance, cell cycle, lattice agents | Each module is checked against its analytic limit (22 tests). |
@@ -53,6 +63,52 @@ flag; it is not the product on its own.
 
 The full set of numbers, with reproducers and caveats, is in
 [`docs/VALIDATION.md`](docs/VALIDATION.md).
+
+## Quickstart: simulate cells in one minute
+
+The cell simulator needs only NumPy and SciPy, so it installs with plain
+pip — no conda, no compilers, no chemistry stack. (Checked in CI on a bare
+virtual environment: `tests/test_pip_install.py`.)
+
+```bash
+pip install cellsim                 # or: pip install -e . from a checkout
+
+# A dose-response curve and an IC50 for one line and drug.
+cellsim cell-sim --line A549 --drug cisplatin --hours 72
+
+# Grow a spheroid for five days and watch oxygen run out in its core.
+cellsim dish --line DLD-1 --geometry spheroid --hours 120 \
+    --cells 3000 --grid 48 --every 8 --out spheroid.jsonl
+
+# Open spheroid.jsonl in web/viewer/index.html (no server needed for a
+# local file: use the "Open .jsonl" button).
+```
+
+In a notebook, `cellsim.api` returns tidy tables (a `pandas.DataFrame`
+when pandas is installed, a list of dicts otherwise):
+
+```python
+from cellsim.api import curve, exposure, washout, combination, spheroid
+
+curve("A549", "paclitaxel")               # viability vs concentration, with IC50
+exposure("A549", "paclitaxel")            # concentration needed for half kill at
+                                          # each exposure time — the schedule question
+washout("A549", "cisplatin", 20.0, 12.0)  # a 12 h pulse, then recovery
+combination("A549", "cisplatin", "paclitaxel", 10.0, 0.03)   # vs independent action
+spheroid("DLD-1", days=6)                 # size, hypoxia, necrotic core over time
+```
+
+[`docs/cell_tutorial.md`](docs/cell_tutorial.md) walks through a real
+question end to end — *should I pulse this drug or leave it on?* — with
+every command run and its actual output.
+
+`exposure()` is the one worth knowing about: it returns `inf` where no
+concentration reaches half kill, which is the honest answer for a taxane
+given for three hours, and the reason AUC is the wrong exposure metric
+for that class.
+
+The molecular layers (docking, MD, FEP, quantum) need the conda stack
+below.
 
 ## Quickstart: first docking screen in five minutes
 
@@ -84,9 +140,9 @@ full screen and, in §8, says which target classes to trust.
 | Phase | Deliverable | Target |
 |---|---|---|
 | 0 — done | July fixes merged, CI green, one identity, honest validation page | Oct 2026 |
-| 1 | Single-cell drug-response engine with one state object and one integrator: cell cycle and p53 axis ported from `OLD/`, death that actually executes, `cellsim/cell` PK on top. Calibrated against GDSC dose-response for cisplatin, doxorubicin and paclitaxel. Headless state stream for any UI. | Jan 2027 |
+| 1 — closed, with a finding | Single-cell drug-response engine with one state object and one integrator: cell cycle and p53 axis ported from `OLD/`, death that actually executes, `cellsim/cell` PK on top. Calibrated against GDSC for cisplatin, doxorubicin and paclitaxel (ten drugs by Phase 3). Headless state stream for any UI. Closed early: the per-line prediction it aimed at was measured to be unreachable | Oct 2026 |
 | 2 — code done | The dish: spatial colony, diffusion, drug penetration, contact inhibition, validated on the CTC HeLa movie and calibrated on DLD-1 spheroids; web viewer reading the engine stream. Outside users still to find | Apr 2027 |
-| 3 — in progress | Ten drugs × ten lines, combinations and evolved resistance, calibrated uncertainty with coverage, JOSS paper, conda-forge | Oct 2027 |
+| 3 — in review | Ten drugs × ten lines, combinations and evolved resistance, calibrated uncertainty with coverage, JOSS paper, conda-forge | Oct 2027 |
 | 4 | **Your own cells**: import a plate reader export, fit this line's own constants with uncertainty, and get predictions as bands rather than lines ([plan](docs/PLAN.md)) | 2028 |
 
 Details, the keep/kill list and success metrics: [`docs/PLAN.md`](docs/PLAN.md).

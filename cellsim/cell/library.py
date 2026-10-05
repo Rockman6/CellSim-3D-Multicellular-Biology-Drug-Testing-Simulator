@@ -35,18 +35,30 @@ class CellLine:
     # occupancy threshold that belongs to the drug.
     efflux_level: float = 1.0
     repair_rate_per_h: float = 0.0866  # DNA-adduct/DSB repair, ln2 / 8 h
+    # p53 degradation that MDM2 inhibitors cannot block, per hour in the
+    # engine's normalised units. HPV E6 hands p53 to the E6AP ligase; in
+    # HPV-positive cervical cancer cells degradation switches COMPLETELY
+    # from MDM2 to E6 (Hengstermann et al. 2001 PNAS 98:1218), which is
+    # why their wild-type TP53 neither rises under nutlin nor mounts a
+    # full damage response. 0 for HPV-negative lines.
+    p53_mdm2_independent_deg_per_h: float = 0.0
+    gdsc_name: str = ""              # name in GDSC tables, when it differs
     source: str = ""
 
 
 @dataclass(frozen=True)
 class Drug:
     name: str
-    mechanism: str                   # 'dna_adduct' | 'topo2' | 'tubulin'
+    # 'dna_adduct' | 'topo2' | 'tubulin' | 's_phase' (damage only while the
+    # cell replicates: TOP1 poisons, antimetabolites) | 'mdm2' (blocks
+    # MDM2-mediated p53 degradation)
+    mechanism: str
     k_damage_per_uM_h: float = 0.0   # damage-index gain per µM intracellular per hour (FIT)
     s_phase_factor: float = 1.0      # extra damage in S phase (TopII poisons)
     Kd_tubulin_uM: float = 0.0       # tubulin-site dissociation constant
     theta_arrest: float = 0.3        # tubulin occupancy that blocks anaphase
     k_mitotic_death_per_h: float = 0.0  # Bax drive per hour of mitotic arrest (FIT)
+    Kd_target_uM: float = 0.0        # target affinity for 'mdm2' (MDM2-p53 site)
     tau_uptake_h: float = 0.1        # passive permeation time constant
     partition: float = 1.0           # C_in / C_out at equilibrium
     # Is this drug a P-glycoprotein substrate? Doxorubicin and paclitaxel
@@ -82,7 +94,7 @@ CELL_LINES: dict[str, CellLine] = {
                      efflux_level=0.95,
                      source="ATCC HTB-22 ~29 h; TP53 wild-type (CVCL_0031)"),
     "HCT116": CellLine("HCT116", 18.0, True, "colon",
-                       efflux_level=2.08,
+                       efflux_level=2.08, gdsc_name="HCT-116",
                        source="ATCC CCL-247 ~18 h; TP53 wild-type (CVCL_0291)"),
     "MDA-MB-231": CellLine("MDA-MB-231", 26.0, False, "breast (TNBC)",
                            efflux_level=0.97,
@@ -92,15 +104,19 @@ CELL_LINES: dict[str, CellLine] = {
                       source="ATCC HTB-38 ~20-23 h; TP53 p.R273H (CVCL_0320)"),
     "SW480": CellLine("SW480", 26.0, False, "colon",
                       efflux_level=1.69,
-                      source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546)"),
+                      source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546). "
+                             "NOT screened in GDSC 8.4 (which has SW48 and SW620), so "
+                             "it has no IC50 reference here"),
     "HeLa": CellLine("HeLa", 31.0, True, "cervix",
-                     efflux_level=9.79,
+                     efflux_level=9.79, p53_mdm2_independent_deg_per_h=10.0,
                      source="Doubling 1.3 d (Cellosaurus CVCL_0030, PubMed 29156801; DSMZ "
                             "~48 h); the Cell Tracking Challenge HeLa movie's own counts "
                             "double every 27-31 h (scripts/ctc_reference.py). An earlier "
                             "20 h here was the mean of its COMPLETE cycles, which a 46 h "
-                            "movie biases short. TP53 wild-type but HPV18 E6-degraded "
-                            "(functionally hypomorphic; modelled as functional, flagged)"),
+                            "movie biases short. TP53 wild-type but degraded by HPV18 "
+                            "E6 independently of MDM2 (Hengstermann 2001); the E6 rate "
+                            "holds p53 below its apoptotic threshold even with MDM2 "
+                            "fully blocked"),
 
     # ── Added 2026-10 to test the p53-independent death route against
     # lines that played no part in choosing its parameter. Doubling
@@ -137,7 +153,9 @@ CELL_LINES: dict[str, CellLine] = {
                       efflux_level=16.02,
                       source="TP53 p.S241F (CVCL_0248). Doubling time reported 15, 20, "
                              "25.3, 33 and 48 h (Cellosaurus); median 25 h used, "
-                             "uncertainty ~1.8x"),
+                             "uncertainty ~1.8x. NOT screened in GDSC 8.4, so it has "
+                             "no IC50 reference here; its sister line HCT-15 is, but "
+                             "they are different cultures"),
 }
 
 
@@ -182,6 +200,77 @@ DRUGS: dict[str, Drug] = {
         fit_target="partition",
         source="Microtubule stabiliser -> SAC-dependent mitotic arrest; death or slippage after "
                "many hours (Gascoigne & Taylor 2008 Cancer Cell 14:111)"),
+
+    # ── Phase 3 panel (October 2026): seven more drugs, chosen so that
+    # every mechanism class the engine can represent is covered and each
+    # has GDSC screens on our lines. Each carries ONE fitted constant,
+    # fitted exactly as above; values marked PROVISIONAL are starting
+    # points that scripts/validate_gdsc.py replaces.
+    "etoposide": Drug(
+        "etoposide", "topo2",
+        k_damage_per_uM_h=0.001,      # PROVISIONAL, refitted on GDSC1
+        s_phase_factor=3.0,           # TopII poison, as doxorubicin
+        pgp_substrate=True,           # MDR1 substrate
+        tau_uptake_h=0.5, partition=1.0, accumulation_ratio=2.0,
+        fit_target="k_damage_per_uM_h",
+        source="TopII poison without intercalation; S/G2 double-strand breaks (Nitiss 2009 "
+               "Nat Rev Cancer 9:338); P-glycoprotein substrate"),
+    "sn-38": Drug(
+        "sn-38", "s_phase",
+        k_damage_per_uM_h=0.01,       # PROVISIONAL, refitted on GDSC2
+        tau_uptake_h=0.3, partition=1.0, accumulation_ratio=5.0,
+        fit_target="k_damage_per_uM_h",
+        source="Active metabolite of irinotecan; TOP1 cleavage complexes become DSBs when "
+               "replication forks collide with them (Pommier 2006 Nat Rev Cancer 6:789). "
+               "Effluxed mainly by ABCG2, not modelled"),
+    "gemcitabine": Drug(
+        "gemcitabine", "s_phase",
+        k_damage_per_uM_h=0.01,       # PROVISIONAL, refitted on GDSC2
+        tau_uptake_h=1.0,             # nucleoside transport + dCK phosphorylation
+        partition=1.0, accumulation_ratio=10.0,
+        fit_target="k_damage_per_uM_h",
+        source="dFdCTP incorporation with masked chain termination stalls replication "
+               "(Plunkett 1995 Semin Oncol 22:3). Metabolic activation and retention are not "
+               "modelled; the fitted constant absorbs them"),
+    "5-fluorouracil": Drug(
+        "5-fluorouracil", "s_phase",
+        k_damage_per_uM_h=0.0005,     # PROVISIONAL, refitted on GDSC2
+        tau_uptake_h=0.5, partition=1.0, accumulation_ratio=1.0,
+        fit_target="k_damage_per_uM_h",
+        source="FdUMP inhibits thymidylate synthase, starving DNA synthesis (Longley 2003 Nat "
+               "Rev Cancer 3:330). Its RNA-directed toxicity, which is not S-phase specific, "
+               "is not modelled"),
+    "docetaxel": Drug(
+        "docetaxel", "tubulin",
+        Kd_tubulin_uM=0.005,          # ~2x paclitaxel's microtubule affinity (Diaz & Andreu 1993)
+        theta_arrest=0.3, k_mitotic_death_per_h=0.3,
+        pgp_substrate=True, tau_uptake_h=0.2,
+        partition=0.2,                # PROVISIONAL, refitted on GDSC2
+        accumulation_ratio=100.0,
+        fit_target="partition",
+        source="Taxane microtubule stabiliser, mechanism as paclitaxel with higher affinity "
+               "(Diaz & Andreu 1993 Biochemistry 32:2747); P-glycoprotein substrate"),
+    "vinorelbine": Drug(
+        "vinorelbine", "tubulin",
+        Kd_tubulin_uM=0.01,           # high-affinity binding at microtubule ends, order of magnitude
+        theta_arrest=0.3, k_mitotic_death_per_h=0.3,
+        pgp_substrate=True, tau_uptake_h=0.2,
+        partition=0.2,                # PROVISIONAL, refitted on GDSC2
+        accumulation_ratio=50.0,
+        fit_target="partition",
+        source="Vinca alkaloid: suppresses microtubule dynamics at low nM and arrests cells "
+               "in mitosis like a stabiliser (Jordan & Wilson 2004 Nat Rev Cancer 4:253); "
+               "P-glycoprotein substrate"),
+    "nutlin-3a": Drug(
+        "nutlin-3a", "mdm2",
+        Kd_target_uM=0.09,            # IC50 90 nM for the MDM2-p53 interaction (Vassilev 2004)
+        tau_uptake_h=0.3,
+        partition=1.0,                # PROVISIONAL, refitted on GDSC2
+        accumulation_ratio=5.0,
+        fit_target="partition",
+        source="Occupies MDM2's p53 pocket, stabilising wild-type p53 without DNA damage "
+               "(Vassilev et al. 2004 Science 303:844). No effect on mutant p53's targets, and "
+               "none where p53 is degraded independently of MDM2 (HPV E6)"),
 }
 
 

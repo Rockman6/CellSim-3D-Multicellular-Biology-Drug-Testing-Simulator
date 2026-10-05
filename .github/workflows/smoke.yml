@@ -25,11 +25,14 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
+      - "cellsim/api.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
       - "tests/web/**"
+      - "tests/test_pip_install.py"
       - "web/**"
+      - "pyproject.toml"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
@@ -55,11 +58,14 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
+      - "cellsim/api.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
       - "tests/web/**"
+      - "tests/test_pip_install.py"
       - "web/**"
+      - "pyproject.toml"
       - "environment.yml"
       - ".github/workflows/smoke.yml"
   workflow_dispatch:
@@ -73,6 +79,14 @@ on:
         required: false
         default: "false"
         type: boolean
+
+# One run per branch. Without this every push during a review stacks
+# another full conda build on top of the last — three were running at
+# once while this was written — and the older ones only ever report on
+# code that has been superseded.
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # One mega-job that runs chem + md-ligand + md-protein smoke gates
@@ -291,6 +305,9 @@ jobs:
             echo "== $t"
             python -u "$t"
           done
+
+      - name: the cell simulator installs and runs from pip alone (bare venv, no conda)
+        run: python -u tests/test_pip_install.py
 
       - name: web viewer reads real streams (both schemas, plain and gzipped)
         run: |

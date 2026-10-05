@@ -1,0 +1,90 @@
+{% set name = "cellsim" %}
+{% set version = "1.4.0" %}
+
+# conda-forge recipe for the CELL SIMULATOR only.
+#
+# `cellsim.cell` (the engine, the dish, the streams and their CLIs) needs
+# nothing but NumPy and SciPy, which is what this packages. The molecular
+# layers — docking, MD, FEP, quantum — pull in RDKit, OpenMM, OpenFF,
+# AutoDock Vina, xTB, fpocket, AmberTools and PoseBusters; those stay in
+# environment.yml and are not part of this package's run requirements, so
+# `conda install cellsim` stays small and solvable.
+#
+# To submit (the repository owner, not CI):
+#   1. fork github.com/conda-forge/staged-recipes
+#   2. copy this directory to recipes/cellsim/
+#   3. replace sha256 below with the value printed by
+#        pip download cellsim=={{ version }} --no-deps --no-binary :all:
+#        shasum -a 256 cellsim-{{ version }}.tar.gz
+#      (the sdist must be on PyPI first)
+#   4. open a pull request and work through the review checklist
+#
+# Until then `pip install cellsim` is the supported route and is tested
+# on a bare virtual environment by tests/test_pip_install.py.
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - cellsim = cellsim.cli:main
+
+requirements:
+  host:
+    - python {{ python_min }}
+    - pip
+    - setuptools >=68
+    - wheel
+  run:
+    - python >={{ python_min }}
+    - numpy >=1.24
+    - scipy >=1.10
+
+test:
+  imports:
+    - cellsim.cell.engine
+    - cellsim.cell.dish
+    - cellsim.cell.stream
+    - cellsim.cell.selection
+  commands:
+    - cellsim cell-sim --help
+    - cellsim dish --help
+    - cellsim cell-stream --help
+    # one real simulation, so a broken install cannot pass on imports alone
+    - python -c "from cellsim.cell.engine import ic50; from cellsim.cell.library import get_drug, get_line; v = ic50(get_line('A549'), get_drug('cisplatin'), guess_uM=10.0, n_cells_per_conc=8, t_end_h=24); assert 1.0 < v < 1000.0, v"
+  requires:
+    - pip
+    - python {{ python_min }}
+
+about:
+  home: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator
+  summary: Mechanistic simulator of cultured cells under drug, with measured errors
+  description: |
+    CellSim simulates cultured cancer cells responding to a drug, from the
+    cell-cycle, p53 and apoptosis machinery inside each cell to the colony
+    that grows or dies in the dish. Cells can be run well-mixed, where a
+    dose-response curve is one simulation, or on a lattice where oxygen
+    and drug diffuse in, cells compete for space, and a spheroid develops
+    a hypoxic rim and a necrotic core.
+
+    It targets questions within a cell line — whether to pulse a drug or
+    hold it, how long a culture takes to recover after wash-out, whether
+    two drugs antagonise, what a schedule selects for — and publishes the
+    public data each claim was checked against, including the misses.
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  doc_url: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/blob/main/docs/VALIDATION.md
+  dev_url: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator
+
+extra:
+  recipe-maintainers:
+    - Rockman6
