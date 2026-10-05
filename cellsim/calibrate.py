@@ -109,14 +109,22 @@ def doubling_time_from_controls(assay_hours: float, t0: Sequence[float],
 class Calibration:
     """A drug's fitted constant for one line, with its interval.
 
-    `simulated_ic50_uM` will usually sit a few per cent from the measured
-    IC50 it was fitted to, and that gap is the IC50 ESTIMATOR, not the
-    fit. The search drives viability at the target concentration to one
-    half exactly; the reported figure is then read off a log grid whose
-    steps are about 1.1x, so it lands on the nearest rung. The tell is
-    that the ratio is the same for every target at a given `n_cells`
-    (1.00, 0.92 and 1.04 at 32, 64 and 128 cells) rather than scattering
-    as a fitting error would.
+    A KNOWN OFFSET, measured rather than suspected. The fitted constant
+    comes out about 10 % below the truth, consistently rather than on
+    average: 0.88x, 0.91x and 0.92x for lines perturbed 0.5x, 1x and 2x,
+    with the measurement noise removed entirely.
+
+    The cause is that two definitions of "the IC50" are in play and they
+    differ by roughly that much. This module targets the concentration at
+    which median viability is one half. `cellsim.cell.engine.ic50`
+    instead interpolates a 0.5 crossing on a log grid, and on a curve as
+    steep as this engine's it lands about 1.1x low (calibrating to its
+    answer and measuring back gives 1.07-1.15x). Targeting the estimator
+    instead would cost a full concentration series per iteration — the
+    thing that makes calibration fast enough to use — to chase a bias
+    that sits well inside the +-20 % run-to-run spread the engine has
+    anyway (see `predict_band`). So it is recorded here rather than
+    removed, and `predict_band`'s interval is what should be read.
     """
     line: str
     drug: str
@@ -148,7 +156,7 @@ class Calibration:
 
 
 def _fit_constant(line: CellLine, drug: Drug, target_uM: float, *, n_cells: int,
-                  iters: int, p: Params, k_cyc: float,
+                  iters: int, p: Params, k_cyc: float, seeds: Sequence[int] = (1,),
                   bracket_decades: float = 1.5, max_decades: float = 3.0,
                   report_ic50: bool = True) -> tuple[float, float]:
     """Bisection in log10 of the drug's one fitted constant, until the
@@ -193,13 +201,31 @@ def _fit_constant(line: CellLine, drug: Drug, target_uM: float, *, n_cells: int,
 
     def sim(log_v: float) -> float:
         """A monotone stand-in for the simulated IC50: viability at the
-        target concentration, mapped so that larger means a higher IC50."""
+        target concentration, mapped so that larger means a higher IC50.
+
+        `seeds` averages the criterion over repeats. It defaults to one,
+        because averaging was tried and MEASURED NOT TO HELP: three seeds
+        returned byte-identical constants for every case tried, at three
+        times the cost, and moved the systematic offset by under half a
+        per cent (0.869/0.913/0.946 to 0.878/0.910/0.943). The offset is
+        definitional rather than noise — see the note on `Calibration` —
+        so averaging the noise cannot touch it. The option is kept
+        because a future criterion might need it; the default is not.
+
+        What DOES vary with the seed is the answer itself: the same
+        target calibrated under different seeds gives constants spanning
+        about 1.14x, which is the engine's own stochasticity showing
+        through. That is what `predict_band` spans, and why it must."""
         key = round(log_v, 6)
         if key not in cache:
             d = dataclasses.replace(drug, **{field: 10.0 ** key})
-            viab, _ = dose_response(line, d, np.array([target_uM]), n_cells_per_conc=n_cells,
-                                    p=p, k_cyc=k_cyc)
-            cache[key] = float(viab[1])
+            runs = []
+            for sd in seeds:
+                viab, _ = dose_response(line, d, np.array([target_uM]),
+                                        n_cells_per_conc=n_cells, p=p, k_cyc=k_cyc,
+                                        seed=int(sd))
+                runs.append(float(viab[1]))
+            cache[key] = float(np.median(runs))
         return cache[key]
 
     centre = math.log10(start)
@@ -242,7 +268,8 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
                       measured_ic50_uM: float,
                       measured_ic50_ci: Optional[tuple[float, float]] = None, *,
                       params: Params = Params(), n_cells: int = 32,
-                      iters: int = 12, report_ic50: bool = True) -> Calibration:
+                      iters: int = 12, seeds: Sequence[int] = (1,),
+                      report_ic50: bool = True) -> Calibration:
     """Fit the drug's one constant so the engine reproduces a measured IC50.
 
     `measured_ic50_ci` should be the interval from `cellsim.plate.fit_4pl`.
@@ -255,7 +282,7 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
     dg = drug if isinstance(drug, Drug) else get_drug(drug)
     k = calibrate_cycle_scale(ln, params)
     value, achieved = _fit_constant(ln, dg, measured_ic50_uM, n_cells=n_cells,
-                                    iters=iters, p=params, k_cyc=k,
+                                    iters=iters, p=params, k_cyc=k, seeds=seeds,
                                     report_ic50=report_ic50)
     if not np.isfinite(value):
         raise ValueError(
@@ -276,7 +303,7 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
             # The ends only pin the interval; their own IC50s are not
             # reported, so the extra concentration series is skipped.
             v, _ = _fit_constant(ln, dg, target, n_cells=n_cells, iters=iters,
-                                 p=params, k_cyc=k, report_ic50=False)
+                                 p=params, k_cyc=k, seeds=seeds, report_ic50=False)
             ends.append(v)
         if not all(np.isfinite(ends)):
             ci = (value, value)
@@ -295,20 +322,38 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
                        simulated_ic50_uM=float(achieved), note=note)
 
 
-def predict_band(calibration: Calibration, fn, *, labels=("low", "value", "high")):
-    """Run `fn(drug)` at each end of the calibrated interval and in the
-    middle, and return {label: result} plus the spread.
+def predict_band(calibration: Calibration, fn, *, seeds: Sequence[int] = (1, 2, 3),
+                 labels=("low", "value", "high")):
+    """Run `fn(drug, seed)` across the calibrated interval AND across
+    seeds, and return the envelope.
 
-    `fn` takes a `Drug` and returns a number — a surviving fraction, a
-    fold change, whatever the question is. The spread it comes back with
-    is the part that matters: two schedules that differ by less than the
-    calibration's own width have not been shown to differ.
+    `fn` takes a `Drug` and a seed and returns a number — a surviving
+    fraction, a fold change, whatever the question is.
+
+    **Both sources of uncertainty belong in the band**, and leaving one
+    out was a real error here. The first version varied only the
+    constant, at a single seed, and its bands missed the truth in a
+    hold-out test more often than they contained it
+    (`scripts/validate_calibration.py`). The reason is that the engine is
+    stochastic: repeating the same simulation with a different seed moves
+    its IC50 by about 1.2x, which is as large as the calibration
+    uncertainty it was reporting. A band that counts the measurement's
+    error and ignores the model's own is not an honest interval, however
+    carefully the first part was computed.
+
+    Two schedules whose bands overlap have not been shown to differ.
     """
-    out = {}
+    per_label: dict = {}
     for which, label in zip(("low", "value", "high"), labels):
-        out[label] = fn(calibration.drug_at(which))
-    vals = [v for v in out.values() if isinstance(v, (int, float)) and np.isfinite(v)]
-    if vals:
-        out["spread"] = float(max(vals) - min(vals))
-        out["range"] = (float(min(vals)), float(max(vals)))
+        drug = calibration.drug_at(which)
+        vals = [fn(drug, int(s)) for s in seeds]
+        finite = [v for v in vals if isinstance(v, (int, float)) and np.isfinite(v)]
+        per_label[label] = float(np.median(finite)) if finite else float("nan")
+        per_label.setdefault("_all", []).extend(finite)
+    allv = per_label.pop("_all")
+    out = dict(per_label)
+    if allv:
+        out["range"] = (float(min(allv)), float(max(allv)))
+        out["spread"] = float(max(allv) - min(allv))
+        out["n_runs"] = len(allv)
     return out
