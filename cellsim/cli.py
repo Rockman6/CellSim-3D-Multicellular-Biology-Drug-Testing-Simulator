@@ -47,6 +47,7 @@ MODULES: dict[str, str] = {
     "cell-sim": "cellsim.cell.engine",
     "cell-stream": "cellsim.cell.stream",
     "dish": "cellsim.cell.dish",
+    "plate": "cellsim.plate",
 }
 
 # subcommand -> script under <repo>/scripts
@@ -66,6 +67,7 @@ USAGE = """usage: cellsim <subcommand> [args...]
     cell-sim      dose-response of one cell line to one drug -> viability + IC50
     cell-stream   one population under a dosing schedule -> per-tick JSON Lines for a UI
     dish          cells in space (monolayer or spheroid) -> per-cell JSON Lines for a UI
+    plate         your plate-reader export -> viability, IC50 with a CI, GR metrics
     validate-gdsc fit one potency per drug on p53-wt lines, predict the rest vs GDSC
 
   Screening and triage
