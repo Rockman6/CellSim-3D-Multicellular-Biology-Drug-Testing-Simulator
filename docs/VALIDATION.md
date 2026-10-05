@@ -488,7 +488,13 @@ log T would have slope −1.
 | doxorubicin (0.063 µM) | 2.06 | 0.68 | 0.34 | 0.17 | 0.089 | 0.060 | **−1.01** | 1 h |
 | paclitaxel (0.030 µM) | none | none | none | none | 0.037 | 0.030 | — | **24 h** |
 
-(C50 in µM; "none" = no concentration reaches half kill.)
+(C50 in µM; "none" = no concentration reaches half kill. **These are
+single-seed figures and carry about ±20 %** — repeating the run with a
+different seed moves each by 1.16–1.35×, for the reason set out under
+"Which published claims that ±20 % actually touches" below. Read them to
+one or two significant figures. The *slope* is not affected, because the
+seed shifts the whole curve together rather than tilting it, which is
+the point of that section.)
 
 **Cisplatin and doxorubicin are AUC-governed over short exposures**:
 C50 × T stays at 326–367 µM·h for cisplatin from 1 to 12 h and at
@@ -961,6 +967,138 @@ time, because the data constrain the curve's shape only on one side and
 the extrapolation can go anywhere. So a wide interval here is not a
 conservative answer, it is an absent one. Those fits are flagged
 `extrapolated`, and the flag, not the width, is what to act on.
+
+### Does a calibrated engine predict what it was NOT calibrated on?
+
+Fitting a constant so the simulated IC50 matches a measured one proves
+nothing: the constant was chosen to make that number right. The claim
+worth testing is the next one — that the calibrated model then says
+something true about a condition it never saw — and
+`scripts/validate_calibration.py` measures it with ground truth we
+control. Perturb a drug's constant to a value the calibrator is never
+told; simulate the noisy 72 h plate those cells would give; hand over
+**only** the fitted IC50 and its interval; then ask about a 12 h pulse
+washed out long before the readout, and check whether the predicted band
+contains the truth.
+
+**It failed the first time, and the failure was the useful part.**
+Calibrated bands contained the held-out truth in **3 of 7 trials**. A
+band advertised as covering the answer was wrong more often than right,
+and nothing upstream was broken: the plate fit's coverage had been
+measured, the calibration's propagation had been measured, and each
+piece passed its own test. What had never been tested was the
+composition.
+
+The cause is that the band counted the measurement's uncertainty and
+ignored the model's own.
+
+### The engine's IC50 is a random variable, and more cells do not fix it
+
+Repeating the identical simulation with a different seed moves the
+engine's IC50 by 1.1–1.2×. That is not counting noise, and the
+measurement that settles it is switching the cell-to-cell heterogeneity
+off:
+
+| `Params.het_sigma` | 24 cells/dose | 96 cells/dose |
+|---|:-:|:-:|
+| 0.30 (default) | **1.187×** | **1.108×** |
+| 0 (identical cells) | 1.009× | 1.008× |
+
+With identical cells the engine is deterministic to under a per cent.
+With the default heterogeneity the spread is ten to twenty per cent and
+**quadrupling the cells barely moves it**, because a population's IC50
+is set by which resistant lineages happened to be drawn, not by how many
+cells were counted — and a tail converges far more slowly than a mean.
+
+That is a property of the model rather than a defect, and it is also the
+right biology: a real colony's survival is dominated by its resistant
+minority (Spencer et al. 2009 Nature 459:428, the same observation the
+heterogeneity was built from). But it has three consequences that matter
+to anyone using these numbers:
+
+1. **A single-seed IC50 is good to about ±20 %**, so differences smaller
+   than that between two runs are not differences.
+2. **Any calibration from one measurement inherits that**, which is why
+   the recovered constant scatters between 0.7× and 1.0× of the truth
+   even with no measurement noise at all.
+3. **More cells is the wrong remedy; more seeds is the right one.**
+
+`predict_band` therefore spans the calibrated interval **and** seeds,
+and the hold-out is scored against the truth's own median over the same
+seeds, since no band can honestly be narrower than the quantity it is
+predicting.
+
+### Which published claims that ±20 % actually touches
+
+A spread that large in every IC50 is alarming until it is checked
+against the claims that rest on it, so here is that check rather than a
+reassurance. Five seeds, A549:
+
+| Claim | Across seeds | Verdict |
+|---|---|:-:|
+| Nutlin calls 11/11 lines correctly (Phase 3 headline) | **0 of 11 lines change call**; sensitive lines give viability 0.00, resistant 0.85–1.11 | safe |
+| Paclitaxel cannot halve the colony below 24 h at any dose | half kill reached in **0/5 seeds at 3, 6 and 12 h; 5/5 at 24 h** | safe |
+| Cisplatin follows C × T over 1–6 h (slope −1) | slope median **−0.974**, range −1.00 to −0.88; the −0.95 quoted above sits mid-range | safe |
+| The C50 values themselves (e.g. 318 µM at 1 h) | spread **1.16–1.35×** between seeds | **quoted too precisely** |
+
+The pattern is consistent and it is worth stating as a working rule for
+this engine. **A comparison made within one seed is far more robust than
+either number in it.** The seed fixes which lineages were drawn, and that
+draw shifts a whole dose-response curve up or down together rather than
+tilting it — so a slope, a ratio between two arms, or a threshold with a
+wide margin survives, while the absolute concentration does not.
+
+That is why the slope holds to ±0.06 while the C50s it is computed from
+move by a third, and it retroactively justifies how the Phase-2 and
+Phase-3 experiments were built: every one of them compares arms inside a
+run rather than quoting a number from one.
+
+What it does NOT justify is the single C50 figures quoted in the
+schedule table above. They carried an unstated ±20 % until this audit;
+the table now says so, and they should be read to one or two
+significant figures.
+
+### What a calibrated prediction is actually worth
+
+Twenty trials, with the band spanning the calibrated interval and seeds:
+
+| | before the fix | after |
+|---|:-:|:-:|
+| band contains the held-out truth | 3/7 (43 %) | **16/20 (80 %)** |
+| median band width | — | 0.435 surviving fraction |
+| the truth's OWN spread across seeds | — | 0.173 |
+| constant recovered | 0.79–0.83× | 0.84× median (0.69–0.98) |
+
+Read the second and third rows together. The band is 0.44 wide and the
+quantity it predicts moves by 0.17 on its own between runs, so roughly
+40 % of the width is irreducible: no honest band here can be much
+narrower. What that buys a user is an answer like *"between a quarter
+and two thirds of the cells survive this pulse"* — enough to rule out
+*nearly all die* and *nearly all live*, not enough to separate 35 % from
+45 %. Two schedules whose bands overlap have not been shown to differ,
+which is the whole reason `predict_band` returns a range.
+
+**One thing tried and rejected.** If the engine's viability carries
+±20 % run-to-run spread, averaging the calibration criterion over seeds
+ought to help. It does not: three seeds returned byte-identical
+constants in every case tried, at three times the cost, and moved the
+offset below by under half a per cent. The reason is that the offset is
+definitional, not noise, so averaging noise cannot reach it. The option
+is kept in the signature and the default is one seed. What *does* move
+with the seed is the answer itself — the same target calibrated under
+different seeds spans about 1.14× — and that is what the prediction band
+spans.
+
+**A residual bias, measured and left in place.** The fitted constant
+lands about 10 % below the truth, one-sidedly, and with the measurement
+noise removed entirely it is still 0.88–0.92×. Two definitions of "the
+IC50" are in play: calibration targets the concentration where median
+viability is one half, while `engine.ic50` interpolates a crossing on a
+log grid and on a curve this steep lands ~1.1× low. Targeting the
+estimator instead would cost a full concentration series per iteration —
+the thing that makes calibration fast enough to use — to chase a bias
+that sits well inside the ±20 % the engine varies by anyway. It is
+recorded rather than removed.
 
 ### Two bugs the plate files caught
 

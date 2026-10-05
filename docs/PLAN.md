@@ -273,17 +273,19 @@ single highest-value piece of work left, and it is Phase 4.
 
 ### Phase 4 — the user's own cells
 
-- Read plate-reader exports (96/384-well with a plate map) and tidy CSV;
-  normalise to controls, fit four-parameter curves with bootstrap
-  confidence intervals.
+- *Done.* Read plate-reader exports (96/384-well with a plate map) and
+  tidy CSV; normalise to controls, fit four-parameter curves with
+  bootstrap confidence intervals whose coverage has been measured
+  (`cellsim/plate.py`).
 - *Done for measured data.* Report GR metrics (GR50, GRmax, GR_AOC;
   Hafner et al. 2016 Nat Methods 13:521), so fast- and slow-growing
   cultures are compared fairly. Still to do: the same metrics out of a
   simulation, so model and experiment sit on one axis. The engine
   already produces the counts they need.
-- Calibrate: fit the line's doubling time from its controls and each
-  drug's single constant from its curve, with uncertainty, and say
-  plainly when a curve cannot identify the constant.
+- *Done.* Calibrate: fit the line's doubling time from its controls and
+  each drug's single constant from its curve, with uncertainty, and say
+  plainly when a curve cannot identify the constant
+  (`cellsim/calibrate.py`).
 - Carry that uncertainty into every prediction (sample the posterior),
   so schedules and combinations come out as bands, not lines.
 - Validation: hold out a concentration range or a time point from the
