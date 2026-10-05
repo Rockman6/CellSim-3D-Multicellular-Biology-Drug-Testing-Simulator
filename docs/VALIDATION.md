@@ -1022,6 +1022,35 @@ and the hold-out is scored against the truth's own median over the same
 seeds, since no band can honestly be narrower than the quantity it is
 predicting.
 
+### Which published claims that ±20 % actually touches
+
+A spread that large in every IC50 is alarming until it is checked
+against the claims that rest on it, so here is that check rather than a
+reassurance. Five seeds, A549:
+
+| Claim | Across seeds | Verdict |
+|---|---|:-:|
+| Nutlin calls 11/11 lines correctly (Phase 3 headline) | **0 of 11 lines change call**; sensitive lines give viability 0.00, resistant 0.85–1.11 | safe |
+| Paclitaxel cannot halve the colony below 24 h at any dose | half kill reached in **0/5 seeds at 3, 6 and 12 h; 5/5 at 24 h** | safe |
+| Cisplatin follows C × T over 1–6 h (slope −1) | slope median **−0.974**, range −1.00 to −0.88; the −0.95 quoted above sits mid-range | safe |
+| The C50 values themselves (e.g. 318 µM at 1 h) | spread **1.16–1.35×** between seeds | **quoted too precisely** |
+
+The pattern is consistent and it is worth stating as a working rule for
+this engine. **A comparison made within one seed is far more robust than
+either number in it.** The seed fixes which lineages were drawn, and that
+draw shifts a whole dose-response curve up or down together rather than
+tilting it — so a slope, a ratio between two arms, or a threshold with a
+wide margin survives, while the absolute concentration does not.
+
+That is why the slope holds to ±0.06 while the C50s it is computed from
+move by a third, and it retroactively justifies how the Phase-2 and
+Phase-3 experiments were built: every one of them compares arms inside a
+run rather than quoting a number from one.
+
+What it does NOT justify is the single C50 figures quoted in the
+schedule table above, which carry an unstated ±20 % and should be read
+as one significant figure.
+
 ### What a calibrated prediction is actually worth
 
 Twenty trials, with the band spanning the calibrated interval and seeds:
