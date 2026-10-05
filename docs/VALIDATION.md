@@ -724,8 +724,35 @@ single-cell cycle 1.6× too slow, which is precisely the miss above.
 For the other lines the gap is small, because ATCC measures
 exponential-phase culture where quiescence is low. The entry is left
 unchanged for now rather than quietly corrected: splitting it means
-re-validating the GDSC predictions that rest on it, since a quiescent
-cell does not meet an S-phase agent the way a cycling one does. With every cell on one clock
+re-validating the GDSC predictions that rest on it, and the size of that
+re-validation is measurable rather than hypothetical.
+
+**What quiescence does to each drug class** (A549, 72 h IC50, half of
+each generation quiescent):
+
+| Drug | Mechanism | IC50 shift |
+|---|---|:-:|
+| gemcitabine | S-phase | **1.50×** |
+| sn-38 | TOP1, S-phase | **1.26×** |
+| cisplatin | DNA adduct | 1.06× |
+| doxorubicin | TopII | 1.03× |
+| paclitaxel | tubulin | 0.95× |
+
+So changing HeLa's entry would move its antimetabolite predictions by
+about a third and leave the rest alone — a bounded, checkable impact
+rather than an unknown one.
+
+The S-phase result is the clinical intuition that antimetabolites spare
+non-cycling cells, falling out of the mechanism rather than put in. The
+tubulin result was **predicted wrongly before it was measured**: a
+quiescent cell never reaches mitosis, so a taxane should have lost
+potency too. Looking at the arms shows why it does not. Under
+gemcitabine the treated colony shrinks less than the control (×0.57
+against ×0.46) because quiescent cells escape a drug that kills and are
+enriched by it. Under paclitaxel both shrink together (×0.44 against
+×0.46): a cell that was not going to divide loses nothing when division
+is blocked. Protection comes from escaping killing, not from escaping
+cytostasis. With every cell on one clock
 (cycle CV 0) no cell divides within 30 h of birth at all, so measured
 variability is clearly needed.
 
