@@ -692,8 +692,40 @@ the curated tracks by `scripts/ctc_reference.py`):
 The colony grows right; the single-cell picture does not. The movie's
 cells are a mix of fast cyclers (complete cycles ~19 h) and a large
 fraction that does not divide within the window — the proliferation /
-quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369),
-which the engine does not model. Open. With every cell on one clock
+quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369).
+
+**Now modelled, and it closes the gap** (`Params.quiescent_fraction`,
+off by default). The fix needed two changes together, which is what made
+the miss informative:
+
+| | 20 h | 30 h | cells at 46 h |
+|---|:-:|:-:|:-:|
+| measured, sequence 01 | 0.77 | 0.51 | 137 |
+| engine, 31 h cycle, no quiescence | 1.00 | 0.52 | 126 |
+| engine, 19 h cycle + 50 % quiescent | **0.74** | **0.51** | **140** |
+| measured, sequence 02 | 0.80 | 0.71 | 363 |
+| engine, 31 h cycle, no quiescence | 0.94 | 0.38 | 385 |
+| engine, 19 h cycle + 50 % quiescent | **0.72** | **0.63** | **364** |
+
+Quiescence alone was not enough: it fixed the plateau at 30 h and left
+the engine far too slow at 20 h. The cycling cells also had to cycle
+faster — and that exposed a conflation in the library worth stating
+plainly.
+
+**`doubling_time_h` is a single-cell cycle time, and the library fills
+it with population doubling times.** `calibrate_cycle_scale` uses the
+field as the time one cell takes from early G1 to mitosis; ATCC and
+Cellosaurus quote the time a culture takes to double. They agree only
+when every cell cycles. HeLa's cells complete a cycle in ~19 h while its
+counts double every 27–31 h, because about half of each generation stops
+— so the 31 h in the library makes population growth right and every
+single-cell cycle 1.6× too slow, which is precisely the miss above.
+
+For the other lines the gap is small, because ATCC measures
+exponential-phase culture where quiescence is low. The entry is left
+unchanged for now rather than quietly corrected: splitting it means
+re-validating the GDSC predictions that rest on it, since a quiescent
+cell does not meet an S-phase agent the way a cycling one does. With every cell on one clock
 (cycle CV 0) no cell divides within 30 h of birth at all, so measured
 variability is clearly needed.
 
