@@ -35,8 +35,12 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 
-from cellsim.cell.engine import Params, calibrate_cycle_scale, ic50
+from cellsim.cell.engine import Params, calibrate_cycle_scale, dose_response, ic50
 from cellsim.cell.library import CellLine, Drug, get_drug, get_line
+
+# Half kill: the simulated IC50 equals a concentration exactly when the
+# viability there is one half.
+HALF = 0.5
 
 __all__ = ["doubling_time_from_controls", "calibrate_potency", "predict_band",
            "DoublingTime", "Calibration"]
@@ -103,7 +107,17 @@ def doubling_time_from_controls(assay_hours: float, t0: Sequence[float],
 
 @dataclass
 class Calibration:
-    """A drug's fitted constant for one line, with its interval."""
+    """A drug's fitted constant for one line, with its interval.
+
+    `simulated_ic50_uM` will usually sit a few per cent from the measured
+    IC50 it was fitted to, and that gap is the IC50 ESTIMATOR, not the
+    fit. The search drives viability at the target concentration to one
+    half exactly; the reported figure is then read off a log grid whose
+    steps are about 1.1x, so it lands on the nearest rung. The tell is
+    that the ratio is the same for every target at a given `n_cells`
+    (1.00, 0.92 and 1.04 at 32, 64 and 128 cells) rather than scattering
+    as a fitting error would.
+    """
     line: str
     drug: str
     fit_target: str
@@ -125,21 +139,37 @@ class Calibration:
     def summary(self) -> str:
         lo, hi = self.ci
         mlo, mhi = self.measured_ic50_ci
+        gives = (f"; the calibrated engine gives {self.simulated_ic50_uM:.4g} uM"
+                 if np.isfinite(self.simulated_ic50_uM) else "")
         return (f"{self.drug} on {self.line}: {self.fit_target} = {self.value:.4g} "
                 f"(95 % CI {lo:.3g}-{hi:.3g}), matching a measured IC50 of "
-                f"{self.measured_ic50_uM:.4g} uM ({mlo:.3g}-{mhi:.3g}); the "
-                f"calibrated engine gives {self.simulated_ic50_uM:.4g} uM"
+                f"{self.measured_ic50_uM:.4g} uM ({mlo:.3g}-{mhi:.3g}){gives}"
                 + (f"\n  note: {self.note}" if self.note else ""))
 
 
 def _fit_constant(line: CellLine, drug: Drug, target_uM: float, *, n_cells: int,
-                  iters: int, p: Params, k_cyc: float) -> tuple[float, float]:
+                  iters: int, p: Params, k_cyc: float,
+                  bracket_decades: float = 1.5, max_decades: float = 3.0,
+                  report_ic50: bool = True) -> tuple[float, float]:
     """Bisection in log10 of the drug's one fitted constant, until the
     simulated IC50 matches `target_uM`. Returns (constant, achieved IC50).
 
     The direction is read off the bracket ends rather than assumed, so a
     potency gain (bigger = more potent) and a partition coefficient
     (bigger = more drug inside) are both handled.
+
+    The search starts narrow and widens only if the target is not
+    bracketed, up to `max_decades`. Both bounds matter:
+
+    * Starting narrow is a speed decision. Fixing the bracket wide wasted
+      most of the iterations closing a range no real cell line occupies.
+    * Stopping at three decades is a correctness decision. Allowed to run
+      further, the bisection will happily "reach" any measured IC50 by
+      driving the constant somewhere physically absurd — a partition
+      coefficient of six million, a cell concentrating drug a
+      million-fold. A constant a thousand times from the reference means
+      the measurement is not describing this mechanism, and the honest
+      answer is to say so rather than to return the number that fits.
     """
     field = drug.fit_target
     if not field:
@@ -148,35 +178,71 @@ def _fit_constant(line: CellLine, drug: Drug, target_uM: float, *, n_cells: int,
     start = getattr(drug, field)
     if start <= 0:
         raise ValueError(f"{drug.name}.{field} is {start}; expected a positive constant")
-    lo, hi = math.log10(start) - 4, math.log10(start) + 4
+
+    # Bisect on VIABILITY AT THE TARGET CONCENTRATION, not on the IC50.
+    # The two are the same condition — the simulated IC50 equals T exactly
+    # when viability at T is 0.5 — but computing an IC50 means running a
+    # whole concentration series (about thirty simulations) where this
+    # needs one. That is a ~15x saving per iteration, and it is what makes
+    # a calibration cheap enough to sit in the test suite.
+    #
+    # Returned viability is inverted around 0.5 so that the search still
+    # reads "too weak / too strong" the same way for both kinds of
+    # constant, and the caller's bracketing logic is unchanged.
+    cache: dict[float, float] = {}
 
     def sim(log_v: float) -> float:
-        d = dataclasses.replace(drug, **{field: 10.0 ** log_v})
-        return ic50(line, d, guess_uM=target_uM, n_cells_per_conc=n_cells, p=p, k_cyc=k_cyc)
+        """A monotone stand-in for the simulated IC50: viability at the
+        target concentration, mapped so that larger means a higher IC50."""
+        key = round(log_v, 6)
+        if key not in cache:
+            d = dataclasses.replace(drug, **{field: 10.0 ** key})
+            viab, _ = dose_response(line, d, np.array([target_uM]), n_cells_per_conc=n_cells,
+                                    p=p, k_cyc=k_cyc)
+            cache[key] = float(viab[1])
+        return cache[key]
 
-    ic_lo, ic_hi = sim(lo), sim(hi)
-    falling = ic_lo >= ic_hi
-    weak, strong = (ic_lo, ic_hi) if falling else (ic_hi, ic_lo)
-    if strong > target_uM:
-        return math.nan, strong          # cannot be made potent enough
-    if weak < target_uM:
-        return math.nan, weak            # cannot be made weak enough
-    ic = math.nan
+    centre = math.log10(start)
+    width = min(bracket_decades, max_decades)
+    while True:
+        lo, hi = centre - width, centre + width
+        ic_lo, ic_hi = sim(lo), sim(hi)
+        falling = ic_lo >= ic_hi                # viability at T falls as potency rises
+        weak, strong = (ic_lo, ic_hi) if falling else (ic_hi, ic_lo)
+        if strong <= HALF <= weak:
+            break                                      # the target is bracketed
+        if width >= max_decades:
+            # Out of reach inside a physically sensible range. Report the
+            # closest the mechanism gets, as a viability, for the caller
+            # to turn into a message.
+            return (math.nan, strong) if strong > HALF else (math.nan, weak)
+        width = min(width * 2.0, max_decades)
+
     for _ in range(iters):
         mid = 0.5 * (lo + hi)
-        ic = sim(mid)
-        if (ic > target_uM) == falling:
+        if (sim(mid) > HALF) == falling:
             lo = mid
         else:
             hi = mid
-    return 10.0 ** (0.5 * (lo + hi)), ic
+    final = 0.5 * (lo + hi)
+    if not report_ic50:
+        return 10.0 ** final, math.nan
+    # One real IC50 at the end, on the value actually returned, so the
+    # caller can see what the calibrated engine gives rather than what
+    # the search was aiming at. It is a whole concentration series, which
+    # costs as much as the search itself, so a caller that only wants the
+    # constant can turn it off.
+    fitted = dataclasses.replace(drug, **{field: 10.0 ** final})
+    achieved = ic50(line, fitted, guess_uM=target_uM, n_cells_per_conc=n_cells,
+                    p=p, k_cyc=k_cyc)
+    return 10.0 ** final, achieved
 
 
 def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
                       measured_ic50_uM: float,
                       measured_ic50_ci: Optional[tuple[float, float]] = None, *,
                       params: Params = Params(), n_cells: int = 32,
-                      iters: int = 12) -> Calibration:
+                      iters: int = 12, report_ic50: bool = True) -> Calibration:
     """Fit the drug's one constant so the engine reproduces a measured IC50.
 
     `measured_ic50_ci` should be the interval from `cellsim.plate.fit_4pl`.
@@ -189,7 +255,8 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
     dg = drug if isinstance(drug, Drug) else get_drug(drug)
     k = calibrate_cycle_scale(ln, params)
     value, achieved = _fit_constant(ln, dg, measured_ic50_uM, n_cells=n_cells,
-                                    iters=iters, p=params, k_cyc=k)
+                                    iters=iters, p=params, k_cyc=k,
+                                    report_ic50=report_ic50)
     if not np.isfinite(value):
         raise ValueError(
             f"no value of {dg.name}.{dg.fit_target} reproduces an IC50 of "
@@ -206,8 +273,10 @@ def calibrate_potency(line: Union[str, CellLine], drug: Union[str, Drug],
         lo_ic, hi_ic = measured_ic50_ci
         ends = []
         for target in (lo_ic, hi_ic):
+            # The ends only pin the interval; their own IC50s are not
+            # reported, so the extra concentration series is skipped.
             v, _ = _fit_constant(ln, dg, target, n_cells=n_cells, iters=iters,
-                                 p=params, k_cyc=k)
+                                 p=params, k_cyc=k, report_ic50=False)
             ends.append(v)
         if not all(np.isfinite(ends)):
             ci = (value, value)

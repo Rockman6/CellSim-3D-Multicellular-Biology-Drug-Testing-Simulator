@@ -937,13 +937,30 @@ points, and `summary()` quotes 68 % rather than 90 % there.
 0.10, and falls to 84 % at 0.20 — where the interval has widened to 18×
 and is no longer telling anyone anything.
 
-**Range.** A range that brackets the IC50 behaves (88 %). A range that
-sits entirely to one side produces a flat plate with no midpoint to find,
-and is **refused** rather than fitted — the old code fitted it anyway,
-taking minutes per call and returning a confident IC50 extracted from
-noise. The dangerous case is in between: a range that only *clips* the
-response still fits, returning a number and a narrow interval with the
-truth outside. Those are flagged `extrapolated`.
+**Range**, which turned out to matter more than either (50 plates per
+row, since these fits are slow by construction):
+
+| Tested range | Coverage | Interval width | Flagged extrapolated |
+|---|:-:|:-:|:-:|
+| 0.01–100 µM (brackets the IC50) | 86 % | 1.67× | 0/50 |
+| 0.1–30 µM (brackets it) | 80 % | 1.76× | 0/50 |
+| 0.001–0.5 µM (clips it from below) | **64 %** | **121×** | 20/50 |
+| 10–1000 µM (clips it from above) | **44 %** | **168×** | 20/50 |
+
+A range that sits entirely to one side gives a flat plate with no
+midpoint to find, and is **refused** rather than fitted — the earlier
+code fitted it anyway, taking minutes per call to extract a confident
+IC50 from noise.
+
+The in-between case is the one to understand. A range that merely
+*clips* the response still fits, and the interval does not hide the
+problem: it blows up to a hundredfold and more, which is the method
+saying it does not know. What it does not do is contain the truth —
+even that enormous interval misses it between a third and a half of the
+time, because the data constrain the curve's shape only on one side and
+the extrapolation can go anywhere. So a wide interval here is not a
+conservative answer, it is an absent one. Those fits are flagged
+`extrapolated`, and the flag, not the width, is what to act on.
 
 ### Two bugs the plate files caught
 
