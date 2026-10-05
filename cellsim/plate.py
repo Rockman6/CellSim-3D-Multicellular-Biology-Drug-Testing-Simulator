@@ -274,8 +274,11 @@ class FitResult:
     def summary(self) -> str:
         lo, hi = self.ic50_ci
         flag = "  EXTRAPOLATED, outside the tested range" if self.extrapolated else ""
+        # Quote the coverage this many points actually delivers, not the
+        # best case: five concentrations give ~68 %, ten give ~90 %.
+        cov = "~90 %" if self.n_points >= 7 else "~68 %, see note"
         return (f"IC50 {self.ic50_uM:.4g} uM (95 % CI {lo:.3g}-{hi:.3g}, measured "
-                f"coverage ~90 %), Hill {self.hill:.2f}, R2 {self.r_squared:.3f}, "
+                f"coverage {cov}), Hill {self.hill:.2f}, R2 {self.r_squared:.3f}, "
                 f"n={self.n_points}{flag}")
 
 
@@ -316,7 +319,9 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
     intervals were then replaced by bias-corrected and accelerated ones,
     which removed a 2 % upward bias in the point estimate.
     """
-    from scipy.optimize import curve_fit
+    import warnings
+
+    from scipy.optimize import curve_fit, OptimizeWarning
 
     c = np.asarray(conc_uM, float)
     v = np.asarray(viability, float)
@@ -375,7 +380,9 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
             # every fit wanders to the iteration limit, and a thousand
             # resamples take minutes instead of seconds. One that will not
             # settle is skipped, and too many skips are reported.
-            pb, _ = curve_fit(model, x, vb, p0=popt, bounds=(lo, hi), maxfev=2000)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", OptimizeWarning)
+                pb, _ = curve_fit(model, x, vb, p0=popt, bounds=(lo, hi), maxfev=2000)
         except Exception:
             continue
         _, _, li, h = _unpack(pb, fix_bottom, fix_top)
@@ -393,6 +400,17 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
                             jack=None)
         note = ""
     ic50 = 10.0 ** log_ic50
+    # Measured, not assumed: on simulated plates a 5-point curve's "95 %"
+    # interval covered the true IC50 only 68 % of the time, against 86 %
+    # at 7 points and 88 % at 10 (scripts/validate_plate_fit.py). Four
+    # parameters fitted to five points leaves almost nothing to estimate
+    # the uncertainty from, so the interval is reported but should not be
+    # relied on.
+    if len(c) < 7 and not note:
+        note = (f"only {len(c)} concentrations: a four-parameter fit has {len(c) - 4} "
+                f"degrees of freedom left, and intervals this short-handed covered "
+                f"the truth ~68 % of the time in simulation, not 95 %. Treat the "
+                f"IC50 as a point estimate.")
     extrapolated = bool(ic50 < c.min() or ic50 > c.max())
     if extrapolated and not note:
         note = (f"the fitted IC50 lies outside the tested range "
@@ -406,14 +424,22 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
 def _jackknife_ic50(model, x, v, popt, lo, hi, fix_bottom, fix_top):
     """Leave-one-point-out IC50s, which give the bootstrap's acceleration
     term — how fast the estimator's variance changes with the data."""
-    from scipy.optimize import curve_fit
+    import warnings
+
+    from scipy.optimize import curve_fit, OptimizeWarning
     out = []
     for i in range(len(x)):
         keep = np.arange(len(x)) != i
         if keep.sum() < 4:
             return None
         try:
-            pj, _ = curve_fit(model, x[keep], v[keep], p0=popt, bounds=(lo, hi), maxfev=2000)
+            with warnings.catch_warnings():
+                # A leave-one-out fit on a near-perfect curve has nothing
+                # left to estimate a covariance from. We only want the
+                # parameters, so the warning is noise.
+                warnings.simplefilter("ignore", OptimizeWarning)
+                pj, _ = curve_fit(model, x[keep], v[keep], p0=popt, bounds=(lo, hi),
+                                  maxfev=2000)
         except Exception:
             continue
         _, _, li, _ = _unpack(pj, fix_bottom, fix_top)
