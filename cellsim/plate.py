@@ -328,6 +328,13 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
     x = np.log10(c)
     order = np.argsort(x)
     x, v = x[order], v[order]
+    span = float(v.max() - v.min())
+    if span < 0.1:
+        raise ValueError(
+            f"viability varies by only {span:.3f} across the plate, which is too "
+            f"flat to locate an IC50. Either the concentrations all sit on one "
+            f"side of the response, or the drug did nothing at this range "
+            f"({c.min():.3g}-{c.max():.3g} uM).")
 
     def model(xx, *p):
         bottom, top, log_ic50, hill = _unpack(p, fix_bottom, fix_top)
@@ -362,7 +369,13 @@ def fit_4pl(conc_uM: Sequence[float], viability: Sequence[float], *,
     for _ in range(n_boot):
         vb = fitted + rng.choice(resid_scaled, size=len(resid), replace=True)
         try:
-            pb, _ = curve_fit(model, x, vb, p0=popt, bounds=(lo, hi), maxfev=20000)
+            # Bootstrap fits start from the converged parameters, so they
+            # should settle quickly. A low cap matters when the tested
+            # range misses the response: the curve is then nearly flat,
+            # every fit wanders to the iteration limit, and a thousand
+            # resamples take minutes instead of seconds. One that will not
+            # settle is skipped, and too many skips are reported.
+            pb, _ = curve_fit(model, x, vb, p0=popt, bounds=(lo, hi), maxfev=2000)
         except Exception:
             continue
         _, _, li, h = _unpack(pb, fix_bottom, fix_top)
@@ -400,7 +413,7 @@ def _jackknife_ic50(model, x, v, popt, lo, hi, fix_bottom, fix_top):
         if keep.sum() < 4:
             return None
         try:
-            pj, _ = curve_fit(model, x[keep], v[keep], p0=popt, bounds=(lo, hi), maxfev=20000)
+            pj, _ = curve_fit(model, x[keep], v[keep], p0=popt, bounds=(lo, hi), maxfev=2000)
         except Exception:
             continue
         _, _, li, _ = _unpack(pj, fix_bottom, fix_top)

@@ -150,14 +150,32 @@ def test_the_fit_recovers_an_ic50_it_was_not_told():
     assert f.ic50_ci[0] <= f.ic50_uM <= f.ic50_ci[1]
 
 
-def test_a_range_that_misses_the_ic50_is_flagged_as_extrapolated():
-    """The failure mode worth catching: the fit still returns a number and
-    a narrow interval, and both are about the model, not the plate."""
-    conc = np.geomspace(0.001, 0.05, 8)          # entirely below the IC50
+def test_a_range_that_misses_the_response_entirely_is_refused():
+    """A plate whose concentrations all sit on one side of the curve is
+    flat, and a flat plate has no midpoint to find. Refusing beats
+    returning a confident number from noise."""
+    conc = np.geomspace(0.001, 0.05, 8)          # far below the IC50
     viab = np.array([_viability(c) for c in conc])
+    assert float(viab.max() - viab.min()) < 0.1, "the setup should be nearly flat"
+    try:
+        fit_4pl(conc, viab, n_boot=100)
+    except ValueError as e:
+        assert "too flat" in str(e), e
+    else:
+        raise AssertionError("a flat plate must be refused, not fitted")
+
+
+def test_a_range_that_clips_the_response_fits_but_is_flagged():
+    """The dangerous middle case, and the reason for the flag: enough
+    curvature to fit, but the IC50 lies outside the tested range, so the
+    number and its interval describe the model rather than the plate."""
+    conc = np.geomspace(0.05, 1.0, 8)            # climbs, but stops short of the IC50
+    viab = np.array([_viability(c) for c in conc])
+    assert float(viab.max() - viab.min()) > 0.2, "the setup should not be flat"
     f = fit_4pl(conc, viab, n_boot=200)
     assert f.extrapolated, f.summary()
     assert "extrapolation" in f.note.lower(), f.note
+    assert f.ic50_uM > conc.max(), (f.ic50_uM, conc.max())
 
 
 def test_the_interval_covers_a_known_ic50_about_as_often_as_claimed():
@@ -209,5 +227,8 @@ if __name__ == "__main__":
         except AssertionError as e:
             failed += 1
             print(f"  FAIL {fn.__name__}: {e}")
+        except Exception as e:                      # noqa: BLE001 - report, don't crash
+            failed += 1
+            print(f"  ERROR {fn.__name__}: {type(e).__name__}: {e}")
     print(f"{len(fns) - failed}/{len(fns)} plate gates pass")
     raise SystemExit(1 if failed else 0)
