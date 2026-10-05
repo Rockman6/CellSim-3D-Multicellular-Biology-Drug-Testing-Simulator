@@ -128,12 +128,19 @@ def main(argv=None) -> int:
         print(f"{n_pts:>10}{r['n_fits']:>7}{r['coverage']:>10.0%}"
               f"{r['median_ci_width_fold']:>9.2f}x{r['median_bias_fold']:>8.2f}")
 
-    print("\nC) whether the tested range actually brackets the IC50 (noise sd 0.05)")
+    print(f"\nC) whether the tested range actually brackets the IC50 "
+          f"(noise sd 0.05, {max(trials // 4, 25)} plates per row)")
     print(f"{'range uM':>16}{'fits':>7}{'refused':>9}{'coverage':>10}"
           f"{'CI width':>10}{'extrapolated':>14}")
     print("-" * 66)
+    # Fewer trials here on purpose. A range that only clips the response
+    # gives an ill-conditioned fit: every bootstrap resample wanders, and
+    # at the full trial count this section alone ran for over half an hour
+    # while the two above took minutes. The effect it measures is large
+    # and does not need the same precision.
+    c_trials, c_boot = max(trials // 4, 25), max(n_boot // 4, 100)
     for lo, hi in ((0.01, 100.0), (0.1, 30.0), (0.001, 0.5), (10.0, 1000.0)):
-        r = study(np.geomspace(lo, hi, 10), 0.05, trials, n_boot)
+        r = study(np.geomspace(lo, hi, 10), 0.05, c_trials, c_boot)
         r["range_uM"] = [lo, hi]
         report["range"].append(r)
         label = f"{lo:g}-{hi:g}"

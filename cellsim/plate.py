@@ -616,6 +616,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--boot", type=int, default=1000, help="bootstrap resamples")
     ap.add_argument("--out-csv", type=Path, default=None,
                     help="write the normalised wells here")
+    ap.add_argument("--calibrate", nargs=2, metavar=("LINE", "DRUG"), default=None,
+                    help="also tune the engine to this curve: fit the drug's one "
+                         "constant so the simulated IC50 matches the measured one "
+                         "(slow, a few minutes)")
     a = ap.parse_args(argv)
 
     rows = normalize(read_plate(a.data, layout=a.layout, plate_map=a.plate_map,
@@ -653,6 +657,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("\nNo time-zero wells (label some 't0' in the plate map), so GR metrics\n"
               "are unavailable. Without them an IC50 confounds potency with how fast\n"
               "this line divides, and is not comparable across lines (Hafner 2016).")
+
+    if a.calibrate:
+        from cellsim.calibrate import calibrate_potency
+        line_name, drug_name = a.calibrate
+        print(f"\nCalibrating {drug_name} on {line_name} to this curve ...", flush=True)
+        try:
+            cal = calibrate_potency(line_name, drug_name, fit.ic50_uM,
+                                    None if not np.isfinite(fit.ic50_ci[0]) else fit.ic50_ci)
+            print(cal.summary())
+            print("\nUse it with:")
+            print(f"    from cellsim.calibrate import calibrate_potency")
+            print(f"    cal = calibrate_potency({line_name!r}, {drug_name!r}, "
+                  f"{fit.ic50_uM:.4g}, {tuple(round(v, 4) for v in fit.ic50_ci)})")
+            print(f"    drug = cal.drug_at()          # or 'low' / 'high' for the band")
+        except ValueError as e:
+            print(f"could not calibrate: {e}")
 
     if a.out_csv:
         a.out_csv.parent.mkdir(parents=True, exist_ok=True)
