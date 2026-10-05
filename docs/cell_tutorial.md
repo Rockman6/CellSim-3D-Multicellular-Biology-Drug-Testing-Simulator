@@ -50,11 +50,20 @@ every dividing cell stalls, so the curve is much steeper than a Hill
 slope of 1. Concentrations default to four decades either
 side of it, so you do not have to guess the range.
 
-> **How much is this number worth?** The engine's IC50s carry a
-> calibrated interval: ±2.6× covers 64 % of held-out lines, ±4.8× covers
-> 85 %. That is wide, and honestly so — GDSC's own repeat screens of the
-> same line and drug disagree by a median 5.3×. Treat a predicted IC50 as
-> an order of magnitude, not a measurement.
+> **How much is this number worth?** Two things, and they compound.
+>
+> *Against the real world*, the engine's IC50s carry a calibrated
+> interval: ±2.6× covers 64 % of held-out cell lines, ±4.8× covers 85 %.
+> That is wide and honestly so — GDSC's own repeat screens of the same
+> line and drug disagree by a median 5.3×.
+>
+> *Against itself*, the same simulation run with a different seed moves
+> by 10–20 %, because a population's IC50 is set by which resistant
+> lineages happened to be drawn. Run `ic50_spread("A549", "paclitaxel")`
+> to see it. More cells barely helps; more seeds does.
+>
+> So treat a predicted IC50 as an order of magnitude, and treat a
+> difference smaller than 20 % between two runs as no difference.
 
 ## 2. Ask the schedule question properly
 
