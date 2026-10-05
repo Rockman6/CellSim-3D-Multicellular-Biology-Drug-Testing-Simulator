@@ -261,7 +261,8 @@ class Dish:
 
         # Initial cells: the engine's own asynchronous population.
         pop = make_population(n_seed, 0.0, self.rng, het_sigma=p.het_sigma,
-                              n_drugs=self.n_drugs, cycle_cv=p.cycle_cv)
+                              n_drugs=self.n_drugs, cycle_cv=p.cycle_cv,
+                              quiescent_fraction=p.quiescent_fraction)
         self.cells = pop
         self.lineage = np.arange(n_seed)
         # Birth time of each cell; -inf for the founders, whose cycle began
@@ -415,6 +416,8 @@ class Dish:
                "het_bcl2": c.het_bcl2, "het_uptake": c.het_uptake, "gs": self.gs}
         if c.cycle_rate is not None:
             aux["cycle_rate"] = c.cycle_rate
+        if c.quiescent is not None:
+            aux["quiescent"] = c.quiescent
         return aux
 
     # ── division, death, clearance ──
@@ -515,6 +518,12 @@ class Dish:
         c.het_uptake = np.concatenate([c.het_uptake, new_uptake])
         if c.cycle_rate is not None:
             c.cycle_rate = np.concatenate([c.cycle_rate, c.cycle_rate[idx]])
+        if c.quiescent is not None:
+            # Each daughter decides independently, so the sister of a
+            # quiescent cell is not automatically quiescent — which is the
+            # observation the bifurcation was described from.
+            draw = self.rng.random(len(idx)) < self.p.quiescent_fraction
+            c.quiescent = np.concatenate([c.quiescent, draw])
         self.lineage = np.concatenate([self.lineage, self.lineage[idx]])
         self.birth_t = np.concatenate([self.birth_t, np.full(len(idx), self.t_h)])
         self.pos = np.vstack([self.pos, np.array(sites)])
@@ -537,6 +546,8 @@ class Dish:
             setattr(c, name, getattr(c, name)[keep])
         if c.cycle_rate is not None:
             c.cycle_rate = c.cycle_rate[keep]
+        if c.quiescent is not None:
+            c.quiescent = c.quiescent[keep]
         self.lineage, self.pos = self.lineage[keep], self.pos[keep]
         self.birth_t = self.birth_t[keep]
         self.o2, self.gs = self.o2[keep], self.gs[keep]
@@ -570,7 +581,8 @@ class Dish:
         for _ in range(n_sub):
             _rk4(self.cells.Y, self._aux(), self.line, self.drugs or None, self.p, self.k_cyc, dp.dt_h)
             self.t_h += dp.dt_h
-            divide, die = _cell_events(self.cells, self.drugs or None, self.p, dp.dt_h)
+            divide, die = _cell_events(self.cells, self.drugs or None, self.p, dp.dt_h,
+                                       rng=self.rng)
             if die.any():
                 self._bury(die, APOPTOTIC)
             if divide.any():

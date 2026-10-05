@@ -10,9 +10,28 @@ both TP53-mutant lines are genuine out-of-sample tests. Re-running the
 script reproduces these values to within 1 %.
 
 Doubling times are lab-dependent (±30 % between reports is common);
-the values below are the ATCC / Cellosaurus figures and are used only
-to scale the cycle ODE so that an untreated population doubles at the
-quoted rate. TP53 status follows the IARC TP53 database as summarised
+the values below are the ATCC / Cellosaurus figures.
+
+WHAT `doubling_time_h` ACTUALLY SETS, which is not quite what these
+figures measure. `engine.calibrate_cycle_scale` uses it as the time ONE
+CELL takes from early G1 to mitosis, while ATCC and Cellosaurus quote
+the time a POPULATION takes to double. Those are the same number only
+when every cell in the culture is cycling, and they come apart when some
+fraction sits in G0: a culture that is half quiescent doubles at half
+the rate its cycling cells divide.
+
+For most of these lines, measured in exponential-phase culture where
+quiescence is low, the gap is small and the field is used as intended.
+For HeLa it is not: the Cell Tracking Challenge movie's cells complete a
+cycle in about 19 h while its counts double every 27-31 h, because
+roughly half of each generation does not divide again inside the window
+(docs/VALIDATION.md). The 31 h below is therefore the population figure
+and makes population growth right while making every single-cell cycle
+too slow — which is exactly the miss recorded against that movie.
+
+Changing it is held back deliberately: splitting the parameter means
+re-validating the GDSC predictions that rest on it, since quiescent
+cells do not respond to an S-phase agent the way cycling ones do. TP53 status follows the IARC TP53 database as summarised
 in Cellosaurus.
 """
 from __future__ import annotations

@@ -190,6 +190,21 @@ class Params:
     # (scripts/ctc_reference.py). 0 keeps every cell on the same clock and
     # every earlier result unchanged.
     cycle_cv: float = 0.0
+    # Proliferation / quiescence at mitotic exit. A daughter does not
+    # always start the next cycle: CDK2 activity bifurcates as the mother
+    # divides, and the low branch sits in G0 until it is recruited back
+    # (Spencer et al. 2013 Cell 155:369). In the Cell Tracking Challenge
+    # HeLa movie this is plainly visible — 40-60 % of tracked cells never
+    # divide inside 46 h and the Kaplan-Meier curve PLATEAUS, where an
+    # engine in which everything cycles keeps falling
+    # (docs/VALIDATION.md).
+    #
+    # `quiescent_fraction` is the chance a cell leaving mitosis enters G0;
+    # `quiescence_exit_per_h` is the rate it leaves again (0 = it does not
+    # within the run). Both default to 0, which is a population where
+    # every cell cycles and leaves every earlier result unchanged.
+    quiescent_fraction: float = 0.0
+    quiescence_exit_per_h: float = 0.0
 
 
 # ── small helpers ─────────────────────────────────────────────────────
@@ -292,6 +307,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     cycle_rate = aux.get("cycle_rate")
     if cycle_rate is not None:
         dY[:, :7] *= cycle_rate[:, None]
+    # A cell in G0 holds its cycle state until it is recruited back. It is
+    # not arrested by damage and not dying: it is simply not cycling, which
+    # is why this multiplies the cycle block and nothing else.
+    quiescent = aux.get("quiescent")
+    if quiescent is not None:
+        dY[:, :7] *= (~quiescent)[:, None]
     # p53 -> p21 (El-Deiry 1993) + p53-independent CHK1/2 S/G2 term
     dY[:, 6] += p.p21_k_max * _hill8(p53, p.p21_K_hill) * f53
     chk = (D > p.chk_damage_threshold) & ((phase == 1) | (phase == 2))
@@ -385,6 +406,7 @@ class Population:
     het_uptake: np.ndarray           # per-cell drug-accumulation multiplier (mean 1)
     t_h: float = 0.0
     cycle_rate: Optional[np.ndarray] = None   # per-cell cycle speed (None = all 1)
+    quiescent: Optional[np.ndarray] = None    # in G0 after mitosis (None = none are)
 
 
 @dataclass
@@ -443,7 +465,8 @@ def _lognormal_mean_one(rng: np.random.Generator, sigma: float, n: int) -> np.nd
 
 def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.random.Generator,
                     forced_D: Optional[float] = None, het_sigma: float = 0.0,
-                    n_drugs: int = 1, cycle_cv: float = 0.0) -> Population:
+                    n_drugs: int = 1, cycle_cv: float = 0.0,
+                    quiescent_fraction: float = 0.0) -> Population:
     # C_out is (n_cells,) for one drug, or (n_cells, n_drugs) for several.
     C = np.asarray(C_out, dtype=float)
     C = (np.broadcast_to(C, (n_cells,)).copy() if n_drugs <= 1
@@ -467,14 +490,18 @@ def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.rando
     if cycle_cv > 0:
         s = np.sqrt(np.log(1.0 + cycle_cv ** 2))
         cycle_rate = 1.0 / np.exp(rng.normal(-0.5 * s * s, s, n_cells))
+    # Allocated only when quiescence is in use, so the default population
+    # is byte-for-byte what it was.
+    quiescent = np.zeros(n_cells, bool) if quiescent_fraction > 0 else None
     return Population(Y=Y, weight=np.ones(n_cells), alive=np.ones(n_cells, bool),
                       in_M=np.zeros(n_cells, bool), t_in_M=np.zeros(n_cells),
                       arrest_h=np.zeros(n_cells), generation=np.zeros(n_cells, int),
                       C_out=C, forced_D=fD, het_bcl2=het_bcl2, het_uptake=het_uptake,
-                      cycle_rate=cycle_rate)
+                      cycle_rate=cycle_rate, quiescent=quiescent)
 
 
-def _cell_events(pop: "Population", drug, p: Params, dt_h: float) -> tuple[np.ndarray, np.ndarray]:
+def _cell_events(pop: "Population", drug, p: Params, dt_h: float,
+                 rng: Optional[np.random.Generator] = None) -> tuple[np.ndarray, np.ndarray]:
     """Mitosis, mitotic arrest, slippage and death after one integration
     step, for any set of cells.
 
@@ -482,7 +509,11 @@ def _cell_events(pop: "Population", drug, p: Params, dt_h: float) -> tuple[np.nd
     and returned in `divide`; what a division means for the population is
     the caller's business — `simulate` doubles a representative cell's
     weight, the spatial dish places a daughter on the lattice. Dying cells
-    are marked dead and returned in `die`."""
+    are marked dead and returned in `die`.
+
+    `rng` is needed only when `Params.quiescent_fraction` is non-zero, so
+    that leaving mitosis can be a coin flip; without it the caller gets
+    the old deterministic behaviour."""
     Y = pop.Y
     ready = (Y[:, IX["CycB"]] > 0.25) & (Y[:, IX["p21"]] < 0.35) & (Y[:, IX["CycA"]] > 0.30)
     enter = pop.alive & ~pop.in_M & ready & (Y[:, IX["D"]] < p.g2m_damage_block)
@@ -498,6 +529,12 @@ def _cell_events(pop: "Population", drug, p: Params, dt_h: float) -> tuple[np.nd
         arrested = arrested | (pop.in_M & (theta > dg.theta_arrest))
     pop.arrest_h[arrested] += dt_h
     pop.arrest_h[~pop.in_M] = 0.0
+    # Recruitment out of G0, before this step's divisions, so a cell that
+    # has just entered it cannot leave in the same step.
+    if pop.quiescent is not None and p.quiescence_exit_per_h > 0 and rng is not None:
+        leaving = pop.quiescent & pop.alive & (
+            rng.random(len(Y)) < 1.0 - np.exp(-p.quiescence_exit_per_h * dt_h))
+        pop.quiescent[leaving] = False
     divide = pop.alive & pop.in_M & ~arrested & (pop.t_in_M >= p.m_duration_h)
     if divide.any():
         Y[divide, :7] = fresh_cycle_state()
@@ -505,6 +542,11 @@ def _cell_events(pop: "Population", drug, p: Params, dt_h: float) -> tuple[np.nd
         pop.generation[divide] += 1
         pop.in_M[divide] = False
         pop.t_in_M[divide] = 0.0
+        # The bifurcation at mitotic exit: some of what leaves mitosis
+        # does not start the next cycle.
+        if pop.quiescent is not None and p.quiescent_fraction > 0 and rng is not None:
+            idx = np.flatnonzero(divide)
+            pop.quiescent[idx] = rng.random(len(idx)) < p.quiescent_fraction
     slip = pop.alive & arrested & (pop.t_in_M >= p.slippage_h)
     if slip.any():
         Y[slip, :7] = fresh_cycle_state()
@@ -544,7 +586,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     drugs = _as_drug_tuple(drug)
     n_drugs = max(1, len(drugs))
     pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma,
-                          n_drugs=n_drugs, cycle_cv=p.cycle_cv)
+                          n_drugs=n_drugs, cycle_cv=p.cycle_cv,
+                          quiescent_fraction=p.quiescent_fraction)
     if traits is not None:
         pop.het_bcl2[:] = np.asarray(traits["bcl2"], float)
         pop.het_uptake[:] = np.asarray(traits["uptake"], float)
@@ -560,6 +603,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
            "het_bcl2": pop.het_bcl2, "het_uptake": pop.het_uptake}
     if pop.cycle_rate is not None:
         aux["cycle_rate"] = pop.cycle_rate
+    if pop.quiescent is not None:
+        aux["quiescent"] = pop.quiescent        # the same array the events update
     n_steps = int(round(t_end_h / dt_h))
     rec_stride = max(1, int(round(record_every_h / dt_h)))
     T = n_steps // rec_stride + 1
@@ -599,7 +644,7 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
             _apply_dose(pop.t_h)               # aux["C_out"] is this same array
         _rk4(pop.Y, aux, line, drug, p, k_cyc, dt_h)
         pop.t_h += dt_h
-        divide, die = _cell_events(pop, drug, p, dt_h)
+        divide, die = _cell_events(pop, drug, p, dt_h, rng=rng)
         if divide.any():
             pop.weight[divide] *= 2.0          # a representative cell stands for both daughters
         if die.any():
