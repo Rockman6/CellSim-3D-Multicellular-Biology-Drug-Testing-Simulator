@@ -276,10 +276,11 @@ single highest-value piece of work left, and it is Phase 4.
 - Read plate-reader exports (96/384-well with a plate map) and tidy CSV;
   normalise to controls, fit four-parameter curves with bootstrap
   confidence intervals.
-- Report GR metrics (GR50, GRmax, GR_AOC; Hafner et al. 2016 Nat Methods
-  13:521) for data and simulation alike, so fast- and slow-growing
-  cultures are compared fairly. The engine already produces the counts
-  these need.
+- *Done for measured data.* Report GR metrics (GR50, GRmax, GR_AOC;
+  Hafner et al. 2016 Nat Methods 13:521), so fast- and slow-growing
+  cultures are compared fairly. Still to do: the same metrics out of a
+  simulation, so model and experiment sit on one axis. The engine
+  already produces the counts they need.
 - Calibrate: fit the line's doubling time from its controls and each
   drug's single constant from its curve, with uncertainty, and say
   plainly when a curve cannot identify the constant.
