@@ -10,6 +10,8 @@ The functions map to the questions the engine has actually been checked
 against (`docs/VALIDATION.md`), and no further:
 
     curve()        a dose-response curve and its IC50
+    ic50_spread()  the same IC50 under several seeds, and how far it
+                   moves — run this before quoting one
     gr_curve()     the same run as GR values, which is the axis a
                    measured plate can be compared on
     exposure()     the iso-effect curve: the concentration needed for
@@ -40,7 +42,7 @@ from cellsim.cell.engine import (Params, calibrate_cycle_scale, dose_response, i
 from cellsim.cell.library import CELL_LINES, DRUGS, CellLine, Drug, get_drug, get_line
 
 __all__ = ["curve", "exposure", "washout", "combination", "spheroid", "gr_curve",
-           "lines", "drugs"]
+           "ic50_spread", "lines", "drugs"]
 
 
 def _table(rows: list[dict]):
@@ -148,6 +150,40 @@ def gr_curve(line: Union[str, CellLine], drug: Union[str, Drug], *,
                     "exposure_h": exposure_h if exposure_h is not None else hours,
                     "readout_h": hours}
                    for c, g in zip(gr.conc_uM, gr.gr)])
+
+
+def ic50_spread(line: Union[str, CellLine], drug: Union[str, Drug], *,
+                seeds: Sequence[int] = (1, 2, 3, 4, 5), hours: float = 72.0,
+                exposure_h: Optional[float] = None, n_cells: int = 32,
+                params: Params = Params()):
+    """The same IC50 measured under several seeds, and how far it moves.
+
+    Worth running before quoting an IC50 from this engine. The number is
+    a random variable: repeating an identical simulation under a
+    different seed moves it by 10-20 %, because the engine draws a finite
+    sample of lineages and a population's IC50 is set by its resistant
+    tail rather than by its mean. More cells barely helps — with
+    heterogeneity switched off the spread collapses to under 1 %, which
+    is how the cause was identified (docs/VALIDATION.md).
+
+    Returns one row per seed plus the median and the spread, so a caller
+    can see whether a difference they care about is larger than the
+    engine's own. Two numbers from this engine that differ by less than
+    the spread do not differ.
+    """
+    ln, dg = _line(line), _drug(drug)
+    k = calibrate_cycle_scale(ln, params)
+    vals = [ic50(ln, dg, guess_uM=_guess(dg), t_end_h=hours, n_cells_per_conc=n_cells,
+                 k_cyc=k, p=params, seed=int(s), exposure_h=exposure_h) for s in seeds]
+    finite = [v for v in vals if np.isfinite(v)]
+    median = float(np.median(finite)) if finite else float("nan")
+    spread = float(max(finite) / min(finite)) if len(finite) > 1 else float("nan")
+    return _table([{"line": ln.name, "drug": dg.name, "seed": int(s),
+                    "ic50_uM": float(v), "median_ic50_uM": median,
+                    "spread_fold": spread, "n_finite": len(finite),
+                    "exposure_h": exposure_h if exposure_h is not None else hours,
+                    "readout_h": hours}
+                   for s, v in zip(seeds, vals)])
 
 
 def exposure(line: Union[str, CellLine], drug: Union[str, Drug],

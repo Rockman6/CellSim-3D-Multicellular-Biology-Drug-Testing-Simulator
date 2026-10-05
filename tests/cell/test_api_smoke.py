@@ -86,6 +86,26 @@ def test_gr_curve_puts_a_simulation_on_the_same_axis_as_a_plate():
     assert all(r["gr"] >= -1.0 for r in rows), "GR is floored at total loss"
 
 
+def test_ic50_spread_exposes_the_engines_own_stochasticity():
+    """The number a user should see before quoting an IC50. The engine
+    draws a finite sample of lineages, so its IC50 moves 10-20 % between
+    seeds; with heterogeneity off it is near-deterministic, which is what
+    identifies the cause as the draw rather than cell count."""
+    rows = _rows(api.ic50_spread("A549", "cisplatin", seeds=(1, 2, 3), n_cells=24))
+    assert len(rows) == 3 and {r["seed"] for r in rows} == {1, 2, 3}
+    vals = [r["ic50_uM"] for r in rows]
+    assert all(np.isfinite(v) and v > 0 for v in vals), vals
+    spread = rows[0]["spread_fold"]
+    assert abs(spread - max(vals) / min(vals)) < 1e-9
+    assert 1.0 < spread < 2.0, f"expected a real but bounded spread, got {spread}"
+    # with identical cells the same measurement is near-deterministic
+    flat = _rows(api.ic50_spread("A549", "cisplatin", seeds=(1, 2, 3), n_cells=24,
+                                 params=Params(het_sigma=0.0)))
+    assert flat[0]["spread_fold"] < 1.05, (
+        f"heterogeneity should be the source of the spread: {flat[0]['spread_fold']}")
+    assert flat[0]["spread_fold"] < spread
+
+
 def test_washout_shows_the_drug_leaving_and_the_colony_recovering():
     rows = _rows(api.washout("A549", "cisplatin", conc_uM=20.0, exposure_h=12.0,
                              hours=96.0, n_cells=48, record_every_h=12.0))
