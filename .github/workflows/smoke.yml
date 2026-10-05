@@ -25,7 +25,10 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
-      - "cellsim/api.py"
+      # Every top-level module, not a list of names: api.py was added to
+      # this filter by hand, and plate.py and calibrate.py were then
+      # missed, so a change to either alone would have skipped CI.
+      - "cellsim/*.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"
@@ -58,7 +61,10 @@ on:
       - "benchmarks/quantum/**"
       - "benchmarks/pdbbind/**"
       - "cellsim/cell/**"
-      - "cellsim/api.py"
+      # Every top-level module, not a list of names: api.py was added to
+      # this filter by hand, and plate.py and calibrate.py were then
+      # missed, so a change to either alone would have skipped CI.
+      - "cellsim/*.py"
       - "cellsim/bridge/**"
       - "tests/cell/**"
       - "tests/bridge/**"

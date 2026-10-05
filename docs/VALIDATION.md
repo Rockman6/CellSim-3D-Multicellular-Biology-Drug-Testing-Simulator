@@ -875,6 +875,110 @@ the script reports what a given rate produces rather than claiming one.
 Gated by `tests/cell/test_evolution_smoke.py` (4 gates, 18 s), including
 the control that identical cells without mutation cannot drift.
 
+## Phase 4: reading a lab's own plate (`cellsim/plate.py`)
+
+Everything above uses our cell lines and our fitted constants. A lab has
+its own line, its own reader and its own drug, and until their numbers
+can enter the simulator none of this is a tool for them. This is the
+first half of that door: get a plate in, normalised, fitted, with an
+error bar that has been checked. (Fitting the *simulator's* constants to
+those data is the second half, and it needs this uncertainty, so it comes
+after.)
+
+`cellsim plate --data reading.csv --map map.csv` reads a reader's grid
+export or a tidy table, subtracts blanks, sets the plate's own controls
+to 1, fits a four-parameter logistic in log concentration, and reports
+GR metrics when the plate carries a time-zero read.
+
+**Why GR as well as IC50.** A 72 h viability assay confounds potency with
+division rate: a line that doubles twice in the assay has more to lose
+than one that doubles once, so the same drug looks more potent in the
+faster line. GR metrics divide by the control's own growth over the same
+window (Hafner et al. 2016 Nat Methods 13:521) and are comparable across
+lines and assay lengths. They need one extra read, at time zero.
+
+### The confidence interval was wrong twice before it was right
+
+The only way to know what a confidence interval is worth is to simulate
+curves whose IC50 is **known** and count how often the interval contains
+it (`scripts/validate_plate_fit.py`, 200 plates per row):
+
+| Method | Coverage at a nominal 95 % |
+|---|:-:|
+| resample the raw residuals | **80 %** |
+| scale residuals by √(n/(n−p)) | 88–92 % |
+| bias-corrected and accelerated (BCa) | **88–90 %**, and no bias in the point estimate |
+
+The first gap has a definite cause: residuals from a fitted curve are
+smaller than the true errors, because the fit has already absorbed p of
+the n degrees of freedom. The rest is what a small-sample bootstrap on a
+nonlinear parameter does, and ~90 % is where ten concentrations land.
+That number is printed next to every interval rather than left implied.
+
+### What the plate design has to be, for the number to mean anything
+
+This is the part worth giving a biologist before they run the assay.
+
+**Concentrations per curve** (noise sd 0.05):
+
+| Points | Coverage | Interval width |
+|:-:|:-:|:-:|
+| 5 | **68 %** | 1.85× |
+| 7 | 86 % | 1.83× |
+| 10 | 88 % | 1.75× |
+| 12 | 84 % | 1.68× |
+
+A five-point curve fits four parameters to five numbers. The interval it
+returns looks no wider than a ten-point one and contains the truth two
+times in three. `fit_4pl` therefore attaches an explicit note below seven
+points, and `summary()` quotes 68 % rather than 90 % there.
+
+**Noise** (ten points): coverage holds at 88–90 % up to a residual sd of
+0.10, and falls to 84 % at 0.20 — where the interval has widened to 18×
+and is no longer telling anyone anything.
+
+**Range**, which turned out to matter more than either (50 plates per
+row, since these fits are slow by construction):
+
+| Tested range | Coverage | Interval width | Flagged extrapolated |
+|---|:-:|:-:|:-:|
+| 0.01–100 µM (brackets the IC50) | 86 % | 1.67× | 0/50 |
+| 0.1–30 µM (brackets it) | 80 % | 1.76× | 0/50 |
+| 0.001–0.5 µM (clips it from below) | **64 %** | **121×** | 20/50 |
+| 10–1000 µM (clips it from above) | **44 %** | **168×** | 20/50 |
+
+A range that sits entirely to one side gives a flat plate with no
+midpoint to find, and is **refused** rather than fitted — the earlier
+code fitted it anyway, taking minutes per call to extract a confident
+IC50 from noise.
+
+The in-between case is the one to understand. A range that merely
+*clips* the response still fits, and the interval does not hide the
+problem: it blows up to a hundredfold and more, which is the method
+saying it does not know. What it does not do is contain the truth —
+even that enormous interval misses it between a third and a half of the
+time, because the data constrain the curve's shape only on one side and
+the extrapolation can go anywhere. So a wide interval here is not a
+conservative answer, it is an absent one. Those fits are flagged
+`extrapolated`, and the flag, not the width, is what to act on.
+
+### Two bugs the plate files caught
+
+Writing real plate files for the tests, rather than passing arrays
+directly, found both:
+
+* A grid export pads its unused wells, and `empty` was being classified
+  as a **blank**. Forty-two zero-reading filler wells were averaged into
+  the background, which silently rescaled every viability on the plate.
+  `empty` is now its own role and is ignored.
+* Readers write `B07` where plate maps write `B7`. Unnormalised, every
+  well fails to match and the error surfaces far from its cause; well
+  names are now normalised, and an unmapped well raises instead of being
+  dropped.
+
+Gated by `tests/cell/test_plate_smoke.py` (11 gates, 9 s), which builds
+plate files on disk in both layouts.
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
