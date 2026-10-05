@@ -692,8 +692,67 @@ the curated tracks by `scripts/ctc_reference.py`):
 The colony grows right; the single-cell picture does not. The movie's
 cells are a mix of fast cyclers (complete cycles ~19 h) and a large
 fraction that does not divide within the window — the proliferation /
-quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369),
-which the engine does not model. Open. With every cell on one clock
+quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369).
+
+**Now modelled, and it closes the gap** (`Params.quiescent_fraction`,
+off by default). The fix needed two changes together, which is what made
+the miss informative:
+
+| | 20 h | 30 h | cells at 46 h |
+|---|:-:|:-:|:-:|
+| measured, sequence 01 | 0.77 | 0.51 | 137 |
+| engine, 31 h cycle, no quiescence | 1.00 | 0.52 | 126 |
+| engine, 19 h cycle + 50 % quiescent | **0.74** | **0.51** | **140** |
+| measured, sequence 02 | 0.80 | 0.71 | 363 |
+| engine, 31 h cycle, no quiescence | 0.94 | 0.38 | 385 |
+| engine, 19 h cycle + 50 % quiescent | **0.72** | **0.63** | **364** |
+
+Quiescence alone was not enough: it fixed the plateau at 30 h and left
+the engine far too slow at 20 h. The cycling cells also had to cycle
+faster — and that exposed a conflation in the library worth stating
+plainly.
+
+**`doubling_time_h` is a single-cell cycle time, and the library fills
+it with population doubling times.** `calibrate_cycle_scale` uses the
+field as the time one cell takes from early G1 to mitosis; ATCC and
+Cellosaurus quote the time a culture takes to double. They agree only
+when every cell cycles. HeLa's cells complete a cycle in ~19 h while its
+counts double every 27–31 h, because about half of each generation stops
+— so the 31 h in the library makes population growth right and every
+single-cell cycle 1.6× too slow, which is precisely the miss above.
+
+For the other lines the gap is small, because ATCC measures
+exponential-phase culture where quiescence is low. The entry is left
+unchanged for now rather than quietly corrected: splitting it means
+re-validating the GDSC predictions that rest on it, and the size of that
+re-validation is measurable rather than hypothetical.
+
+**What quiescence does to each drug class** (A549, 72 h IC50, half of
+each generation quiescent):
+
+| Drug | Mechanism | IC50 shift |
+|---|---|:-:|
+| gemcitabine | S-phase | **1.50×** |
+| sn-38 | TOP1, S-phase | **1.26×** |
+| cisplatin | DNA adduct | 1.06× |
+| doxorubicin | TopII | 1.03× |
+| paclitaxel | tubulin | 0.95× |
+
+So changing HeLa's entry would move its antimetabolite predictions by
+about a third and leave the rest alone — a bounded, checkable impact
+rather than an unknown one.
+
+The S-phase result is the clinical intuition that antimetabolites spare
+non-cycling cells, falling out of the mechanism rather than put in. The
+tubulin result was **predicted wrongly before it was measured**: a
+quiescent cell never reaches mitosis, so a taxane should have lost
+potency too. Looking at the arms shows why it does not. Under
+gemcitabine the treated colony shrinks less than the control (×0.57
+against ×0.46) because quiescent cells escape a drug that kills and are
+enriched by it. Under paclitaxel both shrink together (×0.44 against
+×0.46): a cell that was not going to divide loses nothing when division
+is blocked. Protection comes from escaping killing, not from escaping
+cytostasis. With every cell on one clock
 (cycle CV 0) no cell divides within 30 h of birth at all, so measured
 variability is clearly needed.
 
