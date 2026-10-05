@@ -39,7 +39,10 @@ K = calibrate_cycle_scale(LINE, P)
 # other cell gates take; the accuracy claims live in
 # scripts/validate_plate_fit.py and in the round-trip below, not in the
 # precision of any single number here.
-N_CELLS, ITERS = 24, 10
+# Eight bisection steps over a 3-decade bracket resolve the constant to
+# about 1.03x, which is finer than the simulation's own granularity at
+# this cell count, so more steps would only cost time.
+N_CELLS, ITERS = 24, 8
 
 
 def test_doubling_time_comes_back_out_of_the_control_wells():
