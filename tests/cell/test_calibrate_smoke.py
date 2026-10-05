@@ -138,11 +138,30 @@ def test_predictions_come_back_as_a_band():
     range, and a difference smaller than that range is not a result."""
     cal = calibrate_potency("A549", "cisplatin", 8.0, (5.0, 13.0),
                             n_cells=N_CELLS, iters=ITERS, report_ic50=False)
-    band = predict_band(cal, lambda d: ic50(LINE, d, guess_uM=8.0,
-                                            n_cells_per_conc=N_CELLS, k_cyc=K, p=P))
-    assert set(band) >= {"low", "value", "high", "spread", "range"}
-    assert band["range"][0] < band["value"] < band["range"][1], band
+    band = predict_band(cal, lambda d, sd: ic50(LINE, d, guess_uM=8.0,
+                                                n_cells_per_conc=N_CELLS, k_cyc=K,
+                                                p=P, seed=sd), seeds=(1, 2))
+    assert set(band) >= {"low", "value", "high", "spread", "range", "n_runs"}
+    assert band["n_runs"] == 6, "three constants x two seeds"
+    assert band["range"][0] <= band["value"] <= band["range"][1], band
     assert band["spread"] > 1.0, f"a 2.6-fold measurement should give a real spread: {band}"
+
+
+def test_the_band_widens_when_seeds_are_included():
+    """The error that a hold-out test caught: a band built from the
+    calibration interval alone, at one seed, ignores the engine's own
+    run-to-run variability — which is about as large. Including seeds
+    must widen it."""
+    cal = calibrate_potency("A549", "cisplatin", 8.0, (6.5, 10.0),
+                            n_cells=N_CELLS, iters=ITERS, report_ic50=False)
+
+    def run(d, sd):
+        return ic50(LINE, d, guess_uM=8.0, n_cells_per_conc=N_CELLS, k_cyc=K, p=P, seed=sd)
+
+    one_seed = predict_band(cal, run, seeds=(1,))
+    three = predict_band(cal, run, seeds=(1, 2, 3))
+    assert three["spread"] >= one_seed["spread"], (one_seed["spread"], three["spread"])
+    assert three["n_runs"] == 9 and one_seed["n_runs"] == 3
 
 
 if __name__ == "__main__":

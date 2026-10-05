@@ -103,6 +103,12 @@ spheroid("DLD-1", days=6)                 # size, hypoxia, necrotic core over ti
 question end to end — *should I pulse this drug or leave it on?* — with
 every command run and its actual output.
 
+`ic50_spread()` is worth running before quoting any IC50 from this
+engine: the number moves 10–20 % between seeds, because a population's
+IC50 is set by which resistant lineages were drawn rather than by how
+many cells were counted ([why](docs/VALIDATION.md)). Two numbers that
+differ by less than that do not differ.
+
 `exposure()` is the one worth knowing about: it returns `inf` where no
 concentration reaches half kill, which is the honest answer for a taxane
 given for three hours, and the reason AUC is the wrong exposure metric

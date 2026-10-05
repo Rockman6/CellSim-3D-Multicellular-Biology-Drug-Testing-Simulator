@@ -10,6 +10,10 @@ The functions map to the questions the engine has actually been checked
 against (`docs/VALIDATION.md`), and no further:
 
     curve()        a dose-response curve and its IC50
+    ic50_spread()  the same IC50 under several seeds, and how far it
+                   moves — run this before quoting one
+    gr_curve()     the same run as GR values, which is the axis a
+                   measured plate can be compared on
     exposure()     the iso-effect curve: the concentration needed for
                    half kill at each exposure time, which is how a
                    schedule decision is actually made
@@ -37,7 +41,8 @@ from cellsim.cell.engine import (Params, calibrate_cycle_scale, dose_response, i
                                  ic50_from_curve, simulate)
 from cellsim.cell.library import CELL_LINES, DRUGS, CellLine, Drug, get_drug, get_line
 
-__all__ = ["curve", "exposure", "washout", "combination", "spheroid", "lines", "drugs"]
+__all__ = ["curve", "exposure", "washout", "combination", "spheroid", "gr_curve",
+           "ic50_spread", "lines", "drugs"]
 
 
 def _table(rows: list[dict]):
@@ -104,6 +109,81 @@ def curve(line: Union[str, CellLine], drug: Union[str, Drug], *,
                     "exposure_h": exposure_h if exposure_h is not None else hours,
                     "readout_h": hours, "control_fold_change": float(growth)}
                    for c, v in zip(conc, viab[1:])])
+
+
+def gr_curve(line: Union[str, CellLine], drug: Union[str, Drug], *,
+             concentrations: Optional[Sequence[float]] = None, hours: float = 72.0,
+             exposure_h: Optional[float] = None, n_cells: int = 48, seed: int = 1,
+             params: Params = Params()):
+    """The same simulation as `curve()`, reported as GR values.
+
+    A measured plate analysed by `cellsim.plate.gr_metrics` and a
+    simulation analysed here are then the same quantity, so they can be
+    plotted on one axis and compared. Viability cannot be compared that
+    way between a fast and a slow line, which is the whole reason GR
+    exists (Hafner et al. 2016 Nat Methods 13:521).
+
+    GR = 1 is untreated growth, 0 is complete cytostasis, below 0 is net
+    cell loss. The engine's alive weight is the cell count GR needs, and
+    the untreated arm of the same run supplies the control."""
+    from cellsim.plate import gr_metrics
+    ln, dg = _line(line), _drug(drug)
+    k = calibrate_cycle_scale(ln, params)
+    if concentrations is None:
+        centre = ic50(ln, dg, guess_uM=_guess(dg), t_end_h=hours, n_cells_per_conc=24,
+                      k_cyc=k, p=params, exposure_h=exposure_h)
+        if not np.isfinite(centre):
+            centre = _guess(dg) * 100
+        concentrations = centre * np.logspace(-2, 2, 9)
+    conc = np.asarray(list(concentrations), float)
+    _, res = dose_response(ln, dg, conc, t_end_h=hours, n_cells_per_conc=n_cells,
+                           seed=seed, p=params, k_cyc=k, exposure_h=exposure_h)
+    # Group 0 is the untreated control that dose_response prepends.
+    t0 = float(res.alive_weight[0, 0])
+    control = float(res.alive_weight[-1, 0])
+    treated = [float(res.alive_weight[-1, i + 1]) for i in range(len(conc))]
+    gr = gr_metrics(conc, treated, control=control, t0=t0)
+    return _table([{"line": ln.name, "drug": dg.name, "conc_uM": float(c),
+                    "gr": float(g), "gr50_uM": gr.gr50_uM, "gr_max": gr.gr_max,
+                    "gr_aoc": gr.gr_aoc,
+                    "control_doublings": gr.doublings_in_assay,
+                    "exposure_h": exposure_h if exposure_h is not None else hours,
+                    "readout_h": hours}
+                   for c, g in zip(gr.conc_uM, gr.gr)])
+
+
+def ic50_spread(line: Union[str, CellLine], drug: Union[str, Drug], *,
+                seeds: Sequence[int] = (1, 2, 3, 4, 5), hours: float = 72.0,
+                exposure_h: Optional[float] = None, n_cells: int = 32,
+                params: Params = Params()):
+    """The same IC50 measured under several seeds, and how far it moves.
+
+    Worth running before quoting an IC50 from this engine. The number is
+    a random variable: repeating an identical simulation under a
+    different seed moves it by 10-20 %, because the engine draws a finite
+    sample of lineages and a population's IC50 is set by its resistant
+    tail rather than by its mean. More cells barely helps — with
+    heterogeneity switched off the spread collapses to under 1 %, which
+    is how the cause was identified (docs/VALIDATION.md).
+
+    Returns one row per seed plus the median and the spread, so a caller
+    can see whether a difference they care about is larger than the
+    engine's own. Two numbers from this engine that differ by less than
+    the spread do not differ.
+    """
+    ln, dg = _line(line), _drug(drug)
+    k = calibrate_cycle_scale(ln, params)
+    vals = [ic50(ln, dg, guess_uM=_guess(dg), t_end_h=hours, n_cells_per_conc=n_cells,
+                 k_cyc=k, p=params, seed=int(s), exposure_h=exposure_h) for s in seeds]
+    finite = [v for v in vals if np.isfinite(v)]
+    median = float(np.median(finite)) if finite else float("nan")
+    spread = float(max(finite) / min(finite)) if len(finite) > 1 else float("nan")
+    return _table([{"line": ln.name, "drug": dg.name, "seed": int(s),
+                    "ic50_uM": float(v), "median_ic50_uM": median,
+                    "spread_fold": spread, "n_finite": len(finite),
+                    "exposure_h": exposure_h if exposure_h is not None else hours,
+                    "readout_h": hours}
+                   for s, v in zip(seeds, vals)])
 
 
 def exposure(line: Union[str, CellLine], drug: Union[str, Drug],
