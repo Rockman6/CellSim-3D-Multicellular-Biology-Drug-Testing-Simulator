@@ -47,7 +47,7 @@ prototype (p53 basal 0.089 ≈ 1x). Non-AI: closed-form ODEs, RK4.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 
@@ -387,6 +387,18 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
         if p.efflux_vmax_uM_per_h > 0 and getattr(dg, "pgp_substrate", False):
             vmax = p.efflux_vmax_uM_per_h * line.efflux_level * aux["het_uptake"]
             dY[:, col] -= vmax * ci / (p.efflux_km_uM + ci)
+
+    # Genetic perturbation (cellsim.cell.perturb), applied LAST because
+    # every block above assigns its slice of dY outright — scaling earlier
+    # is simply overwritten, which is how a BAX knockout first came out
+    # with no effect at all.
+    #
+    # Production is scaled, decay is not: a knockout (factor 0) lets
+    # whatever is present decay away with nothing replacing it, which is
+    # what losing the gene does. An overexpression scales production up.
+    sf = aux.get("state_factor")
+    if sf is not None:
+        dY = np.where(dY > 0, dY * sf[None, :], dY)
     return dY
 
 
@@ -577,6 +589,7 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
              *, t_end_h: float = 72.0, n_cells: int = 128, dt_h: float = 0.02,
              seed: int = 1, groups: Optional[np.ndarray] = None,
              forced_D: Optional[float] = None, p: Params = Params(),
+             perturbations: Optional[Sequence] = None,
              k_cyc: Optional[float] = None, record_every_h: float = 1.0,
              dose_fn: Optional[Callable[[float], float]] = None,
              on_record: Optional[Callable[["Population", float], None]] = None,
@@ -595,6 +608,10 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     Mapping outcome against chosen traits measures selection exactly,
     where random draws only sample it."""
     rng = np.random.default_rng(seed)
+    state_factor = None
+    if perturbations:
+        from cellsim.cell.perturb import apply_to_params
+        line, p, state_factor = apply_to_params(line, p, perturbations)
     drugs = _as_drug_tuple(drug)
     n_drugs = max(1, len(drugs))
     q = _quiescent_fraction(line, p)
@@ -617,6 +634,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
         aux["cycle_rate"] = pop.cycle_rate
     if pop.quiescent is not None:
         aux["quiescent"] = pop.quiescent        # the same array the events update
+    if state_factor is not None:
+        aux["state_factor"] = state_factor
     n_steps = int(round(t_end_h / dt_h))
     rec_stride = max(1, int(round(record_every_h / dt_h)))
     T = n_steps // rec_stride + 1
@@ -669,7 +688,8 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
 def dose_response(line: CellLine, drug: Drug, conc_uM: np.ndarray, *, t_end_h: float = 72.0,
                   n_cells_per_conc: int = 96, dt_h: float = 0.02, seed: int = 1,
                   p: Params = Params(), k_cyc: Optional[float] = None,
-                  exposure_h: Optional[float] = None) -> tuple[np.ndarray, SimResult]:
+                  exposure_h: Optional[float] = None,
+                  perturbations: Optional[Sequence] = None) -> tuple[np.ndarray, SimResult]:
     """Viability at t_end_h for each concentration (index 0 is the
     untreated control, prepended automatically). One simulation.
 
@@ -684,7 +704,8 @@ def dose_response(line: CellLine, drug: Drug, conc_uM: np.ndarray, *, t_end_h: f
         none = np.zeros_like(C_out)
         dose_fn = lambda t_h: C_out if t_h < exposure_h - 1e-9 else none  # noqa: E731
     res = simulate(line, drug, C_out, t_end_h=t_end_h, n_cells=len(groups), dt_h=dt_h,
-                   seed=seed, groups=groups, p=p, k_cyc=k_cyc, dose_fn=dose_fn)
+                   seed=seed, groups=groups, p=p, k_cyc=k_cyc, dose_fn=dose_fn,
+                   perturbations=perturbations)
     return res.viability(), res
 
 
@@ -708,7 +729,8 @@ def ic50_from_curve(conc_uM: np.ndarray, viability: np.ndarray) -> float:
 def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 72.0,
          n_cells_per_conc: int = 48, seed: int = 1, n_seeds: int = 3,
          p: Params = Params(), k_cyc: Optional[float] = None,
-         exposure_h: Optional[float] = None) -> float:
+         exposure_h: Optional[float] = None,
+         perturbations: Optional[Sequence] = None) -> float:
     """The engine's continuous-exposure IC50 (µM) for one line and drug.
 
     Two passes: a 17-point grid over eight decades around `guess_uM`
@@ -735,7 +757,8 @@ def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 
     if n_seeds > 1:
         vals = [ic50(line, drug, guess_uM=guess_uM, t_end_h=t_end_h,
                      n_cells_per_conc=n_cells_per_conc, seed=seed + i, n_seeds=1, p=p,
-                     k_cyc=k_cyc, exposure_h=exposure_h) for i in range(n_seeds)]
+                     k_cyc=k_cyc, exposure_h=exposure_h, perturbations=perturbations)
+                for i in range(n_seeds)]
         finite = [v for v in vals if np.isfinite(v)]
         # All-infinite means no concentration reached half kill in any
         # run, which is an answer rather than a failure. A mixture is
@@ -749,14 +772,16 @@ def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 
         k_cyc = calibrate_cycle_scale(line, p)
     coarse = guess_uM * np.logspace(-4, 4, 17)
     viab, _ = dose_response(line, drug, coarse, t_end_h=t_end_h, n_cells_per_conc=n_cells_per_conc,
-                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h)
+                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h,
+                            perturbations=perturbations)
     first = ic50_from_curve(coarse, viab[1:])
     if not np.isfinite(first) or first <= coarse[0]:
         return first
     i = int(np.searchsorted(coarse, first))
     fine = np.geomspace(coarse[max(0, i - 1)], coarse[min(len(coarse) - 1, i)], 13)
     viab, _ = dose_response(line, drug, fine, t_end_h=t_end_h, n_cells_per_conc=n_cells_per_conc,
-                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h)
+                            seed=seed, p=p, k_cyc=k_cyc, exposure_h=exposure_h,
+                            perturbations=perturbations)
     refined = ic50_from_curve(fine, viab[1:])
     return refined if np.isfinite(refined) else first
 
