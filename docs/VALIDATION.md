@@ -1215,6 +1215,105 @@ directly, found both:
 Gated by `tests/cell/test_plate_smoke.py` (11 gates, 9 s), which builds
 plate files on disk in both layouts.
 
+## Four experiments the engine could not do before
+
+Added October 2026. All four default to OFF, and the first gate for each
+is that an untouched run is unchanged — four merged phases of results
+depend on that.
+
+### Knock a gene out (`cellsim.cell.perturb`, `api.knockout`)
+
+The engine already carries the pathway as state variables, so a genetic
+perturbation is a constraint on a mechanism that is already there rather
+than a new one: a knockout stops a node's production and lets what is
+there decay, a knockdown scales it, an overexpression raises it.
+Thirteen genes map to engine nodes; one the engine does not represent is
+REFUSED, because a knockout that silently does nothing looks like a
+result.
+
+What makes these checkable is that each has a right answer to land on:
+
+| Check | Result |
+|---|---|
+| TP53 knockout vs the library's p53-mutant lines | lands in the same place, via the same `p53_functional` route |
+| PUMA vs BAX vs CASP3 knockout | identical to within 0.03 — they are one linear pathway, so losing any one must block it the same way |
+| ABCB1 overexpression vs doxorubicin | protects (it is a P-gp substrate) |
+| ABCB1 overexpression vs **cisplatin** | **no change** — ABCB1 does not transport it, and GDSC's own correlations agree |
+
+The last pair is the real test. A perturbation framework that moves
+everything is not modelling anything.
+
+One prediction worth recording, because it is the kind of thing the
+engine exists to produce: **blocking apoptosis converts killing into
+arrest.** With BAX gone, viability at the top cisplatin dose floors at
+0.14 instead of reaching 0 — the cells stop dying and do not resume
+growing.
+
+### Run the tumour out of sugar (`DishParams.glucose_*`, `api.starve`)
+
+A second diffusing nutrient solved by the same quasi-steady
+reaction-diffusion code as oxygen, with its own diffusivity (Casciari
+1988) and uptake (Casciari 1992). Below ~0.3 mM interior cells stop
+cycling; below ~0.06 mM they die. Whichever of oxygen and glucose is
+scarcer governs, because Freyer & Sutherland's central finding (1986
+Cancer Res 46:3504, 46:3513) is that a spheroid's necrotic core can be
+set by glucose rather than oxygen — so neither can be the only route.
+
+DLD-1 spheroid, 6 days from 3000 cells:
+
+| Medium glucose | Live | Necrotic | Radius |
+|---|:-:|:-:|:-:|
+| 5.5 mM (physiological) | 10 840 | 105 | 207 µm |
+| 0.4 mM | 10 830 | 105 | 207 µm |
+| 0.2 mM | 6 903 | 0 | 177 µm |
+| 0.1 mM | 3 488 | 615 | 149 µm |
+
+Growth stalls before killing starts, which is the ordering starvation
+should have. **Calibrated, not validated**: the thresholds are literature
+values, not fitted to a measured rim, and no held-out dataset has been
+run against this yet.
+
+### Let cells crawl (`DishParams.migration_*`)
+
+A random walk on the lattice, optionally biased up the oxygen gradient.
+This one has an exact answer to check against — a walk of hop rate *k* on
+spacing *h* has D = k·h²/4 in two dimensions:
+
+| Hop rate | Simulated D | Theory |
+|---|:-:|:-:|
+| 0.5 /h | 43 µm²/h | 50 |
+| 2.0 /h | 198 µm²/h | 200 |
+| 5.0 /h | 414 µm²/h | 500 |
+
+The first attempt gave 126 against a theoretical 200, because one hop per
+field interval capped the effective rate at 1/interval. Migration now
+runs in sub-rounds short enough that wanting two hops is rare.
+
+### Put immune cells on the dish (`DishParams.effector_*`, `api.killing`)
+
+Effector cells on their own layer, as T or NK cells crawl over a
+monolayer. Each random-walks biased toward tumour cells, engages on
+contact, kills at a rate, rests while conjugated, and stops after a few
+kills. CTLs take about an hour from contact to target death and kill a
+few targets a day (Halle et al. 2016 Immunity 44:233).
+
+A549 monolayer, 24 h:
+
+| E:T | Live tumour | Specific lysis | Effector kills |
+|---|:-:|:-:|:-:|
+| 0 | 862 | — | 0 |
+| 0.1 | 546 | 37 % | 192 |
+| 0.3 | 100 | 88 % | 458 |
+| 1.0 | 0 | 100 % | 446 |
+| 3.0 | 0 | 100 % | 408 |
+
+The kill count *falls* above E:T 0.3 because the effectors run out of
+targets, which is the right shape. **Calibrated, not validated**: the
+kinetics are literature values and nothing has been run against a
+measured killing curve. What the gates pin is that the lysis comes from
+the killing and not from the effectors' presence — effectors with a zero
+kill rate leave the monolayer untouched.
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
