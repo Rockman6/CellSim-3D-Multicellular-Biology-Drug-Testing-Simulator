@@ -61,6 +61,16 @@ class CellLine:
     # why their wild-type TP53 neither rises under nutlin nor mounts a
     # full damage response. 0 for HPV-negative lines.
     p53_mdm2_independent_deg_per_h: float = 0.0
+    # Share of each generation that leaves mitosis into G0 rather than
+    # starting another cycle (Spencer et al. 2013 Cell 155:369). This is
+    # a property of the LINE and its culture conditions, so it lives here
+    # rather than in Params; `Params.quiescent_fraction` overrides it when
+    # an experiment wants to sweep the value.
+    #
+    # It is also the other half of `doubling_time_h`: a culture that is
+    # half quiescent doubles at half the rate its cycling cells divide,
+    # so the two must be set together or the population growth moves.
+    quiescent_fraction: float = 0.0
     gdsc_name: str = ""              # name in GDSC tables, when it differs
     source: str = ""
 
@@ -126,16 +136,22 @@ CELL_LINES: dict[str, CellLine] = {
                       source="ATCC CCL-228 ~26 h; TP53 p.R273H + p.P309S (CVCL_0546). "
                              "NOT screened in GDSC 8.4 (which has SW48 and SW620), so "
                              "it has no IC50 reference here"),
-    "HeLa": CellLine("HeLa", 31.0, True, "cervix",
+    # 19 h is the CYCLE time its individual cells take, with half of each
+    # generation going quiescent; together these reproduce the Cell
+    # Tracking Challenge movie on both axes, where the 31 h population
+    # figure used before matched the counts and made every single-cell
+    # cycle 1.6x too slow (docs/VALIDATION.md).
+    "HeLa": CellLine("HeLa", 19.0, True, "cervix", quiescent_fraction=0.50,
                      efflux_level=9.79, p53_mdm2_independent_deg_per_h=10.0,
                      source="Doubling 1.3 d (Cellosaurus CVCL_0030, PubMed 29156801; DSMZ "
                             "~48 h); the Cell Tracking Challenge HeLa movie's own counts "
                             "double every 27-31 h (scripts/ctc_reference.py). An earlier "
                             "20 h here was the mean of its COMPLETE cycles, which a 46 h "
-                            "movie biases short. TP53 wild-type but degraded by HPV18 "
-                            "E6 independently of MDM2 (Hengstermann 2001); the E6 rate "
-                            "holds p53 below its apoptotic threshold even with MDM2 "
-                            "fully blocked"),
+                            "movie biases short — and the cycle time and the quiescent "
+                            "fraction are now set separately, which is what reproduces "
+                            "both. TP53 wild-type but degraded by HPV18 E6 independently "
+                            "of MDM2 (Hengstermann 2001); the E6 rate holds p53 below its "
+                            "apoptotic threshold even with MDM2 fully blocked"),
 
     # ── Added 2026-10 to test the p53-independent death route against
     # lines that played no part in choosing its parameter. Doubling

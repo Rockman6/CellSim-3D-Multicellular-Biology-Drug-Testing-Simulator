@@ -260,9 +260,10 @@ class Dish:
             raise ValueError(f"{n_seed} cells do not fit on a {self.shape} lattice")
 
         # Initial cells: the engine's own asynchronous population.
+        from cellsim.cell.engine import _quiescent_fraction
         pop = make_population(n_seed, 0.0, self.rng, het_sigma=p.het_sigma,
                               n_drugs=self.n_drugs, cycle_cv=p.cycle_cv,
-                              quiescent_fraction=p.quiescent_fraction)
+                              quiescent_fraction=_quiescent_fraction(line, p))
         self.cells = pop
         self.lineage = np.arange(n_seed)
         # Birth time of each cell; -inf for the founders, whose cycle began
@@ -522,7 +523,8 @@ class Dish:
             # Each daughter decides independently, so the sister of a
             # quiescent cell is not automatically quiescent — which is the
             # observation the bifurcation was described from.
-            draw = self.rng.random(len(idx)) < self.p.quiescent_fraction
+            from cellsim.cell.engine import _quiescent_fraction
+            draw = self.rng.random(len(idx)) < _quiescent_fraction(self.line, self.p)
             c.quiescent = np.concatenate([c.quiescent, draw])
         self.lineage = np.concatenate([self.lineage, self.lineage[idx]])
         self.birth_t = np.concatenate([self.birth_t, np.full(len(idx), self.t_h)])
@@ -582,7 +584,7 @@ class Dish:
             _rk4(self.cells.Y, self._aux(), self.line, self.drugs or None, self.p, self.k_cyc, dp.dt_h)
             self.t_h += dp.dt_h
             divide, die = _cell_events(self.cells, self.drugs or None, self.p, dp.dt_h,
-                                       rng=self.rng)
+                                       rng=self.rng, line=self.line)
             if die.any():
                 self._bury(die, APOPTOTIC)
             if divide.any():
