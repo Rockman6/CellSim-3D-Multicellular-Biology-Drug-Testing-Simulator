@@ -4,6 +4,10 @@
 simulator in Python. Open source, Apple-silicon and Linux, no GPU
 required.**
 
+**[Open a simulated spheroid in your browser →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/)**
+(no install; the demo runs are simulated fresh on every deploy, so they
+show what the current code produces)
+
 CellSim is converging on one product: an interactive dish. Pick a cell
 line and a drug, set a dose schedule, watch the colony respond, and get a
 dose-response curve whose error bar has been checked against public
