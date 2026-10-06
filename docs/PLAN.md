@@ -249,8 +249,8 @@ retracted, one qualified; `docs/VALIDATION.md`, "Phase 2: audited").
 | Combination schedules | **Done** in Phase 2, re-measured over seeds, and exposed through `cellsim.api.combination`. |
 | Resistance evolution | **Done.** Heritable change at division, with the homogeneous-start control that makes the claim testable. |
 | Uncertainty calibrated, coverage reported | **Done.** Leave-one-drug-out; within 15 points of nominal at 68/90/95 %. |
-| JOSS paper | **Draft** in `paper/`. Needs an ORCID and a release tag before submission. |
-| Validation preprint | **Not started.** `docs/VALIDATION.md` already holds the content; what a preprint needs beyond it is a figure set and a framing around the negative result (markers cannot rank lines; modelled mechanism can call response). |
+| JOSS paper | **Parked, not in progress.** A draft sits in `paper/` from when this plan listed it; the goal is a product, not a publication. |
+| Validation preprint | **Dropped.** `docs/VALIDATION.md` serves the purpose that matters — making the tool trustworthy to someone using it. |
 | conda-forge | **Recipe prepared** (`packaging/conda-forge/`), not submitted: the sdist must be on PyPI first, and submission is the owner's call. |
 | Documentation site | **Served by** `web/index.html` plus `docs/cell_tutorial.md`; no separate site generator, which would be machinery for its own sake at this size. |
 | Hosted demo | **Workflow ready** (`.github/workflows/pages.yml`), which simulates the demo runs at deploy time. Needs Pages enabled in repository settings once; its steps were verified locally against a pip-installed package. |
@@ -258,6 +258,33 @@ retracted, one qualified; `docs/VALIDATION.md`, "Phase 2: audited").
 The two mechanisms added for the panel were S-phase-restricted damage
 (TOP1 poisons and antimetabolites) and MDM2 inhibition, with the HPV E6
 route that explains why HeLa's wild-type p53 does not respond.
+
+## The goal is a product
+
+*Set by Henry, October 2026: "we are not going to write any paper yet,
+our goal is a product."*
+
+So the measure of a piece of work is whether a cell biologist would
+notice it, not whether it would make a figure. Academic deliverables
+inherited from the original 2026 roadmap — the JOSS paper, the
+validation preprint — are parked. `docs/VALIDATION.md` stays, because a
+tool nobody can check is a tool nobody should trust, but it exists to
+serve the user rather than a referee.
+
+What that ordering implies, shortest path first:
+
+1. **Someone hears about it and sees it work** — the hosted demo, live
+   and self-updating. Done.
+2. **They install it in one line** — `pip install cellsim`. Needs the
+   package published; everything else is ready.
+3. **They get an answer to their own question** — the notebook API and
+   the tutorial. Done.
+4. **They use it on THEIR cells** — plate import and calibration. Done.
+5. **They trust the answer** — measured error bars and published misses.
+   Done.
+
+Step 2 is the only gap, and it is a five-minute account signup rather
+than engineering.
 
 ## After Phase 3: what makes this useful to a working cell biologist
 
