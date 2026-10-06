@@ -1269,9 +1269,51 @@ DLD-1 spheroid, 6 days from 3000 cells:
 | 0.1 mM | 3 488 | 615 | 149 µm |
 
 Growth stalls before killing starts, which is the ordering starvation
-should have. **Calibrated, not validated**: the thresholds are literature
-values, not fitted to a measured rim, and no held-out dataset has been
-run against this yet.
+should have.
+
+#### It does NOT reproduce the published glucose effect
+
+`scripts/validate_glucose.py` tests the directional claims of
+Mueller-Klieser, Freyer & Sutherland (1986) — that lowering medium
+glucose from 16.5 to 0.8 mM substantially thins the viable rim, and that
+a lack of glucose alone can produce necrosis. **Two of the five claims
+fail.** Across the entire published range the model gives identical
+answers:
+
+| Medium glucose | Live | Radius | Viable rim | Necrotic core |
+|---|:-:|:-:|:-:|:-:|
+| 16.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+| 5.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+| 1.65 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+| 0.8 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+
+The oxygen claims pass; the glucose ones do not.
+
+The cause is arithmetic rather than mysterious. Glucose penetrates to
+L = √(2DC/q) — about 260 µm at 0.8 mM — so at a 311 µm radius the centre
+falls to **0.470 mM**, while the engine's quiescence threshold is
+0.30 mM and its death threshold 0.06 mM. **Not one cell of 29 685 is
+below either.** For 0.8 mM medium to bite at this size the consumption
+would have to be higher, the thresholds higher, or the spheroid larger —
+and their spheroids were roughly 1000 µm across, three times what these
+runs reach.
+
+So one of three things is wrong and the data to say which is not in
+hand: the consumption rate, the viability thresholds, or the comparison
+itself. **The feature stays, labelled as failing this test.** Tuning any
+of the three until the test passed would be fitting to the answer, and
+the constants are literature values rather than something fitted, which
+is the only reason the failure is informative at all.
+
+*A first version of this test reported 5/5 passing.* It reached down to
+0.1 mM — far below anything measured — and was satisfied by a difference
+there, on 160 µm spheroids too small for any gradient to form. A test
+that goes outside the experimental range to find an effect is
+manufacturing a pass, not checking a claim.
+
+**Also missing, from the same papers:** as glucose falls, cellular
+respiration RISES. Oxygen consumption here is fixed, so a starved
+spheroid's oxygen profile is wrong regardless of what the glucose does.
 
 ### Let cells crawl (`DishParams.migration_*`)
 
