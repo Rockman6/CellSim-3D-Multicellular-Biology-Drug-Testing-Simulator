@@ -500,8 +500,18 @@ def make_population(n_cells: int, C_out: Union[float, np.ndarray], rng: np.rando
                       cycle_rate=cycle_rate, quiescent=quiescent)
 
 
+def _quiescent_fraction(line: CellLine, p: Params) -> float:
+    """The line's own quiescent fraction, unless Params overrides it.
+
+    It belongs to the line — it is a property of those cells in that
+    culture — but an experiment sweeping the value needs one place to set
+    it, so a non-zero Params value wins."""
+    return p.quiescent_fraction if p.quiescent_fraction > 0 else line.quiescent_fraction
+
+
 def _cell_events(pop: "Population", drug, p: Params, dt_h: float,
-                 rng: Optional[np.random.Generator] = None) -> tuple[np.ndarray, np.ndarray]:
+                 rng: Optional[np.random.Generator] = None,
+                 line: Optional[CellLine] = None) -> tuple[np.ndarray, np.ndarray]:
     """Mitosis, mitotic arrest, slippage and death after one integration
     step, for any set of cells.
 
@@ -544,9 +554,11 @@ def _cell_events(pop: "Population", drug, p: Params, dt_h: float,
         pop.t_in_M[divide] = 0.0
         # The bifurcation at mitotic exit: some of what leaves mitosis
         # does not start the next cycle.
-        if pop.quiescent is not None and p.quiescent_fraction > 0 and rng is not None:
+        q = (p.quiescent_fraction if line is None
+             else _quiescent_fraction(line, p))
+        if pop.quiescent is not None and q > 0 and rng is not None:
             idx = np.flatnonzero(divide)
-            pop.quiescent[idx] = rng.random(len(idx)) < p.quiescent_fraction
+            pop.quiescent[idx] = rng.random(len(idx)) < q
     slip = pop.alive & arrested & (pop.t_in_M >= p.slippage_h)
     if slip.any():
         Y[slip, :7] = fresh_cycle_state()
@@ -585,9 +597,9 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
     rng = np.random.default_rng(seed)
     drugs = _as_drug_tuple(drug)
     n_drugs = max(1, len(drugs))
+    q = _quiescent_fraction(line, p)
     pop = make_population(n_cells, C_out_uM, rng, forced_D, het_sigma=p.het_sigma,
-                          n_drugs=n_drugs, cycle_cv=p.cycle_cv,
-                          quiescent_fraction=p.quiescent_fraction)
+                          n_drugs=n_drugs, cycle_cv=p.cycle_cv, quiescent_fraction=q)
     if traits is not None:
         pop.het_bcl2[:] = np.asarray(traits["bcl2"], float)
         pop.het_uptake[:] = np.asarray(traits["uptake"], float)
@@ -644,7 +656,7 @@ def simulate(line: CellLine, drug: Optional[Drug], C_out_uM: Union[float, np.nda
             _apply_dose(pop.t_h)               # aux["C_out"] is this same array
         _rk4(pop.Y, aux, line, drug, p, k_cyc, dt_h)
         pop.t_h += dt_h
-        divide, die = _cell_events(pop, drug, p, dt_h, rng=rng)
+        divide, die = _cell_events(pop, drug, p, dt_h, rng=rng, line=line)
         if divide.any():
             pop.weight[divide] *= 2.0          # a representative cell stands for both daughters
         if die.any():
@@ -694,8 +706,9 @@ def ic50_from_curve(conc_uM: np.ndarray, viability: np.ndarray) -> float:
 
 
 def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 72.0,
-         n_cells_per_conc: int = 48, seed: int = 1, p: Params = Params(),
-         k_cyc: Optional[float] = None, exposure_h: Optional[float] = None) -> float:
+         n_cells_per_conc: int = 48, seed: int = 1, n_seeds: int = 3,
+         p: Params = Params(), k_cyc: Optional[float] = None,
+         exposure_h: Optional[float] = None) -> float:
     """The engine's continuous-exposure IC50 (µM) for one line and drug.
 
     Two passes: a 17-point grid over eight decades around `guess_uM`
@@ -704,7 +717,34 @@ def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 
     multiples of a drug's own potency, which keeps a design meaningful
     when the library's fitted constants are refitted. `exposure_h` gives
     the IC50 of a pulse washed out at that time and read at t_end_h; it
-    is +inf when no concentration reaches half kill."""
+    is +inf when no concentration reaches half kill.
+
+    WHY THIS TAKES A MEDIAN. A single run of this is a random variable
+    with 10-20 % spread, and the spread does not shrink with more cells,
+    because a population's IC50 is set by WHICH RESISTANT LINEAGES were
+    drawn rather than by how many cells were counted — switch
+    `Params.het_sigma` to 0 and it collapses below 1 %
+    (docs/VALIDATION.md). So the remedy is more seeds, and the default is
+    the median of `n_seeds` consecutive ones starting at `seed`.
+
+    `n_seeds=1` restores the old single-run behaviour and costs a third
+    as much; `cellsim.api.ic50_spread` reports the spread itself when
+    what matters is how far the number could move."""
+    if n_seeds < 1:
+        raise ValueError(f"n_seeds must be at least 1, got {n_seeds}")
+    if n_seeds > 1:
+        vals = [ic50(line, drug, guess_uM=guess_uM, t_end_h=t_end_h,
+                     n_cells_per_conc=n_cells_per_conc, seed=seed + i, n_seeds=1, p=p,
+                     k_cyc=k_cyc, exposure_h=exposure_h) for i in range(n_seeds)]
+        finite = [v for v in vals if np.isfinite(v)]
+        # All-infinite means no concentration reached half kill in any
+        # run, which is an answer rather than a failure. A mixture is
+        # resolved by the median, as it would be for finite values.
+        if not finite:
+            return float("inf")
+        if len(finite) * 2 <= len(vals):
+            return float("inf")
+        return float(np.median(finite))
     if k_cyc is None:
         k_cyc = calibrate_cycle_scale(line, p)
     coarse = guess_uM * np.logspace(-4, 4, 17)

@@ -90,11 +90,28 @@ def load_targets(path: Path) -> dict[tuple[str, str], Target]:
 
 # ── engine wrappers ───────────────────────────────────────────────────
 def predicted_ic50(line_name: str, drug, center_uM: float, *, n_cells: int,
-                   k_cyc: dict[str, float], seed: int = 1, params: Params = Params()) -> float:
+                   k_cyc: dict[str, float], seed: int = 1, n_seeds: int = 3,
+                   params: Params = Params()) -> float:
     """IC50 in two passes: a 13-point log grid over 4 decades either side
     to bracket the crossing, then 9 points across the bracket. The single
     coarse pass this replaced (4.6-fold steps) moved a fitted line's own
-    prediction by up to 15 % between runs."""
+    prediction by up to 15 % between runs.
+
+    Taken as the median of `n_seeds` runs, for the same reason
+    `engine.ic50` does: one run is a random variable with 10-20 % spread,
+    set by which resistant lineages were drawn rather than by cell count,
+    so a single seed puts that noise straight into every number in the
+    published table (docs/VALIDATION.md). This duplicates `engine.ic50`
+    rather than calling it because the two take their grids differently;
+    when that is unified, this should go."""
+    if n_seeds > 1:
+        vals = [predicted_ic50(line_name, drug, center_uM, n_cells=n_cells, k_cyc=k_cyc,
+                               seed=seed + i, n_seeds=1, params=params)
+                for i in range(n_seeds)]
+        finite = [v for v in vals if np.isfinite(v)]
+        if len(finite) * 2 <= len(vals):
+            return float("inf")
+        return float(np.median(finite))
     line = CELL_LINES[line_name]
     conc = center_uM * np.logspace(-4, 4, 13)
     viab, _ = dose_response(line, drug, conc, n_cells_per_conc=n_cells,
