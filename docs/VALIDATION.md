@@ -197,8 +197,8 @@ held-out log10 RMSE 0.65 / 0.43 / 0.32 against the null's
 
 ### Exit gate: NOT met
 
-*Re-measured at ten drugs in Phase 3 (below): 34 wins to 39 losses over
-91 held-out predictions, p = 0.64. The conclusion holds, and the larger
+*Re-measured at ten drugs in Phase 3 (below): 32 wins to 41 losses over
+91 held-out predictions, p = 0.35. The conclusion holds, and the larger
 panel also found the one exception — a drug whose target is part of the
 modelled mechanism, where the engine does call lines correctly.*
 
@@ -854,12 +854,23 @@ applied unchanged everywhere else (`scripts/validate_gdsc.py`).
 
 **The Phase-1 conclusion survives the larger panel, and is now much
 better measured.** On held-out lines the engine is closer than a
-constant-IC50 null on 34 and further on 39 (sign test p = 0.64), and
+constant-IC50 null on 32 and further on 41 (sign test p = 0.35), and
 lands inside GDSC's replicate span 67 times against the null's 68. Ten
 drugs and 91 predictions say the same thing three drugs and 25 said:
 **the engine reproduces each drug's potency scale and does not rank cell
 lines better than a single number.** That is now a result rather than a
 small-sample suspicion.
+
+**Those figures are medians over three seeds**, and switching to them
+is a small result in itself. Each held-out prediction used to be a
+single run carrying the ±20 % the engine varies by; now it is a median.
+The fitted constants did not move at all (≤ 0.6 %), because the
+bisection's own tolerance was already coarser than the noise it was
+averaging. The paired comparison did move, and *against* the engine:
+34 : 39 became 32 : 41, p 0.64 → 0.35. Removing a model's own noise is
+supposed to be able to do that — a fair comparison is the point, not a
+flattering one — and the negative result is now stated on cleaner
+numbers at three times the compute.
 
 **But the panel also found the exception, and it is the informative
 one.** Nutlin-3a is the only drug whose line-to-line differences are
