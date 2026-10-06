@@ -316,6 +316,30 @@ a cell biologist would hit it:
   resistance range that pulsed and continuous selection actually produce
   (2-8x; McDermott et al. 2014 Front Oncol 4:40).
 
+### Housekeeping that keeps the record honest
+
+Found the hard way, three times in one day, and worth fixing before it
+bites a fourth: a change lands in one place while a DERIVED ARTEFACT
+elsewhere goes on asserting the old world.
+
+* `benchmarks/cell/*.json` are outputs, not assertions, so nothing fails
+  when they go stale. Changing HeLa's parameters silently invalidated
+  `dish_validation.json`, which kept reporting figures measured under the
+  old ones.
+* `scripts/validate_gdsc.py` carries its own copy of the IC50 estimator,
+  so a change to `engine.ic50` left the largest published table untouched
+  while appearing to succeed.
+* A table of C50 figures went on quoting four significant figures after
+  the text around it said they were approximate.
+
+The fix is one target that regenerates every benchmark artefact and fails
+if the committed file disagrees with what the code now produces —
+`make validate`, or a CI job on a schedule, since the full set takes
+hours. Until it exists, every change to a cell line or an estimator means
+re-running `validate_gdsc.py`, `validate_dish.py`, `validate_plate_fit.py`
+and `validate_calibration.py` by hand, and the duplicate estimator should
+be unified away.
+
 ### Phase 6 — the parts that make it a tool others use
 
 - A notebook-first API (`cellsim.api`) that returns data frames, because
