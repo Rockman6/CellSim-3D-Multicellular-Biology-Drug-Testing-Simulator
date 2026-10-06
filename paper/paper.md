@@ -1,3 +1,10 @@
+<!-- PARKED, NOT IN PROGRESS.
+     Written in October 2026 because docs/PLAN.md listed a JOSS paper.
+     The project's goal is a product, not a publication, so nothing here
+     is being submitted anywhere. Kept only in case that changes; the
+     ORCID is a placeholder and the numbers predate the October 2026
+     default changes, so it would need re-checking before any use. -->
+
 ---
 title: 'CellSim: a mechanistic simulator of cultured cells under drug, with its errors measured'
 tags:
