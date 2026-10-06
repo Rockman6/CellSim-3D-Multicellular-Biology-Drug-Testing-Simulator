@@ -63,14 +63,19 @@ SCRIPTS: dict[str, str] = {
 
 USAGE = """usage: cellsim <subcommand> [args...]
 
-  Cell drug-response engine (Phase 1)
+  The CELL commands below need only NumPy and SciPy and work from a plain
+  `pip install cellsim`. Everything after them needs the chemistry stack
+  (RDKit, OpenMM, AutoDock Vina, xTB, fpocket, AmberTools), which is
+  conda-only:  mamba env create -f environment.yml && conda activate cellsim
+
+  Cell drug-response engine  — pip is enough
     cell-sim      dose-response of one cell line to one drug -> viability + IC50
     cell-stream   one population under a dosing schedule -> per-tick JSON Lines for a UI
     dish          cells in space (monolayer or spheroid) -> per-cell JSON Lines for a UI
     plate         your plate-reader export -> viability, IC50 with a CI, GR metrics
     validate-gdsc fit one potency per drug on p53-wt lines, predict the rest vs GDSC
 
-  Screening and triage
+  Screening and triage  — needs the conda environment
     dock          batch docking screen -> ranked CSV ± MC error bars ± profile PNGs
     dock-one      single-compound dock + viewer
     off-target    one compound vs N receptors (selectivity)

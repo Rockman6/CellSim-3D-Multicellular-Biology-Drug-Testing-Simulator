@@ -197,8 +197,8 @@ held-out log10 RMSE 0.65 / 0.43 / 0.32 against the null's
 
 ### Exit gate: NOT met
 
-*Re-measured at ten drugs in Phase 3 (below): 34 wins to 39 losses over
-91 held-out predictions, p = 0.64. The conclusion holds, and the larger
+*Re-measured at ten drugs in Phase 3 (below): 32 wins to 41 losses over
+91 held-out predictions, p = 0.35. The conclusion holds, and the larger
 panel also found the one exception — a drug whose target is part of the
 modelled mechanism, where the engine does call lines correctly.*
 
@@ -694,18 +694,46 @@ cells are a mix of fast cyclers (complete cycles ~19 h) and a large
 fraction that does not divide within the window — the proliferation /
 quiescence decision at mitotic exit (Spencer et al. 2013 Cell 155:369).
 
-**Now modelled, and it closes the gap** (`Params.quiescent_fraction`,
-off by default). The fix needed two changes together, which is what made
-the miss informative:
+**Now modelled** (`CellLine.quiescent_fraction`, 0 for every line but
+HeLa). The fix needed two changes together, which is what made the miss
+informative:
 
-| | 20 h | 30 h | cells at 46 h |
-|---|:-:|:-:|:-:|
-| measured, sequence 01 | 0.77 | 0.51 | 137 |
-| engine, 31 h cycle, no quiescence | 1.00 | 0.52 | 126 |
-| engine, 19 h cycle + 50 % quiescent | **0.74** | **0.51** | **140** |
-| measured, sequence 02 | 0.80 | 0.71 | 363 |
-| engine, 31 h cycle, no quiescence | 0.94 | 0.38 | 385 |
-| engine, 19 h cycle + 50 % quiescent | **0.72** | **0.63** | **364** |
+Re-measured through `scripts/validate_dish.py` with the library's new
+HeLa (five seeds per row), against the committed figures from before:
+
+| | undivided 20 h | 30 h | complete cycle | trajectory error |
+|---|:-:|:-:|:-:|:-:|
+| **measured, seq 01** | 0.77 | 0.51 | 20.2 h | — |
+| 31 h cycle, no quiescence | 0.88 | 0.41 | 26.4 h | 0.12 |
+| 19 h cycle + 50 % quiescent | 0.64 | **0.52** | **17.0 h** | **0.06** |
+| **measured, seq 02** | 0.80 | 0.71 | 18.5 h | — |
+| 31 h cycle, no quiescence | 0.94 | 0.45 | 27.3 h | 0.15 |
+| 19 h cycle + 50 % quiescent | 0.69 | 0.57 | **17.8 h** | **0.05** |
+
+The trajectory error halves or better, the cycle times come down from
+26–27 h to within a couple of hours of the measured 18–20 h, and
+sequence 01's plateau is reproduced almost exactly. It now slightly
+OVERSHOOTS at 20 h — the engine divides a little too fast early — where
+before it was far too slow.
+
+**This is a calibration, not a validation, and the distinction matters.**
+The 19 h and the 0.50 were chosen by scanning against these very
+sequences, so "the engine matches the movie" is circular: it was tuned
+to. What survives the caveat is narrower:
+
+* two parameters, eight targets — per sequence it reproduces the count
+  trajectory, the complete-cycle mean, and the undivided fractions at
+  20 h and 30 h, with no per-sequence tuning;
+* the STRUCTURAL claim, which is the real finding and does not depend on
+  the fitted values: no single cycle time can reproduce both a 46 h
+  count trajectory and a plateauing Kaplan-Meier curve, because they
+  demand different things of it. Needing two parameters is what exposed
+  that `doubling_time_h` was conflating them.
+
+What would settle it is a different HeLa time-lapse, or another line
+with tracked single cells, held out entirely. Until then this sits in
+the same category as the spheroid growth constant: calibrated on one
+dataset, not independently validated.
 
 Quiescence alone was not enough: it fixed the plateau at 30 h and left
 the engine far too slow at 20 h. The cycling cells also had to cycle
@@ -826,12 +854,23 @@ applied unchanged everywhere else (`scripts/validate_gdsc.py`).
 
 **The Phase-1 conclusion survives the larger panel, and is now much
 better measured.** On held-out lines the engine is closer than a
-constant-IC50 null on 34 and further on 39 (sign test p = 0.64), and
+constant-IC50 null on 32 and further on 41 (sign test p = 0.35), and
 lands inside GDSC's replicate span 67 times against the null's 68. Ten
 drugs and 91 predictions say the same thing three drugs and 25 said:
 **the engine reproduces each drug's potency scale and does not rank cell
 lines better than a single number.** That is now a result rather than a
 small-sample suspicion.
+
+**Those figures are medians over three seeds**, and switching to them
+is a small result in itself. Each held-out prediction used to be a
+single run carrying the ±20 % the engine varies by; now it is a median.
+The fitted constants did not move at all (≤ 0.6 %), because the
+bisection's own tolerance was already coarser than the noise it was
+averaging. The paired comparison did move, and *against* the engine:
+34 : 39 became 32 : 41, p 0.64 → 0.35. Removing a model's own noise is
+supposed to be able to do that — a fair comparison is the point, not a
+flattering one — and the negative result is now stated on cleaner
+numbers at three times the compute.
 
 **But the panel also found the exception, and it is the informative
 one.** Nutlin-3a is the only drug whose line-to-line differences are

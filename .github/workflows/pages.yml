@@ -5,23 +5,21 @@
 # the streams and uploads the result, so the hosted demo always shows
 # what the current code actually produces.
 #
-# MANUAL UNTIL PAGES IS ENABLED. The repository owner has to turn it on
-# once — Settings -> Pages -> Build and deployment -> Source: GitHub
-# Actions — and until that happens the deploy step fails with "Pages is
-# not enabled". Running on every push to main would therefore paint the
-# default branch red for a setting, not a defect, so this workflow is
-# dispatch-only. Once Pages is on, uncomment the `push:` block below and
-# the site will rebuild whenever the viewer or the engine changes.
+# Pages was enabled on the repository on 2026-10-06, so this now runs on
+# its own: the site rebuilds whenever the viewer or the engine changes,
+# and the demo runs are simulated at deploy time rather than committed,
+# so what is published is always what the current code produces.
 name: viewer
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - "web/**"
-  #     - "cellsim/cell/**"
-  #     - ".github/workflows/pages.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "cellsim/cell/**"
+      - "cellsim/*.py"
+      - ".github/workflows/pages.yml"
 
 permissions:
   contents: read
