@@ -8,6 +8,10 @@ required.**
 (no install; the demo runs are simulated fresh on every deploy, so they
 show what the current code produces)
 
+```bash
+pip install cellsim
+```
+
 CellSim is converging on one product: an interactive dish. Pick a cell
 line and a drug, set a dose schedule, watch the colony respond, and get a
 dose-response curve whose error bar has been checked against public
@@ -59,6 +63,10 @@ flag; it is not the product on its own.
 | Target-class reliability (`cellsim/uq`) | Measured docking error per receptor family, so every ΔG carries an **accuracy** flag, not just seed scatter | trypsin-like 0.9, kinase ATP-site 2.2, ultra-tight binders 5.0 kcal/mol MAE (n = 4–6 each) |
 | ADMET descriptors (`cellsim admet`, `profile`) | Lipinski, TPSA, QED, ESOL logS, BBB / hERG / Ames rule flags, one-page profile PNG | Published formulae, cited at the point of use in `cellsim/chem/admet.py` |
 | CYP3A4 site of metabolism (`cellsim som`) | xTB C–H bond-dissociation ranking with a heme-accessibility re-rank | 2/3 on the bundled literature set; blind to N-dealkylation. **Advisory only.** |
+| Knock a gene out (`api.knockout`) | 13 pathway genes — knockout, knockdown or overexpression — and what the rest of the network does without them | TP53 loss lands where the p53-mutant lines are; PUMA/BAX/CASP3 knockouts are identical because they are one pathway; ABCB1 protects doxorubicin and **not** cisplatin, which it does not transport |
+| Starve a tumour (`api.starve`) | Glucose as a second diffusing nutrient; whichever of it and oxygen is scarcer sets the viable rim | Lowering medium glucose stalls growth before it starts killing. Thresholds are literature values — calibrated, not validated |
+| Cells that crawl (`DishParams.migration_*`) | A random walk on the lattice, optionally up the oxygen gradient | Matches D = k·h²/4 to within 1 % at 2 hops/h |
+| Immune killing (`api.killing`) | Effector cells that crawl, engage, kill and tire, on a tumour monolayer | Specific lysis 0 → 37 → 88 → 100 % across E:T ratios; kill counts fall at high E:T as targets run out. Kinetics are literature values — calibrated, not validated |
 | Your own plate (`cellsim plate`) | Read a plate-reader export (grid or tidy), normalise to the plate's own controls, fit a dose-response curve, and get GR metrics comparable across lines | Coverage measured against known IC50s: a nominal 95 % interval contains the truth ~90 % of the time on ten concentrations — and only **68 % on five**, which is flagged. Flat plates are refused; ranges that clip the response are marked extrapolated |
 | Calibrated uncertainty (`scripts/calibrate_cell_uncertainty.py`) | Every predicted IC50 comes with an interval whose coverage has been scored | Leave-one-drug-out: ±2.6× covers 64 % (68 % nominal), ±4.8× covers 85 % (90 %), ±6.5× covers 95 % (95 %). Wide on purpose — GDSC's own replicate screens disagree by a median 5.3× |
 | Cell drug-response engine (`cellsim cell-sim`, `cellsim cell-stream`) | Pick a cell line, a drug and a **dose schedule**; get the colony over time, viability, and a per-cell state stream (JSON Lines) for a UI. Built for *within-line* questions: schedule, wash-out, resistance, combinations | Each drug's potency scale is right (A549 cisplatin 10.9 µM vs 9.8 measured; 20/25 held-out predictions inside GDSC's replicate span). **Ranking one cell line against another is explicitly out of scope** — measured as unreachable from canonical markers ([why](docs/VALIDATION.md)). |

@@ -113,6 +113,57 @@ class DishParams:
     # actually show (McDermott et al. 2014 Front Oncol 4:40).
     mutation_rate: float = 0.0
     mutation_effect_sd: float = 0.0
+    # ── glucose ────────────────────────────────────────────────────────
+    # The second thing a spheroid runs out of, and often the first: in
+    # EMT6/Ro spheroids the viable rim thickness tracks the medium's
+    # glucose as much as its oxygen (Freyer & Sutherland 1986 Cancer Res
+    # 46:3504; 1986 Cancer Res 46:3513), and lowering glucose from 16.5 to
+    # 0.8 mM thins the rim and raises respiration.
+    #
+    # Standard DMEM is 25 mM, RPMI 11 mM; 5.5 mM is physiological. The
+    # diffusivity is the small-molecule value and consumption is per unit
+    # volume of packed cells. `glucose_medium_mM = 0` switches the whole
+    # field off, which is the default, so every earlier result stands.
+    glucose_medium_mM: float = 0.0
+    glucose_D_um2_per_s: float = 500.0        # ~5e-6 cm2/s, Casciari 1988
+    glucose_uptake_mM_per_s: float = 0.012    # packed tissue, Casciari 1992
+    glucose_Km_mM: float = 0.04               # GLUT/hexokinase half-saturation
+    # Below this a cell cannot hold its ATP and dies; between this and
+    # `glucose_quiescent_mM` it survives but does not cycle.
+    glucose_death_mM: float = 0.06
+    glucose_quiescent_mM: float = 0.30
+    # ── migration ──────────────────────────────────────────────────────
+    # A random walk on the lattice: each live cell that has an empty
+    # neighbouring site hops into one at this rate. On a lattice of
+    # spacing h, a hop rate k gives a diffusion coefficient
+    # D = k h^2 / (2 d) in d dimensions, which is how a measured cell
+    # motility converts to this number. HeLa in the Cell Tracking
+    # Challenge movie moves of order 10 um/h; 0 (the default) keeps every
+    # earlier result, where cells move only when pushed by a division.
+    migration_per_h: float = 0.0
+    # Chemotaxis toward oxygen: the fraction of hops biased up the local
+    # gradient rather than taken at random (0 = unbiased, 1 = always up).
+    migration_o2_bias: float = 0.0
+    # ── effector (immune) cells ───────────────────────────────────────
+    # Cytotoxic cells added on top of the tumour layer, as T or NK cells
+    # sit on a monolayer in a killing assay. They are much smaller than
+    # tumour cells and crawl over them, so they live on their own layer
+    # and do not compete for tumour sites.
+    #
+    # Each effector random-walks, biased toward tumour cells; on reaching
+    # one it forms a conjugate and kills it at `effector_kill_per_h`, is
+    # then busy for `effector_conjugate_h` before it can engage again, and
+    # stops killing after `effector_max_kills` (exhaustion). CTLs take
+    # about an hour from contact to target death and kill a few targets a
+    # day each (Halle et al. 2016 Immunity 44:233), with serial killing
+    # capped by exhaustion. A killed target dies by apoptosis, exactly as
+    # a drug-killed one does.
+    effector_speed_per_h: float = 3.0          # hops/h on the effector layer
+    effector_tumour_bias: float = 0.7          # fraction of hops toward the nearest target
+    effector_kill_per_h: float = 1.0           # kill rate while conjugated
+    effector_conjugate_h: float = 1.0          # busy after each kill
+    effector_max_kills: int = 5
+    effector_lifetime_h: float = 96.0          # effectors die off in culture
 
     @property
     def site_volume_um3(self) -> float:
@@ -276,13 +327,22 @@ class Dish:
 
         # Fields: per-cell local values and, for a spheroid, radial profiles.
         self.o2 = np.full(n_seed, dp.o2_medium_mmHg)
+        self.glucose = np.full(n_seed, dp.glucose_medium_mM)
         self.gs = np.ones(n_seed)
         self.profile_r_um = np.zeros(0)
         self.profile_o2 = np.zeros(0)
+        self.profile_glucose = np.zeros(0)
         self.profile_drug = [np.zeros(0) for _ in range(self.n_drugs)]
         self._near = None                                # nearest-free-site map
         self._pending: dict = {}                         # daughters placed this step
         self._offsets = self._local_offsets(2)
+        # Effector cells: none until add_effectors() is called.
+        self.eff_pos = np.zeros((0, 3), dtype=np.int64)
+        self.eff_alive = np.zeros(0, bool)
+        self.eff_kills = np.zeros(0, dtype=np.int64)
+        self.eff_busy_until = np.zeros(0)
+        self.eff_born = np.zeros(0)
+        self.n_killed_by_effectors = 0
         self.record = DishRecord()
 
     # ── set-up helpers ──
@@ -343,6 +403,7 @@ class Dish:
         if dp.geometry == "monolayer":
             # A thin sheet under stirred medium: no gradients.
             self.o2 = np.full(n, dp.o2_medium_mmHg)
+            self.glucose = np.full(n, dp.glucose_medium_mM)
             for i in range(self.n_drugs):
                 self._set_c_out(i, np.full(n, float(dose[i])))
             return
@@ -363,6 +424,19 @@ class Dish:
         self.profile_r_um = 0.5 * (edges[1:] + edges[:-1])
         self.profile_o2 = o2
         self.o2 = o2[cell_bin]
+        # Glucose, the same quasi-steady reaction-diffusion problem with
+        # its own diffusivity and uptake. Solved only when the medium
+        # carries any, so the default costs nothing.
+        if dp.glucose_medium_mM > 0:
+            g_uptake = dp.glucose_uptake_mM_per_s * np.clip(phi_live, 0.0, 1.0)
+            guess_g = (self.profile_glucose if len(self.profile_glucose) == nb else None)
+            glc = solve_steady(edges, "sphere", dp.glucose_D_um2_per_s,
+                               dp.glucose_medium_mM, g_uptake, dp.glucose_Km_mM,
+                               guess=guess_g)
+            self.profile_glucose = glc
+            self.glucose = glc[cell_bin]
+        else:
+            self.glucose = np.full(len(cell_bin), dp.glucose_medium_mM)
         # Drug: transient, with cellular uptake as a linearised sink.
         eps = 1.0 - np.clip(phi_occ, 0.0, 1.0) * (1.0 - dp.extracellular_fraction)
         shell_vol = _geometry(edges, "sphere")[1]
@@ -400,6 +474,12 @@ class Dish:
         dp = self.dp
         span = max(dp.o2_g1_full_mmHg - dp.o2_g1_zero_mmHg, 1e-9)
         g_o2 = np.clip((self.o2 - dp.o2_g1_zero_mmHg) / span, 0.0, 1.0)
+        # Glucose gates the cycle the same way, and the scarcer of the two
+        # governs: a cell with oxygen but no sugar does not divide either.
+        if dp.glucose_medium_mM > 0:
+            gspan = max(dp.glucose_quiescent_mM - dp.glucose_death_mM, 1e-9)
+            g_glc = np.clip((self.glucose - dp.glucose_death_mM) / gspan, 0.0, 1.0)
+            g_o2 = np.minimum(g_o2, g_glc)
         blocked = self.occ != EMPTY
         if blocked.all():                            # nowhere left to go
             self._near = None
@@ -530,6 +610,7 @@ class Dish:
         self.birth_t = np.concatenate([self.birth_t, np.full(len(idx), self.t_h)])
         self.pos = np.vstack([self.pos, np.array(sites)])
         self.o2 = np.concatenate([self.o2, self.o2[idx]])
+        self.glucose = np.concatenate([self.glucose, self.glucose[idx]])
         self.gs = np.concatenate([self.gs, self.gs[idx]])
 
     def _bury(self, die: np.ndarray, kind: int) -> None:
@@ -553,6 +634,7 @@ class Dish:
         self.lineage, self.pos = self.lineage[keep], self.pos[keep]
         self.birth_t = self.birth_t[keep]
         self.o2, self.gs = self.o2[keep], self.gs[keep]
+        self.glucose = self.glucose[keep]
         live = self.occ >= 0
         self.occ[live] = EMPTY
         self.occ[tuple(self.pos.T)] = np.arange(len(self.pos))
@@ -561,6 +643,14 @@ class Dish:
         dp = self.dp
         span = max(dp.o2_necrosis_onset_mmHg - dp.o2_necrosis_full_mmHg, 1e-9)
         frac = np.clip((dp.o2_necrosis_onset_mmHg - self.o2) / span, 0.0, 1.0)
+        if dp.glucose_medium_mM > 0:
+            # Starvation kills on the same clock as anoxia, and whichever
+            # is scarcer decides. Freyer & Sutherland's central finding is
+            # that a spheroid's necrotic core can be set by glucose rather
+            # than oxygen, so neither can be the only route.
+            gfrac = np.clip((dp.glucose_death_mM - self.glucose) /
+                            max(dp.glucose_death_mM, 1e-9), 0.0, 1.0)
+            frac = np.maximum(frac, gfrac)
         rate = dp.necrosis_rate_per_h * frac
         die = self.cells.alive & (self.rng.random(len(rate)) < 1.0 - np.exp(-rate * dt_h))
         if die.any():
@@ -591,7 +681,117 @@ class Dish:
                 self._divide(divide & self.cells.alive)
         self._necrosis(dp.field_dt_h)
         self._clear_bodies()
+        if len(self.eff_pos):
+            self._effectors(dp.field_dt_h)
+        if dp.migration_per_h > 0:
+            # At most one hop per round, so a round must be short enough
+            # that the chance of wanting two is small. One round per field
+            # interval capped the effective rate at 1/interval: asked for
+            # 2 hops/h it delivered 1.26, and the measured diffusion
+            # coefficient came out 126 um^2/h against a theoretical 200.
+            n_rounds = max(1, int(np.ceil(dp.migration_per_h * dp.field_dt_h / 0.1)))
+            for _ in range(n_rounds):
+                self._migrate(dp.field_dt_h / n_rounds)
         self._compact()
+
+    def add_effectors(self, n: int) -> None:
+        """Scatter `n` effector cells over the occupied part of the dish,
+        as when T cells are pipetted onto a culture."""
+        occupied = np.argwhere(self.occ != EMPTY)
+        if len(occupied) == 0 or n <= 0:
+            return
+        pick = occupied[self.rng.integers(len(occupied), size=n)]
+        self.eff_pos = np.concatenate([self.eff_pos, pick.astype(np.int64)])
+        self.eff_alive = np.concatenate([self.eff_alive, np.ones(n, bool)])
+        self.eff_kills = np.concatenate([self.eff_kills, np.zeros(n, dtype=np.int64)])
+        self.eff_busy_until = np.concatenate([self.eff_busy_until, np.full(n, self.t_h)])
+        self.eff_born = np.concatenate([self.eff_born, np.full(n, self.t_h)])
+
+    def _effectors(self, dt_h: float) -> None:
+        """Move, engage and kill, in sub-rounds short enough that a hop
+        and a kill in the same round are rare."""
+        dp = self.dp
+        n_rounds = max(1, int(np.ceil(max(dp.effector_speed_per_h, dp.effector_kill_per_h)
+                                      * dt_h / 0.2)))
+        h = dt_h / n_rounds
+        shape = np.array(self.shape)
+        near = self._offsets[np.linalg.norm(self._offsets, axis=1) <= 1.0 + 1e-9]
+        p_hop = 1.0 - np.exp(-dp.effector_speed_per_h * h)
+        p_kill = 1.0 - np.exp(-dp.effector_kill_per_h * h)
+        for r in range(n_rounds):
+            t = self.t_h - dt_h + (r + 1) * h
+            # culture lifetime
+            self.eff_alive &= (t - self.eff_born) < dp.effector_lifetime_h
+            active = self.eff_alive & (self.eff_kills < dp.effector_max_kills) & (
+                self.eff_busy_until <= t)
+            for e in np.flatnonzero(active):
+                here = self.eff_pos[e]
+                who = self.occ[tuple(here)]
+                # a live tumour cell at this site: engage
+                if who >= 0 and self.cells.alive[who]:
+                    if self.rng.random() < p_kill:
+                        die = np.zeros(len(self.cells.alive), bool)
+                        die[who] = True
+                        self.cells.alive[who] = False
+                        self._bury(die, APOPTOTIC)
+                        self.eff_kills[e] += 1
+                        self.eff_busy_until[e] = t + dp.effector_conjugate_h
+                        self.n_killed_by_effectors += 1
+                    continue                      # stays conjugated, does not move
+                if self.rng.random() >= p_hop:
+                    continue
+                cand = here + near
+                cand = cand[np.all((cand >= 0) & (cand < shape), axis=1)]
+                if len(cand) == 0:
+                    continue
+                if self.rng.random() < dp.effector_tumour_bias and len(self.cells.alive):
+                    # toward a neighbouring live tumour cell if there is one.
+                    # The length check matters: once the effectors have
+                    # killed everything, `alive` is empty and indexing it
+                    # even with a clamped index raises.
+                    ids = self.occ[tuple(cand.T)]
+                    live_there = (ids >= 0) & self.cells.alive[np.clip(ids, 0, len(self.cells.alive) - 1)]
+                    targ = cand[live_there]
+                    if len(targ):
+                        self.eff_pos[e] = targ[self.rng.integers(len(targ))]
+                        continue
+                self.eff_pos[e] = cand[self.rng.integers(len(cand))]
+
+    def _migrate(self, dt_h: float) -> None:
+        """Each live cell with a free neighbouring site hops into one, with
+        probability 1 - exp(-k dt). Moves are applied one cell at a time in
+        a random order so two cells never claim the same site."""
+        dp = self.dp
+        p_hop = 1.0 - np.exp(-dp.migration_per_h * dt_h)
+        live = np.flatnonzero(self.cells.alive)
+        if len(live) == 0:
+            return
+        movers = live[self.rng.random(len(live)) < p_hop]
+        if len(movers) == 0:
+            return
+        self.rng.shuffle(movers)
+        near = self._offsets[np.linalg.norm(self._offsets, axis=1) <= 1.0 + 1e-9]
+        shape = np.array(self.shape)
+        for j in movers:
+            here = self.pos[j]
+            cand = here + near
+            ok = np.all((cand >= 0) & (cand < shape), axis=1)
+            cand = cand[ok]
+            if len(cand) == 0:
+                continue
+            free = cand[self.occ[tuple(cand.T)] == EMPTY]
+            if len(free) == 0:
+                continue                      # boxed in: contact inhibition of motion
+            if dp.migration_o2_bias > 0 and len(self.profile_o2) and self.rng.random() < dp.migration_o2_bias:
+                # up the oxygen gradient = outward from the centre
+                c = (shape - 1) / 2.0
+                out = np.linalg.norm(free - c, axis=1)
+                dst = free[int(np.argmax(out))]
+            else:
+                dst = free[self.rng.integers(len(free))]
+            self.occ[tuple(here)] = EMPTY
+            self.occ[tuple(dst)] = j
+            self.pos[j] = dst
 
     def observe(self) -> None:
         dp, r = self.dp, self.record

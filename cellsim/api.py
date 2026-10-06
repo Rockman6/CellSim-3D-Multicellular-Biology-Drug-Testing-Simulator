@@ -9,6 +9,12 @@ goes straight into seaborn, ggplot via `to_csv`, or a spreadsheet.
 The functions map to the questions the engine has actually been checked
 against (`docs/VALIDATION.md`), and no further:
 
+    knockout()     the same curve with a gene knocked out, knocked down
+                   or overexpressed — what the pathway does without it
+    starve()       a spheroid at a given medium glucose, which sets the
+                   viable rim as much as oxygen does
+    killing()      a cytotoxicity assay: effector cells on a monolayer at
+                   a range of E:T ratios -> specific lysis
     curve()        a dose-response curve and its IC50
     ic50_spread()  the same IC50 under several seeds, and how far it
                    moves — run this before quoting one
@@ -42,7 +48,7 @@ from cellsim.cell.engine import (Params, calibrate_cycle_scale, dose_response, i
 from cellsim.cell.library import CELL_LINES, DRUGS, CellLine, Drug, get_drug, get_line
 
 __all__ = ["curve", "exposure", "washout", "combination", "spheroid", "gr_curve",
-           "ic50_spread", "lines", "drugs"]
+           "ic50_spread", "knockout", "starve", "killing", "genes", "lines", "drugs"]
 
 
 def _table(rows: list[dict]):
@@ -296,6 +302,115 @@ def combination(line: Union[str, CellLine], drug_a: Union[str, Drug],
                      "ratio_sd": None if alone else (float(ratio.std(ddof=1))
                                                      if len(v) > 1 else 0.0),
                      "n_seeds": len(vals)})
+    return _table(rows)
+
+
+def genes():
+    """Which genes can be perturbed, and what each one is in the engine."""
+    from cellsim.cell.perturb import GENES
+    return _table([{"gene": g, "engine_node": v["node"], "kind": v["kind"],
+                    "what_it_is": v["note"]} for g, v in sorted(GENES.items())])
+
+
+def knockout(line: Union[str, CellLine], drug: Union[str, Drug], gene: str, *,
+             mode: str = "knockout", x: float = 1.0,
+             concentrations: Optional[Sequence[float]] = None, hours: float = 72.0,
+             n_cells: int = 32, seed: int = 1, params: Params = Params()):
+    """A dose-response with one gene perturbed, beside the unperturbed one.
+
+    Returns both arms in one table so the comparison is the thing you get,
+    not something you have to assemble: a `viability` and a
+    `viability_wild_type` for every concentration, and the fold change
+    between them.
+
+    `cellsim.api.genes()` lists what can be perturbed. A gene the engine
+    does not represent is refused rather than silently doing nothing."""
+    from cellsim.cell.perturb import Perturbation
+    ln, dg = _line(line), _drug(drug)
+    pert = [Perturbation(gene, mode, x)]
+    k = calibrate_cycle_scale(ln, params)
+    if concentrations is None:
+        centre = ic50(ln, dg, guess_uM=_guess(dg), n_cells_per_conc=24, k_cyc=k, p=params)
+        if not np.isfinite(centre):
+            centre = _guess(dg) * 100
+        concentrations = centre * np.logspace(-1.5, 1.5, 7)
+    conc = np.asarray(list(concentrations), float)
+    wt, _ = dose_response(ln, dg, conc, t_end_h=hours, n_cells_per_conc=n_cells,
+                          seed=seed, p=params, k_cyc=k)
+    ko, _ = dose_response(ln, dg, conc, t_end_h=hours, n_cells_per_conc=n_cells,
+                          seed=seed, p=params, k_cyc=k, perturbations=pert)
+    return _table([{"line": ln.name, "drug": dg.name, "perturbation": str(pert[0]),
+                    "conc_uM": float(c), "viability": float(v),
+                    "viability_wild_type": float(w),
+                    "fold_vs_wild_type": float(v / w) if w > 0 else float("nan")}
+                   for c, v, w in zip(conc, ko[1:], wt[1:])])
+
+
+def starve(line: Union[str, CellLine], *, glucose_mM: float = 5.5, days: float = 6.0,
+           n_seed: int = 2000, grid_sites: int = 48, record_every_h: float = 24.0,
+           seed: int = 1, params: Params = Params()):
+    """Grow a spheroid in medium carrying a given glucose concentration.
+
+    DMEM is 25 mM and RPMI 11 mM, both far above anything a cell needs;
+    physiological blood is about 5.5 mM and a tumour's interior much less.
+    Below roughly 0.3 mM the interior cells stop cycling and below 0.06 mM
+    they die, so lowering this thins the viable rim the way lowering
+    oxygen does (Freyer & Sutherland 1986).
+
+    Returns one row per time point, with the glucose at the centre beside
+    the usual size and necrosis columns."""
+    from cellsim.cell.dish import DishParams, run_dish
+    ln = _line(line)
+    dp = DishParams(geometry="spheroid", glucose_medium_mM=glucose_mM)
+    res = run_dish(ln, None, None, t_end_h=days * 24.0, n_seed=n_seed,
+                   grid_sites=grid_sites, record_every_h=record_every_h, seed=seed,
+                   p=params, dp=dp)
+    r = res.record
+    centre = (float(res.dish.profile_glucose[0])
+              if len(res.dish.profile_glucose) else float("nan"))
+    return _table([{"line": ln.name, "glucose_medium_mM": glucose_mM,
+                    "t_h": round(float(t), 3), "n_live": int(r.n_live[i]),
+                    "n_necrotic": int(r.n_necrotic[i]),
+                    "radius_um": float(r.radius_um[i]),
+                    "necrotic_radius_um": float(r.necrotic_radius_um[i]),
+                    "quiescent_frac": float(r.quiescent_frac[i]),
+                    "glucose_centre_mM_final": centre}
+                   for i, t in enumerate(r.t_h)])
+
+
+def killing(line: Union[str, CellLine], *, et_ratios: Sequence[float] = (0, 0.1, 0.3, 1, 3),
+            hours: float = 24.0, n_tumour: int = 400, grid: int = 40,
+            seeds: Sequence[int] = (1, 2), params: Params = Params(), dish_params=None):
+    """A cytotoxicity assay: effector cells on a tumour monolayer.
+
+    Effectors crawl on their own layer, engage a tumour cell on contact,
+    kill it after about an hour, then rest before engaging again and stop
+    after a few kills (Halle et al. 2016). `et_ratios` are effector:target
+    ratios; the 0 arm is the untreated control that specific lysis is
+    measured against.
+
+    Returns one row per ratio, averaged over `seeds`."""
+    from cellsim.cell.dish import Dish, DishParams
+    ln = _line(line)
+    rows, base = [], None
+    for et in et_ratios:
+        lives, kills = [], []
+        for sd in seeds:
+            dp = dish_params or DishParams(geometry="monolayer", spacing_um=20.0,
+                                           field_dt_h=0.5, dt_h=0.02)
+            d = Dish(ln, n_seed=n_tumour, grid_sites=(grid, grid), seed=int(sd),
+                     p=params, dp=dp)
+            d.add_effectors(int(round(et * n_tumour)))
+            for _ in range(int(round(hours / dp.field_dt_h))):
+                d.advance(None)
+            lives.append(int(d.cells.alive.sum()))
+            kills.append(int(d.n_killed_by_effectors))
+        live = float(np.mean(lives))
+        if base is None:
+            base = live
+        rows.append({"line": ln.name, "et_ratio": float(et), "hours": hours,
+                     "n_live": live, "n_killed_by_effectors": float(np.mean(kills)),
+                     "specific_lysis": float(1.0 - live / base) if base else float("nan")})
     return _table(rows)
 
 
