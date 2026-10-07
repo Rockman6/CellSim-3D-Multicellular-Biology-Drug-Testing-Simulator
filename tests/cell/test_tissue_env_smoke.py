@@ -22,6 +22,9 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _tiers import run, validation  # noqa: E402
 
 from cellsim.cell.dish import Dish, DishParams, run_dish  # noqa: E402
 from cellsim.cell.engine import Params  # noqa: E402
@@ -37,6 +40,36 @@ def _spheroid(glucose=0.0, hours=144.0, seed=2):
 
 
 # ── everything is off by default ──────────────────────────────────────
+def test_every_new_feature_is_off_by_default():
+    """The per-pull-request half of the defaults check, and it is instant.
+
+    Earlier results across four merged phases depend on an untouched dish
+    behaving exactly as it did before this week's additions. That holds
+    only if each addition defaults to off, so this checks the defaults
+    directly — every one, not just the three this file began with. The
+    slow half, which runs a spheroid twice and requires identical output,
+    is a determinism check and runs nightly."""
+    dp = DishParams()
+    off = {
+        "glucose_medium_mM": 0.0,        # glucose field not solved
+        "migration_per_h": 0.0,          # cells move only when pushed
+        "migration_o2_bias": 0.0,
+        "quiescent_o2_factor": 1.0,      # arrested cells consume as much as cycling ones
+        "boundary_layer_um": 0.0,
+    }
+    for name, want in off.items():
+        got = getattr(dp, name)
+        assert got == want, f"DishParams.{name} defaults to {got}, expected {want} (off)"
+    d = Dish(A549, n_seed=20, grid_sites=20, seed=1, p=Params(), dp=dp)
+    assert len(d.eff_pos) == 0, "no effectors until add_effectors() is called"
+    p = Params()
+    assert p.quiescent_fraction == 0.0, "quiescence is off unless a line or Params sets it"
+    from cellsim.cell.library import CELL_LINES
+    on = sorted(n for n, c in CELL_LINES.items() if c.quiescent_fraction > 0)
+    assert on == ["HeLa"], f"only HeLa should carry quiescence by default, got {on}"
+
+
+@validation
 def test_the_defaults_leave_the_dish_exactly_as_it_was():
     """Glucose off, no migration, no effectors — the committed spheroid
     result must be reproduced bit for bit."""
@@ -50,6 +83,7 @@ def test_the_defaults_leave_the_dish_exactly_as_it_was():
     assert len(d.eff_pos) == 0, "no effectors until add_effectors() is called"
 
 
+@validation
 def test_plentiful_glucose_barely_moves_the_answer():
     """Switching the field on at a normal medium concentration must not
     move the answer by much: if it does, the coupling is wrong rather
@@ -70,6 +104,7 @@ def test_plentiful_glucose_barely_moves_the_answer():
 
 
 # ── glucose ───────────────────────────────────────────────────────────
+@validation
 def test_glucose_is_consumed_and_falls_toward_the_centre():
     r = _spheroid(glucose=0.8)
     prof = r.dish.profile_glucose
@@ -78,6 +113,7 @@ def test_glucose_is_consumed_and_falls_toward_the_centre():
     assert prof[-1] <= 0.8 + 1e-9, "nothing may exceed the medium"
 
 
+@validation
 def test_starving_a_spheroid_stops_it_growing_then_kills_it():
     """Freyer & Sutherland's result in outline: lowering medium glucose
     thins the viable rim. Here it must first arrest growth, then at lower
@@ -205,17 +241,4 @@ def test_the_killing_comes_from_the_effectors_and_not_from_their_presence():
 
 
 if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
-    for fn in fns:
-        try:
-            fn()
-            print(f"  ok   {fn.__name__}")
-        except AssertionError as e:
-            failed += 1
-            print(f"  FAIL {fn.__name__}: {e}")
-        except Exception as e:                      # noqa: BLE001
-            failed += 1
-            print(f"  ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"{len(fns) - failed}/{len(fns)} tissue-environment gates pass")
-    raise SystemExit(1 if failed else 0)
+    raise SystemExit(run(globals(), "tissue-environment"))
