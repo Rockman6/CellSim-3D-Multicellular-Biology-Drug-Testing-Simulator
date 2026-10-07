@@ -520,12 +520,52 @@ Against published exposure-duration studies, matched by assay:
 |---|---|---|---|
 | Ozawa 1989, cisplatin, WiDr | C × T governs (slope −1) | slope −0.95 over 1–6 h | agrees |
 | Liebmann 1993 (Br J Cancer 68:1104), 8 lines, clonogenic | 24 h kill saturates above ~50 nM | 0.46 / 0.43 / 0.40 / 0.49 surviving at 0.05 / 0.2 / 1 / 5 µM | agrees |
-| Liebmann 1993 | 24 → 72 h exposure raises cytotoxicity 5–200× | C50 0.037 → 0.030 µM (1.2×) | **miss** |
-| Georgiadis 1997 (Clin Cancer Res 3:449), 14 NSCLC lines, MTT, read at 120 h: 3 / 24 / 120 h exposure | IC50 > 32 / 9.4 / 0.027 µM | none / 0.036 / 0.029 µM (A549) | 3 h agrees; 120 h agrees but is inherited from the GDSC fit; **24 h misses by 260×** |
+| Liebmann 1993 | 24 → 72 h exposure raises cytotoxicity 5–200× | C50 2.7 → 0.027 µM (**100×**) | agrees, after the October 2026 fix below |
+| Georgiadis 1997 (Clin Cancer Res 3:449), 14 NSCLC lines, MTT, read at 120 h: 3 / 24 / 120 h exposure | IC50 > 32 / 9.4 / 0.027 µM | 147 / 2.7 / 0.027 µM (A549) | 3 h agrees; 120 h agrees but is inherited from the GDSC fit; 24 h now within **3.4×**, having been 240× — see below |
 
-**The miss, stated plainly.** Both studies say a 24 h paclitaxel
-exposure is far weaker than a 72–120 h one; the engine says it is
-nearly as good. The engine kills almost every cell that reaches
+**The miss, and what fixed it (October 2026).** Both studies say a 24 h
+paclitaxel exposure is far weaker than a 72–120 h one; the engine said
+it was nearly as good, by 240×. Two things were wrong, and finding the
+second depended on fixing the first.
+
+*Drug left the cell as fast as it entered.* Uptake was symmetric —
+`(partition·C_out − C_in)/τ` with one τ — so wash-out emptied a cell in
+minutes. Paclitaxel does not behave that way: it is held on tubulin, and
+after removal there is "little efflux", with an elimination half-life of
+13–53 h. `Drug.tau_efflux_h` now gives exit its own time constant
+(24 h for the taxanes, 0 = symmetric for everything else, so no other
+drug moved). Without it the 24 h curve had an **unreachable floor** —
+survival stalled at 0.42 from 0.1 µM to 30 µM, a 300-fold dose range in
+which more drug did nothing, because a cell that mitosed after wash-out
+met no drug at all.
+
+*The mitotic death rate was never determined by the fit.* With the floor
+gone the curve still crossed half-kill far too early. `k_mitotic_death_per_h`
+was fitted to GDSC's 72 h screens — and a 72 h IC50 moves by under 10 %
+while that constant varies a **hundred-fold**, because given three days
+even a slow death rate kills every arrested cell. The fit could not see
+it. Short exposures can:
+
+| | engine before | engine after | measured |
+|---|:-:|:-:|:-:|
+| 3 h exposure | 73 µM | 147 µM | > 32 µM ✓ |
+| 24 h exposure | 0.039 µM | **2.7 µM** | 9.4 µM |
+| continuous | 0.028 µM | 0.027 µM | 0.027 µM ✓ |
+
+0.3 → 0.03. The 24 h error falls from **240× to 3.4×**, the 3 h and
+continuous points are unchanged, and paclitaxel's median fold error
+against the GDSC panel stays at 2.4×.
+
+Read honestly: the 24 h point is now **calibrated** on Georgiadis rather
+than predicted, so it is no longer available as a test. The 3 h point is
+an independent check and it passes. The remaining 3.4× is real and
+unexplained.
+
+**Left alone on purpose:** docetaxel and vinorelbine still carry 0.3.
+They share paclitaxel's mechanism, so the same argument probably applies
+— but no short-exposure data for them has been found, and changing a
+constant with nothing to constrain it is how the first wrong value got
+there. The engine kills almost every cell that reaches
 mitosis inside the 24 h window. The likely causes are that its cells
 cycle almost in lockstep (real cycle times vary by 20–30 % and include
 slow-cycling cells that a 24 h window misses) and that cells slipping
