@@ -274,17 +274,78 @@ serve the user rather than a referee.
 What that ordering implies, shortest path first:
 
 1. **Someone hears about it and sees it work** — the hosted demo, live
-   and self-updating. Done.
-2. **They install it in one line** — `pip install cellsim`. Needs the
-   package published; everything else is ready.
-3. **They get an answer to their own question** — the notebook API and
-   the tutorial. Done.
+   and self-updating. **Done.**
+2. **They install it in one line** — `pip install cellsim`. **Done**
+   (PyPI, October 2026).
+3. **They run their own experiment without writing code** — **THE GAP.**
+   The site can only replay runs made in advance. A biologist who does
+   not write Python cannot ask it anything, and that is most biologists.
 4. **They use it on THEIR cells** — plate import and calibration. Done.
 5. **They trust the answer** — measured error bars and published misses.
-   Done.
+   Partly done; see the honesty table below.
 
-Step 2 is the only gap, and it is a five-minute account signup rather
-than engineering.
+### Stage 3: an experiment anyone can run
+
+The target user types no code. They open a link, choose from menus, press
+Run, and get an answer with its error bar.
+
+**It runs in the browser, with no server.** Small runs take 1.5 s
+natively and Pyodide is a few times slower, so ten seconds for a
+dose-response is realistic — fast enough to feel interactive. A server
+would be faster and would also mean hosting bills, an attack surface and
+something to maintain; a page that is just files on GitHub Pages will
+still work in five years with nobody tending it.
+
+**The design is borrowed; the code is not.** PhysiCell Studio is the
+closest thing to this — a GUI over an agent-based cell simulator — and
+its layout is worth learning from: tabs that separate *what the cells
+are* from *what you do to them* from *what came out*. But it is **GPL
+v3**, and copying its code would drag CellSim from MIT to GPL v3,
+deciding our licence by way of a UI choice and shutting out commercial
+users. So: study the interaction design, write our own code, keep MIT.
+Where we do take code it must be MIT, BSD or Apache — Three.js (already
+in the viewer) and Plotly are both fine.
+
+Four screens, in the order a person actually thinks:
+
+| Screen | What the user does | Non-scientist wording |
+|---|---|---|
+| **1. Cells** | pick a line, optionally knock out a gene | "Which cells?" |
+| **2. Treatment** | pick a drug, dose, and schedule | "What do you do to them?" |
+| **3. Run** | press one button, watch progress | "Run the experiment" |
+| **4. Results** | 3-D view, curves, IC50 with its band, CSV | "What happened?" |
+
+Plus **presets** — one click for "does pulsing beat continuous dosing?",
+"what if these cells lose p53?", "how deep does the drug reach in a
+tumour?" — because a new user does not know what to ask yet, and a blank
+form is the commonest reason a tool goes unused.
+
+Rules that keep it honest rather than merely pretty:
+
+* every number comes with its band, and the UI never shows a bare point
+  estimate;
+* anything the engine is known to get wrong is labelled *in the result*,
+  not in a document the user will not read;
+* the preset that produced a figure is shareable as a URL, so a result
+  can be checked by someone else.
+
+### Stage 4: finish the honesty work
+
+| Feature | State |
+|---|---|
+| Drug response, schedules, combinations | validated against GDSC and the published schedule literature |
+| Spheroid O₂ and necrosis | calibrated on DLD-1, one documented miss |
+| Gene knockouts | validated on four independent right answers |
+| Migration | validated against random-walk theory |
+| Immune killing | mechanism validated; absolute lysis unchecked |
+| **Glucose** | **fails its validation and is labelled so** — fix or remove |
+| Calibration to a user's plate | hold-out tested, 80 % band coverage |
+
+### Stage 5: real users
+
+Two or three biologists, their own questions, and a record of what
+confused them. This cannot be compressed by writing code faster, and it
+is the only stage that can tell us whether any of the rest worked.
 
 ## After Phase 3: what makes this useful to a working cell biologist
 
