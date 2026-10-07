@@ -32,13 +32,21 @@ anyone measured. At a 310 um radius the same code depletes the centre by
 41 % at 0.8 mM and 2 % at 16.5 mM, which is the selectivity the papers
 describe. The runs below are therefore seeded large.
 
-A KNOWN MISSING MECHANISM, which the same papers report and this engine
-does not have: as glucose falls, cellular RESPIRATION RISES — the cells
-compensate by burning more oxygen. Here oxygen consumption is fixed, so
-a simulated spheroid starved of glucose does not consume oxygen faster,
-and its oxygen profile is unchanged. That is a real gap and the reason
-the two fields here are coupled only through growth and death rather
-than through each other's consumption.
+THE MECHANISM THAT MADE IT PASS. With glucose acting only by
+starvation, this test FAILED: across the whole published range the
+centre never fell below the viability threshold, so lowering medium
+glucose changed nothing at all. What the same papers report alongside
+the thinner rim is that RESPIRATION RISES as glucose falls — Casciari et
+al. 1992 measured oxygen consumption nearly doubling between 5.5 and
+0.4 mM. Starved cells burn more oxygen, the spheroid goes hypoxic
+sooner, and the rim thins without a single cell running out of glucose.
+With that coupling (`DishParams.respiration_boost`) all five claims pass.
+
+Note what makes this a test rather than a fit: the two anchor points of
+the coupling come from Casciari 1992, and the claims checked here come
+from Mueller-Klieser, Freyer and Sutherland 1986 — different papers,
+different measurements. Only the shape of the curve between the anchors
+is a free choice.
 
 Usage:
     python scripts/validate_glucose.py            # ~10 min
@@ -141,10 +149,10 @@ def main(argv=None) -> int:
     allok = all((c1, c2, c3_glc, c3_o2, c4))
     report["directional_claims_pass"] = bool(allok)
     print(f"\n{'All directions reproduced.' if allok else 'A DIRECTION IS WRONG.'} This is "
-          f"falsification, not calibration:\nthe magnitudes remain unchecked, and the "
-          f"missing respiration-compensation\nmechanism (cells burn more oxygen as "
-          f"glucose falls) means the oxygen profile\nof a starved spheroid is wrong here "
-          f"whatever the glucose numbers do.")
+          f"falsification, not calibration:\nthe DIRECTIONS are checked against "
+          f"Mueller-Klieser et al. 1986; the MAGNITUDES are\nnot, because their rim "
+          f"thicknesses are image-only tables that could not be\nextracted. Glucose "
+          f"acts here through respiration (Casciari 1992), not by starvation.")
     if not a.no_write:
         OUT_JSON.write_text(json.dumps(report, indent=1, default=float) + "\n")
         print(f"\nwrote {OUT_JSON.relative_to(REPO_ROOT)}")

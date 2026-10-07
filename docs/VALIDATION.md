@@ -1311,49 +1311,48 @@ DLD-1 spheroid, 6 days from 3000 cells:
 Growth stalls before killing starts, which is the ordering starvation
 should have.
 
-#### It does NOT reproduce the published glucose effect
+#### It failed, then the missing mechanism made it pass
 
 `scripts/validate_glucose.py` tests the directional claims of
-Mueller-Klieser, Freyer & Sutherland (1986) — that lowering medium
-glucose from 16.5 to 0.8 mM substantially thins the viable rim, and that
-a lack of glucose alone can produce necrosis. **Two of the five claims
-fail.** Across the entire published range the model gives identical
-answers:
+Mueller-Klieser, Freyer & Sutherland (1986): lowering medium glucose
+from 16.5 to 0.8 mM substantially thins the viable rim.
 
-| Medium glucose | Live | Radius | Viable rim | Necrotic core |
-|---|:-:|:-:|:-:|:-:|
-| 16.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 5.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 1.65 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 0.8 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+**With glucose acting only by starvation, it failed.** Across the whole
+published range the model gave byte-identical answers — 175 µm rim,
+162 µm core at every concentration — because glucose penetrates
+~260 µm and at a 311 µm radius the centre only fell to 0.47 mM, against
+a 0.30 mM threshold. Not one cell of 29 685 was starving.
 
-The oxygen claims pass; the glucose ones do not.
+The same papers report a second effect alongside the thinner rim:
+**respiration rises as glucose falls.** Casciari, Sotirchos &
+Sutherland 1992 (J Cell Physiol 151:386) measured EMT6/Ro oxygen
+consumption nearly doubling between 5.5 and 0.4 mM. Starved of
+glucose, cells burn more oxygen to make the same ATP — so the spheroid
+goes hypoxic sooner and the rim thins, without any cell running out of
+glucose at all. The effect runs *through oxygen*.
 
-The cause is arithmetic rather than mysterious. Glucose penetrates to
-L = √(2DC/q) — about 260 µm at 0.8 mM — so at a 311 µm radius the centre
-falls to **0.470 mM**, while the engine's quiescence threshold is
-0.30 mM and its death threshold 0.06 mM. **Not one cell of 29 685 is
-below either.** For 0.8 mM medium to bite at this size the consumption
-would have to be higher, the thresholds higher, or the spheroid larger —
-and their spheroids were roughly 1000 µm across, three times what these
-runs reach.
+With that coupling (`DishParams.respiration_boost`):
 
-So one of three things is wrong and the data to say which is not in
-hand: the consumption rate, the viability thresholds, or the comparison
-itself. **The feature stays, labelled as failing this test.** Tuning any
-of the three until the test passed would be fitting to the answer, and
-the constants are literature values rather than something fitted, which
-is the only reason the failure is informative at all.
+| Medium glucose | Rim at 20 % O₂ | Rim at 5 % O₂ |
+|---|:-:|:-:|
+| 16.5 mM | 175 µm | 58 µm |
+| 5.5 mM | 174 µm | 58 µm |
+| 1.65 mM | 135 µm | 46 µm |
+| 0.8 mM | **111 µm** | **39 µm** |
 
-*A first version of this test reported 5/5 passing.* It reached down to
-0.1 mM — far below anything measured — and was satisfied by a difference
-there, on 160 µm spheroids too small for any gradient to form. A test
-that goes outside the experimental range to find an effect is
-manufacturing a pass, not checking a claim.
+All five directional claims pass, within the published range,
+monotonically, at both oxygen levels.
 
-**Also missing, from the same papers:** as glucose falls, cellular
-respiration RISES. Oxygen consumption here is fixed, so a starved
-spheroid's oxygen profile is wrong regardless of what the glucose does.
+**Why this is a test and not a fit.** The coupling's two anchor points
+(×1 at 5.5 mM, ×2 at 0.4 mM) come from Casciari 1992; the claims it is
+checked against come from Mueller-Klieser 1986 — different papers,
+different measurements. The only free choice is the curve's shape
+between the anchors, which is labelled as such in the code.
+
+**What is still not checked:** the magnitudes. Mueller-Klieser's rim
+thicknesses are image-only tables in the scanned originals and could
+not be extracted, so the directions are validated and the numbers are
+not. Digitising those figures would settle it.
 
 ### Let cells crawl (`DishParams.migration_*`)
 
