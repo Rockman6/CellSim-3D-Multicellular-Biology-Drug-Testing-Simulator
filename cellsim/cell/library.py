@@ -89,6 +89,12 @@ class Drug:
     k_mitotic_death_per_h: float = 0.0  # Bax drive per hour of mitotic arrest (FIT)
     Kd_target_uM: float = 0.0        # target affinity for 'mdm2' (MDM2-p53 site)
     tau_uptake_h: float = 0.1        # passive permeation time constant
+    # Time constant for drug LEAVING the cell after the medium is cleared.
+    # 0 means "same as tau_uptake_h": a freely diffusing drug, which is
+    # every drug's behaviour unless set. A drug held by its target leaves
+    # far more slowly than it arrived, because only the unbound fraction
+    # can cross the membrane.
+    tau_efflux_h: float = 0.0
     partition: float = 1.0           # C_in / C_out at equilibrium
     # Is this drug a P-glycoprotein substrate? Doxorubicin and paclitaxel
     # are classical ones; cisplatin is not effluxed by ABCB1, which is
@@ -223,8 +229,15 @@ DRUGS: dict[str, Drug] = {
         Kd_tubulin_uM=0.010,          # ~10 nM for microtubule sites (Diaz & Andreu 1993 Biochemistry)
         theta_arrest=0.3,
         pgp_substrate=True,           # classical P-gp substrate
-        k_mitotic_death_per_h=0.3,
-        tau_uptake_h=0.2,
+        # 0.3 until October 2026, when it turned out the GDSC fit never
+        # determined this number: the 72 h IC50 moves by under 10 % while
+        # this varies a hundred-fold, because given three days even a slow
+        # death rate kills every arrested cell. The SHORT-exposure data
+        # does determine it — 0.3 made a 24 h exposure 240x too potent
+        # against Georgiadis 1997, and 0.03 brings it to 3.4x while
+        # leaving the 72 h value where GDSC put it.
+        k_mitotic_death_per_h=0.03,
+        tau_uptake_h=0.2, tau_efflux_h=24.0,
         partition=0.212,              # FITTED: geo-mean of A549 + MCF7 fits to GDSC2 (validate_gdsc.py)
         # The 72 h potency is set by the arrest threshold: once tubulin
         # occupancy passes theta_arrest every dividing cell stalls in M, so
@@ -279,7 +292,7 @@ DRUGS: dict[str, Drug] = {
         "docetaxel", "tubulin",
         Kd_tubulin_uM=0.005,          # ~2x paclitaxel's microtubule affinity (Diaz & Andreu 1993)
         theta_arrest=0.3, k_mitotic_death_per_h=0.3,
-        pgp_substrate=True, tau_uptake_h=0.2,
+        pgp_substrate=True, tau_uptake_h=0.2, tau_efflux_h=24.0,
         partition=0.2,                # PROVISIONAL, refitted on GDSC2
         accumulation_ratio=100.0,
         fit_target="partition",

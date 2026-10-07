@@ -88,20 +88,57 @@ def test_a_short_paclitaxel_pulse_cannot_reach_half_kill_at_any_dose():
     assert surv > 0.5, f"6 h paclitaxel at 3 uM left only {surv:.3f}"
 
 
+def test_auc_is_the_wrong_exposure_metric_for_paclitaxel():
+    """Concentration x time is not conserved for a spindle poison: a
+    longer exposure reaches half-kill on far less total drug, because
+    what matters is how many cells attempt mitosis while the drug is
+    there, not how much drug-hours they saw.
+
+    Georgiadis 1997 puts the 24 h half-kill at 9.4 µM and the 120 h at
+    0.027 µM — 226 against 3.2 µM·h, a 70-fold difference in the AUC
+    needed. The engine must show the same direction and a comparable
+    size.
+
+    Added in October 2026 alongside the threshold test below, which it
+    complements: that one shows a fixed AUC can be spread too thin to
+    work at all; this one shows that across the exposures where the drug
+    does work, total drug is a poor predictor of effect."""
+    pac = _drug("paclitaxel")
+    auc = {}
+    for hours in (24.0, 72.0):
+        c50 = ic50(LINE, pac, guess_uM=1.0 if hours < 72 else 0.03,
+                   exposure_h=None if hours == 72.0 else hours,
+                   n_cells_per_conc=N_CELLS, k_cyc=K)
+        assert math.isfinite(c50), f"no half-kill at {hours:g} h"
+        auc[hours] = c50 * hours
+    ratio = auc[24.0] / auc[72.0]
+    assert ratio > 10, (
+        f"a longer exposure should need far less total drug: "
+        f"{auc[24.0]:.1f} vs {auc[72.0]:.1f} µM·h is only {ratio:.1f}x")
+
+
 def test_spreading_a_fixed_dose_too_thin_switches_paclitaxel_off():
     """Threshold behaviour. The same AUC delivered over 72 h instead of
     24 h drops the concentration below the tubulin occupancy that
-    triggers arrest, and the drug stops working — which is why AUC is
-    the wrong exposure metric for this class."""
+    triggers arrest, and the drug stops working.
+
+    The 24 h arm used to be required to leave under 70 % alive. Once the
+    mitotic death rate was corrected (October 2026) a 24 h exposure is
+    rightly weaker and leaves about 73 %, so the gate now checks the
+    SHAPE — the thin split switched off, the 24 h split still working,
+    and a clear gap between them — rather than a level set by a death
+    rate that turned out to be ten times too fast."""
     pac = _drug("paclitaxel")
     auc = 1.8                                  # µM·h
     mid = _surviving(pac, auc / 24.0, 24.0)    # 0.075 µM for 24 h
-    thin = _surviving(pac, auc / 72.0, 72.0)   # 0.025 µM for 72 h, at threshold
-    assert mid < 0.7, f"paclitaxel ineffective even at the mid split ({mid:.3f})"
+    thin = _surviving(pac, auc / 72.0, 72.0)   # 0.025 µM for 72 h, below threshold
     assert thin > 0.9, (
         f"spreading the same AUC over 72 h should fall below threshold and do "
         f"almost nothing; got {thin:.3f}")
-    assert thin > mid, "the thin split must be worse, not better"
+    assert mid < 0.85, f"the 24 h split should still work; got {mid:.3f}"
+    assert thin - mid > 0.15, (
+        f"the threshold should separate the two splits clearly: "
+        f"{mid:.3f} vs {thin:.3f}")
 
 
 def test_a_fixed_dose_has_an_interior_best_schedule_for_paclitaxel():
