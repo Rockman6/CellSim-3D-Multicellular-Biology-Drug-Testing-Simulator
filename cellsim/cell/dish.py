@@ -93,6 +93,14 @@ class DishParams:
     # apoptosis duration (Macklin et al. 2012 J Theor Biol 301:122).
     apoptotic_clearance_h: float = 8.6
     boundary_layer_um: float = 0.0       # unstirred medium between aggregate and bulk
+    # Where the stirred medium begins. 0 (the default) uses the
+    # equivalent-sphere radius — the same R that Grimes's anoxic-core
+    # relation is written in, chosen for consistency with that analysis
+    # rather than tuned toward any measured value. A positive value uses
+    # that percentile of the occupied radii instead; 100 reproduces the
+    # old behaviour (the outermost straggler), which built an artificial
+    # unstirred layer that thickened as the spheroid grew.
+    body_edge_percentile: float = 0.0
     extracellular_fraction: float = 0.4  # interstitial share of a packed site's volume
     # Small-molecule interstitial diffusivity, 1e-6 cm2/s (Nugent & Jain
     # 1984 Cancer Res 44:238), the same default as cellsim.cell.tissue.
@@ -140,6 +148,15 @@ class DishParams:
     # choice, not a measurement. Set the boost to 1 to remove the coupling.
     respiration_boost: float = 2.0
     respiration_Kd_mM: float = 0.5
+    # Oxygen consumption of an ARRESTED cell relative to a proliferating
+    # one. Freyer & Sutherland 1985 (J Cell Physiol 124:516) found cell
+    # cycle arrest in growing EMT6/Ro spheroids accompanied by reduced
+    # oxygen consumption, traced later to downregulated mitochondrial
+    # function in quiescent cells (J Cell Physiol 1998 176:138). The
+    # DIRECTION is sourced; the magnitude was not available in the
+    # literature reachable here, so this defaults to 1 (no reduction) and
+    # the value used is reported wherever it is set.
+    quiescent_o2_factor: float = 1.0
     # ── migration ──────────────────────────────────────────────────────
     # A random walk on the lattice: each live cell that has an empty
     # neighbouring site hops into one at this rate. On a lattice of
@@ -429,7 +446,32 @@ class Dish:
         grid = np.indices(self.shape).reshape(3, -1).T
         d_sites = np.linalg.norm(grid - c, axis=1) * h
         occupied = (self.occ != EMPTY).reshape(-1)
-        r_out = (d_sites[occupied].max() if occupied.any() else 0.0) + 0.5 * h
+        # Where the stirred medium begins. This used to be the single
+        # OUTERMOST occupied site, which let a thin tail of stray cells set
+        # it: by day 12 of a DLD-1 spheroid the medium sat 159 um beyond
+        # the body, and the whole spheroid's oxygen had to diffuse through
+        # that much nearly empty fluid, falling from 100 to 31 mmHg before
+        # it arrived. Real medium is stirred and carries no such gradient,
+        # and the layer thickened as the spheroid grew — which is what made
+        # the implied diffusion limit slide from 196 to 157 um although the
+        # engine's own constants put it at 233 (Grimes 2014: 233 +- 22).
+        #
+        # A high percentile of the occupied radii marks the edge of the
+        # body and ignores the stragglers, which then sit in the outermost
+        # shell at medium concentration, as cells drifting in medium should.
+        if not occupied.any():
+            r_body = 0.0
+        elif self.dp.body_edge_percentile <= 0:
+            # The equivalent-sphere radius: the radius of a sphere holding
+            # the same occupied volume. Grimes's anoxic-core relation is
+            # written in exactly this R, so placing the medium here makes
+            # the simulation and its own analysis use one definition of
+            # where the spheroid ends — a choice made for consistency,
+            # not tuned toward any measured diffusion limit.
+            r_body = (3.0 * occupied.sum() * h ** 3 / (4.0 * math.pi)) ** (1.0 / 3.0)
+        else:
+            r_body = float(np.percentile(d_sites[occupied], self.dp.body_edge_percentile))
+        r_out = r_body + 0.5 * h
         r_out += self.dp.boundary_layer_um
         dr = 0.5 * h
         nb = max(4, int(math.ceil(r_out / dr)))
@@ -476,7 +518,20 @@ class Dish:
         # Oxygen: quasi-steady (it equilibrates in seconds). Starved of
         # glucose, a cell burns more oxygen to make the same ATP, so the
         # uptake carries the respiration factor computed above.
-        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_live, 0.0, 1.0) * respiration
+        # An arrested cell consumes less than a proliferating one, so the
+        # consuming density weights each cell by its growth signal. With
+        # quiescent_o2_factor = 1 this is exactly phi_live.
+        qf = dp.quiescent_o2_factor
+        if qf < 1.0 and len(self.gs) == len(cell_bin):
+            w = qf + (1.0 - qf) * np.clip(self.gs, 0.0, 1.0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                phi_consume = np.where(
+                    sites_per_bin > 0,
+                    np.bincount(cell_bin, weights=w, minlength=nb)[:nb] / sites_per_bin,
+                    0.0)
+        else:
+            phi_consume = phi_live
+        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_consume, 0.0, 1.0) * respiration
         guess = self.profile_o2 if len(self.profile_o2) == nb else None
         o2 = solve_steady(edges, "sphere", dp.o2_D_um2_per_s, dp.o2_medium_mmHg, uptake,
                           dp.o2_Km_mmHg, guess=guess)
