@@ -4,7 +4,11 @@
 simulator in Python. Open source, Apple-silicon and Linux, no GPU
 required.**
 
-**[Open a simulated spheroid in your browser →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/)**
+**[Run an experiment in your browser →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab/)**
+— pick cells, a drug and a schedule, press Run. The real engine runs on
+your own machine; nothing to install.
+
+**[Open a simulated spheroid →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/)**
 (no install; the demo runs are simulated fresh on every deploy, so they
 show what the current code produces)
 
