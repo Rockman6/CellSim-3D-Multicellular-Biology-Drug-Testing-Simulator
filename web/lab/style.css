@@ -1,0 +1,163 @@
+/* CellSim Lab — visual language.
+ *
+ * The aesthetic follows professional CAE workbenches (SimScale, PrePoMax,
+ * COMSOL): a dark viewport that the eye treats as the specimen, quiet
+ * chrome around it, numbers in monospace so columns line up, and one
+ * accent colour reserved for actions that actually do something.
+ *
+ * Borrowed: the look and the layout grammar — a single vertical workflow
+ * on the left instead of tabs, which is the change SimScale made in 2018
+ * precisely to help newcomers, and panels that float over the viewport so
+ * the specimen keeps the space.
+ *
+ * Written here from scratch: every rule below. No third-party CSS is
+ * copied, so nothing in this project carries someone else's copyright.
+ */
+:root {
+  --bg:        #0e1317;
+  --panel:     #161d23;
+  --panel-2:   #1d262e;
+  --line:      #2a3540;
+  --text:      #e4ebf2;
+  --muted:     #8d9cab;
+  --accent:    #35b3a2;   /* actions */
+  --accent-dim:#1f6b61;
+  --warn:      #d8a23c;   /* "calibrated, not validated" */
+  --bad:       #d3604f;   /* "fails its validation" */
+  --good:      #5fb97a;
+  --radius: 6px;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 var(--sans);
+  display: grid; grid-template-rows: 48px 1fr;
+  overflow: hidden;
+}
+
+/* ── top bar ─────────────────────────────────────────────────── */
+header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px; background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 650; letter-spacing: .2px; }
+.brand span { color: var(--accent); }
+.subtitle { color: var(--muted); font-size: 12.5px; }
+header .spacer { flex: 1; }
+
+button {
+  font: inherit; color: var(--text); cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 7px 14px;
+}
+button:hover:not(:disabled) { border-color: #3b4a58; background: #243039; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary {
+  background: var(--accent); border-color: var(--accent); color: #06211d;
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) { background: #3fc7b4; border-color: #3fc7b4; }
+
+/* ── three-column workbench ──────────────────────────────────── */
+main { display: grid; grid-template-columns: 300px 1fr 340px; min-height: 0; }
+aside, .results { background: var(--panel); min-height: 0; overflow-y: auto; }
+aside { border-right: 1px solid var(--line); }
+.results { border-left: 1px solid var(--line); }
+
+/* ── the workflow: one vertical list, not tabs ───────────────── */
+.step { border-bottom: 1px solid var(--line); }
+.step > summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px; cursor: pointer; user-select: none;
+  list-style: none; font-weight: 550;
+}
+.step > summary::-webkit-details-marker { display: none; }
+.step[open] > summary { background: var(--panel-2); }
+.num {
+  width: 21px; height: 21px; flex: none; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--muted); font: 600 11px/19px var(--mono); text-align: center;
+}
+.step[open] .num { background: var(--accent-dim); border-color: var(--accent); color: #d6fffa; }
+.step-body { padding: 4px 14px 16px; }
+
+label { display: block; margin: 12px 0 5px; color: var(--muted); font-size: 12px; }
+select, input[type=text], input[type=number] {
+  width: 100%; font: inherit; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 7px 9px;
+}
+select:focus, input:focus { outline: none; border-color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.hint { color: var(--muted); font-size: 11.5px; margin-top: 6px; line-height: 1.45; }
+.val { font: 600 13px var(--mono); color: var(--text); min-width: 68px; text-align: right; flex: none; }
+
+/* ── presets ─────────────────────────────────────────────────── */
+.preset {
+  display: block; width: 100%; text-align: left; margin-bottom: 7px;
+  padding: 10px 12px; line-height: 1.35;
+}
+.preset b { display: block; font-weight: 600; margin-bottom: 2px; }
+.preset small { color: var(--muted); font-size: 11.5px; }
+
+/* ── viewport ────────────────────────────────────────────────── */
+.stage { position: relative; background: #090d10; min-height: 0; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.overlay {
+  position: absolute; left: 14px; top: 14px;
+  background: rgba(14,19,23,.82); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 9px 12px; font: 12px var(--mono); color: var(--muted);
+  pointer-events: none;
+}
+.overlay b { color: var(--text); font-weight: 600; }
+.placeholder {
+  position: absolute; inset: 0; display: grid; place-content: center;
+  text-align: center; color: var(--muted); gap: 10px; padding: 24px;
+}
+.placeholder h2 { color: var(--text); font-size: 17px; margin: 0; font-weight: 600; }
+
+/* ── progress ────────────────────────────────────────────────── */
+.bar { height: 3px; background: var(--panel-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.bar.indet > i { width: 35%; animation: slide 1.1s infinite ease-in-out; }
+@keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+
+/* ── results ─────────────────────────────────────────────────── */
+.results h3 {
+  margin: 0; padding: 13px 14px; font-size: 13px; font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+.result-body { padding: 14px; }
+.metric { margin-bottom: 16px; }
+.metric .k { color: var(--muted); font-size: 12px; }
+.metric .v { font: 600 22px/1.25 var(--mono); }
+.metric .band { color: var(--muted); font: 12px var(--mono); }
+.chip {
+  display: inline-block; padding: 2px 7px; border-radius: 99px;
+  font-size: 11px; font-weight: 600; border: 1px solid;
+}
+.chip.good { color: var(--good); border-color: #2f6b45; background: #15291d; }
+.chip.warn { color: var(--warn); border-color: #6b5520; background: #292113; }
+.chip.bad  { color: var(--bad);  border-color: #6b3028; background: #291715; }
+.note {
+  font-size: 11.5px; line-height: 1.5; color: var(--muted);
+  border-left: 2px solid var(--line); padding-left: 10px; margin: 12px 0;
+}
+.note.warn { border-color: var(--warn); }
+table.data { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+table.data th, table.data td { padding: 5px 6px; text-align: right; }
+table.data th { color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); }
+table.data td:first-child, table.data th:first-child { text-align: left; }
+.empty { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+
+@media (max-width: 1100px) {
+  main { grid-template-columns: 260px 1fr; }
+  .results { display: none; }
+}
