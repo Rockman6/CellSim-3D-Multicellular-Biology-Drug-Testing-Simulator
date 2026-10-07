@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CellSim Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%2335b3a2%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%222.5%22 fill=%22%230e1317%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">Cell<span>Sim</span> Lab</div>
+  <div class="subtitle">run a cell experiment in your browser</div>
+  <div class="spacer"></div>
+  <span id="engine-state" class="subtitle">starting the engine…</span>
+  <button id="run" class="primary" disabled>Run experiment</button>
+</header>
+
+<main>
+  <!-- ── the workflow: one list, top to bottom ──────────────── -->
+  <aside>
+    <details class="step" open>
+      <summary><span class="num">1</span> Which cells?</summary>
+      <div class="step-body">
+        <label for="line">Cell line</label>
+        <select id="line"></select>
+        <div class="hint" id="line-hint"></div>
+
+        <label for="gene">Knock out a gene <span style="opacity:.7">(optional)</span></label>
+        <select id="gene"><option value="">— none, normal cells —</option></select>
+        <div class="hint" id="gene-hint"></div>
+      </div>
+    </details>
+
+    <details class="step" open>
+      <summary><span class="num">2</span> What do you do to them?</summary>
+      <div class="step-body">
+        <label for="drug">Drug</label>
+        <select id="drug"></select>
+        <div class="hint" id="drug-hint"></div>
+
+        <label for="hours">How long you watch them</label>
+        <div class="row">
+          <input type="range" id="hours" min="24" max="120" step="12" value="72">
+          <span class="val" id="hours-val">72 h</span>
+        </div>
+
+        <label for="exposure">How long the drug is present</label>
+        <select id="exposure">
+          <option value="">the whole time (continuous)</option>
+          <option value="6">6 h, then washed off</option>
+          <option value="12">12 h, then washed off</option>
+          <option value="24">24 h, then washed off</option>
+        </select>
+        <div class="hint">Washing the drug off early is how a real infusion
+          works, and the engine's clearest result is that it changes the
+          answer a lot for some drugs and barely at all for others.</div>
+      </div>
+    </details>
+
+    <details class="step">
+      <summary><span class="num">3</span> Or start from a question</summary>
+      <div class="step-body">
+        <button class="preset" data-preset="pulse">
+          <b>Does a short dose work as well as a long one?</b>
+          <small>Paclitaxel, continuous vs 12 h — the schedule question</small>
+        </button>
+        <button class="preset" data-preset="p53">
+          <b>What if these cells lose p53?</b>
+          <small>Cisplatin on A549, with and without TP53</small>
+        </button>
+        <button class="preset" data-preset="efflux">
+          <b>Can cells pump the drug back out?</b>
+          <small>Doxorubicin against cells overexpressing the P-gp pump</small>
+        </button>
+        <button class="preset" data-preset="death">
+          <b>What if the cells cannot die?</b>
+          <small>Cisplatin with BAX knocked out — killing becomes arrest</small>
+        </button>
+      </div>
+    </details>
+
+    <details class="step">
+      <summary><span class="num">4</span> What the engine gets wrong</summary>
+      <div class="step-body">
+        <div class="hint" id="honesty">
+          Every answer here carries a band, because the engine is
+          stochastic: the same run repeated moves by 10–20 %. Two numbers
+          that differ by less than that do not differ.
+        </div>
+      </div>
+    </details>
+  </aside>
+
+  <!-- ── viewport ───────────────────────────────────────────── -->
+  <section style="display:grid; grid-template-rows:3px 1fr; min-height:0;">
+    <div class="bar" id="bar"><i></i></div>
+    <div class="stage" id="stage">
+      <div class="placeholder" id="placeholder">
+        <h2>Nothing run yet</h2>
+        <div>Pick cells and a drug on the left, then press
+          <b style="color:var(--accent)">Run experiment</b>.<br>
+          Everything happens in your browser — nothing is uploaded.</div>
+      </div>
+      <div class="overlay" id="overlay" hidden></div>
+    </div>
+  </section>
+
+  <!-- ── results ────────────────────────────────────────────── -->
+  <div class="results">
+    <h3>Result</h3>
+    <div class="result-body" id="result">
+      <div class="empty">
+        The dose–response curve, the IC50 with its confidence band, and a
+        table you can copy will appear here.
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.32.0/plotly.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
