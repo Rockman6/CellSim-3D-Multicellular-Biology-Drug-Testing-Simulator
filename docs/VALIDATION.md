@@ -1374,27 +1374,57 @@ runs in sub-rounds short enough that wanting two hops is rare.
 ### Put immune cells on the dish (`DishParams.effector_*`, `api.killing`)
 
 Effector cells on their own layer, as T or NK cells crawl over a
-monolayer. Each random-walks biased toward tumour cells, engages on
-contact, kills at a rate, rests while conjugated, and stops after a few
-kills. CTLs take about an hour from contact to target death and kill a
-few targets a day (Halle et al. 2016 Immunity 44:233).
+monolayer. Each random-walks biased toward tumour cells and delivers
+hits on contact.
 
-A549 monolayer, 24 h:
+**The first version used the wrong mechanism.** Each contact killed
+outright — one lethal hit — which is the older picture. Live imaging by
+Weigelin et al. 2021 (Nat Commun 12:5217) overturned it: a single
+contact rarely kills. Each delivers a *sublethal* hit — perforin pores,
+nuclear envelope rupture, DNA damage — that the target repairs, and
+death needs about **three hits within ~50 minutes** of one another,
+usually from several CTLs passing through. The engine now implements
+that, with `effector_hits_to_kill = 1` keeping the old picture available
+for comparison.
 
-| E:T | Live tumour | Specific lysis | Effector kills |
+What came out was not designed in:
+
+| E:T | Lysis | Hits delivered | Hits per kill |
 |---|:-:|:-:|:-:|
-| 0 | 862 | — | 0 |
-| 0.1 | 546 | 37 % | 192 |
-| 0.3 | 100 | 88 % | 458 |
-| 1.0 | 0 | 100 % | 446 |
-| 3.0 | 0 | 100 % | 408 |
+| 0.1 | 0 % | 418 | **418** |
+| 0.3 | 2 % | 1310 | 164 |
+| 1.0 | 40 % | 3886 | 17 |
+| 3.0 | 100 % | 1890 | **4.1** |
 
-The kill count *falls* above E:T 0.3 because the effectors run out of
-targets, which is the right shape. **Calibrated, not validated**: the
-kinetics are literature values and nothing has been run against a
-measured killing curve. What the gates pin is that the lysis comes from
-the killing and not from the effectors' presence — effectors with a zero
-kill rate leave the monolayer untouched.
+At low density hundreds of hits are wasted on targets that repair
+between them. At high density the cost falls to about four hits per
+kill, close to the theoretical three. That steep nonlinearity is why
+CTLs swarm, and it emerges from the timing rule rather than from any
+fitted rate.
+
+`scripts/validate_killing.py` checks four predictions that follow from
+the mechanism and so cannot be tuned into passing — all four pass:
+
+1. **Cooperativity**: hits per kill falls steeply with density.
+2. **The repair window matters, in the right direction**:
+
+   | Repair window | Lysis at E:T 1 |
+   |:-:|:-:|
+   | 15 min | 6 % |
+   | 30 min | 18 % |
+   | 50 min (measured) | 40 % |
+   | 120 min | 96 % |
+
+3. **One-hit killing is the old model**: it gives 39 % lysis at E:T 0.1
+   where three-hit gives 0 %, and 87 % at E:T 0.3 where three-hit gives
+   2 %.
+4. **No free kills**: kills never exceed hits ÷ 3.
+
+**What is still not validated** is the absolute lysis at a given E:T
+against a measured chromium-release or impedance curve. None has been
+digitised here, so the hit rate and walk speed remain literature values
+and the magnitudes are unchecked. The mechanism is validated; the
+numbers are not.
 
 ## GDSC reference data (the Phase-1 validation target)
 
