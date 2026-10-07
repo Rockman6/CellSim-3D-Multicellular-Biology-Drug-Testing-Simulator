@@ -50,14 +50,23 @@ def test_the_defaults_leave_the_dish_exactly_as_it_was():
     assert len(d.eff_pos) == 0, "no effectors until add_effectors() is called"
 
 
-def test_plentiful_glucose_changes_nothing():
+def test_plentiful_glucose_barely_moves_the_answer():
     """Switching the field on at a normal medium concentration must not
-    move the answer: if it does, the coupling is wrong rather than the
-    biology interesting."""
+    move the answer by much: if it does, the coupling is wrong rather
+    than the biology interesting.
+
+    This used to require EXACT equality, which was right while glucose
+    acted only through a starvation threshold that 5.5 mM never reached.
+    Glucose now also raises respiration along a continuous curve
+    (Casciari 1992), and a spheroid's centre sits a little below the
+    medium, so its cells burn very slightly more oxygen than at exactly
+    5.5 mM. The honest effect is about 0.2 %; the gate allows 2 %, which
+    is still ten times below the engine's own run-to-run spread and would
+    catch a coupling that had been made too strong."""
     off = _spheroid(glucose=0.0)
     plenty = _spheroid(glucose=5.5)
-    assert off.record.n_live[-1] == plenty.record.n_live[-1], (
-        f"{off.record.n_live[-1]} vs {plenty.record.n_live[-1]} at 5.5 mM")
+    a, b = off.record.n_live[-1], plenty.record.n_live[-1]
+    assert abs(a - b) / a < 0.02, f"{a} vs {b} at 5.5 mM ({abs(a - b) / a:.1%})"
 
 
 # ── glucose ───────────────────────────────────────────────────────────
