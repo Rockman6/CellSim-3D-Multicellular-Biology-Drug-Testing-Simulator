@@ -520,12 +520,52 @@ Against published exposure-duration studies, matched by assay:
 |---|---|---|---|
 | Ozawa 1989, cisplatin, WiDr | C × T governs (slope −1) | slope −0.95 over 1–6 h | agrees |
 | Liebmann 1993 (Br J Cancer 68:1104), 8 lines, clonogenic | 24 h kill saturates above ~50 nM | 0.46 / 0.43 / 0.40 / 0.49 surviving at 0.05 / 0.2 / 1 / 5 µM | agrees |
-| Liebmann 1993 | 24 → 72 h exposure raises cytotoxicity 5–200× | C50 0.037 → 0.030 µM (1.2×) | **miss** |
-| Georgiadis 1997 (Clin Cancer Res 3:449), 14 NSCLC lines, MTT, read at 120 h: 3 / 24 / 120 h exposure | IC50 > 32 / 9.4 / 0.027 µM | none / 0.036 / 0.029 µM (A549) | 3 h agrees; 120 h agrees but is inherited from the GDSC fit; **24 h misses by 260×** |
+| Liebmann 1993 | 24 → 72 h exposure raises cytotoxicity 5–200× | C50 2.7 → 0.027 µM (**100×**) | agrees, after the October 2026 fix below |
+| Georgiadis 1997 (Clin Cancer Res 3:449), 14 NSCLC lines, MTT, read at 120 h: 3 / 24 / 120 h exposure | IC50 > 32 / 9.4 / 0.027 µM | 147 / 2.7 / 0.027 µM (A549) | 3 h agrees; 120 h agrees but is inherited from the GDSC fit; 24 h now within **3.4×**, having been 240× — see below |
 
-**The miss, stated plainly.** Both studies say a 24 h paclitaxel
-exposure is far weaker than a 72–120 h one; the engine says it is
-nearly as good. The engine kills almost every cell that reaches
+**The miss, and what fixed it (October 2026).** Both studies say a 24 h
+paclitaxel exposure is far weaker than a 72–120 h one; the engine said
+it was nearly as good, by 240×. Two things were wrong, and finding the
+second depended on fixing the first.
+
+*Drug left the cell as fast as it entered.* Uptake was symmetric —
+`(partition·C_out − C_in)/τ` with one τ — so wash-out emptied a cell in
+minutes. Paclitaxel does not behave that way: it is held on tubulin, and
+after removal there is "little efflux", with an elimination half-life of
+13–53 h. `Drug.tau_efflux_h` now gives exit its own time constant
+(24 h for the taxanes, 0 = symmetric for everything else, so no other
+drug moved). Without it the 24 h curve had an **unreachable floor** —
+survival stalled at 0.42 from 0.1 µM to 30 µM, a 300-fold dose range in
+which more drug did nothing, because a cell that mitosed after wash-out
+met no drug at all.
+
+*The mitotic death rate was never determined by the fit.* With the floor
+gone the curve still crossed half-kill far too early. `k_mitotic_death_per_h`
+was fitted to GDSC's 72 h screens — and a 72 h IC50 moves by under 10 %
+while that constant varies a **hundred-fold**, because given three days
+even a slow death rate kills every arrested cell. The fit could not see
+it. Short exposures can:
+
+| | engine before | engine after | measured |
+|---|:-:|:-:|:-:|
+| 3 h exposure | 73 µM | 147 µM | > 32 µM ✓ |
+| 24 h exposure | 0.039 µM | **2.7 µM** | 9.4 µM |
+| continuous | 0.028 µM | 0.027 µM | 0.027 µM ✓ |
+
+0.3 → 0.03. The 24 h error falls from **240× to 3.4×**, the 3 h and
+continuous points are unchanged, and paclitaxel's median fold error
+against the GDSC panel stays at 2.4×.
+
+Read honestly: the 24 h point is now **calibrated** on Georgiadis rather
+than predicted, so it is no longer available as a test. The 3 h point is
+an independent check and it passes. The remaining 3.4× is real and
+unexplained.
+
+**Left alone on purpose:** docetaxel and vinorelbine still carry 0.3.
+They share paclitaxel's mechanism, so the same argument probably applies
+— but no short-exposure data for them has been found, and changing a
+constant with nothing to constrain it is how the first wrong value got
+there. The engine kills almost every cell that reaches
 mitosis inside the 24 h window. The likely causes are that its cells
 cycle almost in lockstep (real cycle times vary by 20–30 % and include
 slow-cycling cells that a 24 h window misses) and that cells slipping
@@ -731,9 +771,44 @@ to. What survives the caveat is narrower:
   that `doubling_time_h` was conflating them.
 
 What would settle it is a different HeLa time-lapse, or another line
-with tracked single cells, held out entirely. Until then this sits in
-the same category as the spheroid growth constant: calibrated on one
-dataset, not independently validated.
+with tracked single cells, held out entirely.
+
+**A held-out test of half of it (October 2026).** The Cell Tracking
+Challenge also publishes **DIC-C2DH-HeLa** — different cultures,
+different microscopy, never used for any calibration here. At 84 frames
+of 10 min it spans only **14 h**, too short to repeat the test above: a
+daughter born during the movie needs ~19 h to divide, so no complete
+cycle and no 30–40 h plateau can be measured. But it can test something
+the two parameterisations disagree on — what fraction of the cells
+present at the start divide within 14 h:
+
+| | founders dividing within 14 h | against 14 of 15 measured |
+|---|:-:|:-:|
+| old HeLa: 31 h cycle | 0.56 ± 0.17 | **rejected**, p ≈ 0.002 |
+| current HeLa: 19 h cycle + 50 % quiescent | 0.75 ± 0.12 | consistent, p ≈ 0.08 |
+| measured, DIC-C2DH-HeLa (2 sequences) | **0.93** | — |
+
+So independent data **rejects the old 31 h cycle and supports the 19 h
+one.** That is the first part of the HeLa change to be validated rather
+than calibrated.
+
+It covers only half. Quiescence is decided at mitotic exit, so cells
+present at the start are never quiescent in the engine, and this
+observable tests the **cycle time alone**. The **50 % quiescent
+fraction** acts on daughters, whose fate plays out beyond a 14 h window,
+and remains calibrated on one dataset and untested.
+
+One thing worth recording without over-reading: the measurement sits on
+the high side of even the new model. This field is sparse — about 10
+founders, against 43–125 in the calibration movie — and sparse cultures
+proliferate more freely. If that is the reason, the quiescent fraction
+depends on culture density rather than being a fixed property of HeLa,
+and `CellLine.quiescent_fraction` is the wrong home for it. Fifteen
+cells cannot settle that; a long, sparse held-out movie could.
+
+`scripts/validate_hela_heldout.py` downloads the movie, scores it and
+re-runs both models, so the comparison is repeated whenever the engine
+changes rather than resting on a number recorded once.
 
 Quiescence alone was not enough: it fixed the plateau at 30 h and left
 the engine far too slow at 20 h. The cycling cells also had to cycle
@@ -809,18 +884,64 @@ with Ki-67 rims; solid stress is known to limit spheroid proliferation
 this way (Helmlinger et al. 1997 Nat Biotechnol 15:778). Without a
 mechanical limit the spheroid grows four times too fast.
 
-**A miss in the necrotic core.** Feeding the model's (radius, necrotic
-radius) pairs through Grimes's own anoxic-core relation should return
-their 233 ± 22 µm diffusion limit if the model's core tracks anoxia.
-With PhysiCell's generic necrosis threshold (5 mmHg) it returns 155 µm;
-moving the threshold to near-anoxia, which is how Grimes define the
-core, gives 173 µm. The core is still too large. The likely
-cause is an overshoot built into its formation: the first cells die
-under the profile of a fully consuming sphere, and once the dead core
-stops consuming, oxygen reaches deeper than the dead region, so the core
-is bigger than the anoxic region it now sits in. A surface-growth
-lattice also roughens the surface, so the equivalent radius understates
-how far oxygen must travel. Open.
+**The necrotic core: a numerical bug, found and fixed (October 2026).**
+Feeding the model's (radius, necrotic radius) pairs through Grimes's own
+anoxic-core relation should return their 233 ± 22 µm diffusion limit if
+the model's core tracks anoxia. It returned 173 µm — and, more tellingly,
+the value **drifted down every day** (196 → 189 → 181 → 173 → 169 → 163
+→ 157 µm), although a diffusion limit is a fixed physical property.
+
+This page used to give two likely causes. **Both were wrong**, and so
+was a third tried along the way:
+
+| Hypothesis | Test | Verdict |
+|---|---|---|
+| Formation overshoot: the core outgrows the anoxic region after it stops consuming | compared the dead radius with the *currently* anoxic radius | **rejected** — the dead core sits 2–13 µm *inside* the anoxic region |
+| Surface roughening makes the equivalent radius understate the travel distance | compared the volume radius with the mean surface radius | **rejected** — the surface gets *smoother* as it grows, and the surface radius gives the same drift |
+| Quiescent cells consume less oxygen (Freyer & Sutherland 1985) | swept their consumption | **rejected as the cause** — it lifts the level but leaves the drift at −6 µm/day |
+
+The clue that cracked it: the engine's own constants give an analytic
+limit √(6Dc/q) of **exactly 233 µm**, with Km 1 % of the medium so the
+kinetics are effectively zero-order. The parameters were right; the
+*solve* was not delivering them. And oxygen at the spheroid's surface
+was falling from 88 to **32 mmHg** as it grew — with the unstirred
+boundary layer set to zero.
+
+The cause was where the medium began. The field applied the medium's
+oxygen at the distance of the **single outermost occupied site**. A thin
+tail of stray cells drifted out, so by day 12 the medium sat **159 µm
+beyond the spheroid**, and all of its oxygen had to diffuse through that
+much nearly empty fluid first. Real medium is stirred and carries no
+such gradient. The artificial layer thickened as the spheroid grew —
+32, then 93, then 159 µm — which is exactly what produced the drift.
+
+The medium now begins at the **equivalent-sphere radius**, the same R
+that Grimes's relation is written in. That choice is made for
+consistency between the simulation and its own analysis, not tuned
+toward 233 — a percentile sweep showed the answer moves with the choice,
+which is why a principled definition was preferred over the best fit:
+
+| Medium boundary at | Implied r_l | Drift | Surface O₂ over the run |
+|---|:-:|:-:|:-:|
+| outermost straggler (old) | 173 µm | −6.5 µm/day | 88 → 32 mmHg |
+| **equivalent radius (now)** | **240 µm** | **+1.9 µm/day** | **94 → 93 mmHg** |
+| analytic, from the engine's constants | 233 µm | 0 | — |
+| measured, Grimes 2014 | 233 ± 22 µm | — | — |
+
+The strongest evidence it is right is that the oxygen physics **stopped
+depending on the mechanics**. Before the fix the implied limit varied
+with `push_sites` (172, 188, 189, 219 µm for reach 1, 2, 3, ∞, a spread
+of 47 µm); after it, 240, 242, 245 and 248 µm, a spread of 8 — physics
+now depends only on physics.
+
+**What it cost:** `push_sites = 1` had been calibrated to Grimes's growth
+rate *under the broken boundary*, and the two errors had partly
+cancelled, which is how the bug survived. With the surface properly
+oxygenated, growth after onset is now **17.1 µm/day** against Grimes's
+~15 (it was 15.3). Reach 1 is still the best of those tried (reach 2
+gives 32), so the choice stands, about 14 % fast. Onset moved from day 6
+at 206 µm to day 8 at **238 µm** — which is now consistent with a 233 µm
+diffusion limit, where the old 206 was not.
 
 **What the dish does not do yet.** One cell per site, so no compression
 or multilayering beyond a fixed reach; necrotic debris never lyses; no
@@ -1271,49 +1392,48 @@ DLD-1 spheroid, 6 days from 3000 cells:
 Growth stalls before killing starts, which is the ordering starvation
 should have.
 
-#### It does NOT reproduce the published glucose effect
+#### It failed, then the missing mechanism made it pass
 
 `scripts/validate_glucose.py` tests the directional claims of
-Mueller-Klieser, Freyer & Sutherland (1986) — that lowering medium
-glucose from 16.5 to 0.8 mM substantially thins the viable rim, and that
-a lack of glucose alone can produce necrosis. **Two of the five claims
-fail.** Across the entire published range the model gives identical
-answers:
+Mueller-Klieser, Freyer & Sutherland (1986): lowering medium glucose
+from 16.5 to 0.8 mM substantially thins the viable rim.
 
-| Medium glucose | Live | Radius | Viable rim | Necrotic core |
-|---|:-:|:-:|:-:|:-:|
-| 16.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 5.5 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 1.65 mM | 42 309 | 337 µm | 175 µm | 162 µm |
-| 0.8 mM | 42 309 | 337 µm | 175 µm | 162 µm |
+**With glucose acting only by starvation, it failed.** Across the whole
+published range the model gave byte-identical answers — 175 µm rim,
+162 µm core at every concentration — because glucose penetrates
+~260 µm and at a 311 µm radius the centre only fell to 0.47 mM, against
+a 0.30 mM threshold. Not one cell of 29 685 was starving.
 
-The oxygen claims pass; the glucose ones do not.
+The same papers report a second effect alongside the thinner rim:
+**respiration rises as glucose falls.** Casciari, Sotirchos &
+Sutherland 1992 (J Cell Physiol 151:386) measured EMT6/Ro oxygen
+consumption nearly doubling between 5.5 and 0.4 mM. Starved of
+glucose, cells burn more oxygen to make the same ATP — so the spheroid
+goes hypoxic sooner and the rim thins, without any cell running out of
+glucose at all. The effect runs *through oxygen*.
 
-The cause is arithmetic rather than mysterious. Glucose penetrates to
-L = √(2DC/q) — about 260 µm at 0.8 mM — so at a 311 µm radius the centre
-falls to **0.470 mM**, while the engine's quiescence threshold is
-0.30 mM and its death threshold 0.06 mM. **Not one cell of 29 685 is
-below either.** For 0.8 mM medium to bite at this size the consumption
-would have to be higher, the thresholds higher, or the spheroid larger —
-and their spheroids were roughly 1000 µm across, three times what these
-runs reach.
+With that coupling (`DishParams.respiration_boost`):
 
-So one of three things is wrong and the data to say which is not in
-hand: the consumption rate, the viability thresholds, or the comparison
-itself. **The feature stays, labelled as failing this test.** Tuning any
-of the three until the test passed would be fitting to the answer, and
-the constants are literature values rather than something fitted, which
-is the only reason the failure is informative at all.
+| Medium glucose | Rim at 20 % O₂ | Rim at 5 % O₂ |
+|---|:-:|:-:|
+| 16.5 mM | 175 µm | 58 µm |
+| 5.5 mM | 174 µm | 58 µm |
+| 1.65 mM | 135 µm | 46 µm |
+| 0.8 mM | **111 µm** | **39 µm** |
 
-*A first version of this test reported 5/5 passing.* It reached down to
-0.1 mM — far below anything measured — and was satisfied by a difference
-there, on 160 µm spheroids too small for any gradient to form. A test
-that goes outside the experimental range to find an effect is
-manufacturing a pass, not checking a claim.
+All five directional claims pass, within the published range,
+monotonically, at both oxygen levels.
 
-**Also missing, from the same papers:** as glucose falls, cellular
-respiration RISES. Oxygen consumption here is fixed, so a starved
-spheroid's oxygen profile is wrong regardless of what the glucose does.
+**Why this is a test and not a fit.** The coupling's two anchor points
+(×1 at 5.5 mM, ×2 at 0.4 mM) come from Casciari 1992; the claims it is
+checked against come from Mueller-Klieser 1986 — different papers,
+different measurements. The only free choice is the curve's shape
+between the anchors, which is labelled as such in the code.
+
+**What is still not checked:** the magnitudes. Mueller-Klieser's rim
+thicknesses are image-only tables in the scanned originals and could
+not be extracted, so the directions are validated and the numbers are
+not. Digitising those figures would settle it.
 
 ### Let cells crawl (`DishParams.migration_*`)
 
@@ -1334,27 +1454,57 @@ runs in sub-rounds short enough that wanting two hops is rare.
 ### Put immune cells on the dish (`DishParams.effector_*`, `api.killing`)
 
 Effector cells on their own layer, as T or NK cells crawl over a
-monolayer. Each random-walks biased toward tumour cells, engages on
-contact, kills at a rate, rests while conjugated, and stops after a few
-kills. CTLs take about an hour from contact to target death and kill a
-few targets a day (Halle et al. 2016 Immunity 44:233).
+monolayer. Each random-walks biased toward tumour cells and delivers
+hits on contact.
 
-A549 monolayer, 24 h:
+**The first version used the wrong mechanism.** Each contact killed
+outright — one lethal hit — which is the older picture. Live imaging by
+Weigelin et al. 2021 (Nat Commun 12:5217) overturned it: a single
+contact rarely kills. Each delivers a *sublethal* hit — perforin pores,
+nuclear envelope rupture, DNA damage — that the target repairs, and
+death needs about **three hits within ~50 minutes** of one another,
+usually from several CTLs passing through. The engine now implements
+that, with `effector_hits_to_kill = 1` keeping the old picture available
+for comparison.
 
-| E:T | Live tumour | Specific lysis | Effector kills |
+What came out was not designed in:
+
+| E:T | Lysis | Hits delivered | Hits per kill |
 |---|:-:|:-:|:-:|
-| 0 | 862 | — | 0 |
-| 0.1 | 546 | 37 % | 192 |
-| 0.3 | 100 | 88 % | 458 |
-| 1.0 | 0 | 100 % | 446 |
-| 3.0 | 0 | 100 % | 408 |
+| 0.1 | 0 % | 418 | **418** |
+| 0.3 | 2 % | 1310 | 164 |
+| 1.0 | 40 % | 3886 | 17 |
+| 3.0 | 100 % | 1890 | **4.1** |
 
-The kill count *falls* above E:T 0.3 because the effectors run out of
-targets, which is the right shape. **Calibrated, not validated**: the
-kinetics are literature values and nothing has been run against a
-measured killing curve. What the gates pin is that the lysis comes from
-the killing and not from the effectors' presence — effectors with a zero
-kill rate leave the monolayer untouched.
+At low density hundreds of hits are wasted on targets that repair
+between them. At high density the cost falls to about four hits per
+kill, close to the theoretical three. That steep nonlinearity is why
+CTLs swarm, and it emerges from the timing rule rather than from any
+fitted rate.
+
+`scripts/validate_killing.py` checks four predictions that follow from
+the mechanism and so cannot be tuned into passing — all four pass:
+
+1. **Cooperativity**: hits per kill falls steeply with density.
+2. **The repair window matters, in the right direction**:
+
+   | Repair window | Lysis at E:T 1 |
+   |:-:|:-:|
+   | 15 min | 6 % |
+   | 30 min | 18 % |
+   | 50 min (measured) | 40 % |
+   | 120 min | 96 % |
+
+3. **One-hit killing is the old model**: it gives 39 % lysis at E:T 0.1
+   where three-hit gives 0 %, and 87 % at E:T 0.3 where three-hit gives
+   2 %.
+4. **No free kills**: kills never exceed hits ÷ 3.
+
+**What is still not validated** is the absolute lysis at a given E:T
+against a measured chromium-release or impedance curve. None has been
+digitised here, so the hit rate and walk speed remain literature values
+and the magnitudes are unchecked. The mechanism is validated; the
+numbers are not.
 
 ## GDSC reference data (the Phase-1 validation target)
 
