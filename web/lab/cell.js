@@ -1,0 +1,428 @@
+/* Inside a cell — every molecule the engine tracks, animated from the
+ * engine's own values.
+ *
+ * The page runs cellsim.cell.trace in the browser (Pyodide, same wheel as
+ * the dose-response page), which records about twenty species for a few
+ * cells every 15 minutes. Each circle's brightness is that species' level
+ * at the current frame, scaled to the largest level it reaches in this
+ * run so that a change is visible whatever its absolute size. Nothing is
+ * drawn that the engine did not compute.
+ */
+const $ = (id) => document.getElementById(id);
+const S = { py: null, trace: null, cell: 0, frame: 0, playing: false, timer: null, scale: {}, rest: {} };
+const NS = "http://www.w3.org/2000/svg";
+
+/* ── the map: where each species sits, which zone it belongs to ───── */
+const ZONES = {
+  drug:   { colour: "#a78bfa", label: "drug" },
+  stress: { colour: "#e0a640", label: "damage response" },
+  cycle:  { colour: "#4ea8de", label: "cell cycle" },
+  death:  { colour: "#e0675a", label: "death" },
+};
+// `lab` places the label: below by default, or left/right where vertical
+// arrows would otherwise run through it (the whole death column) and
+// where a zone label sits underneath (the drug in the medium).
+const NODES = {
+  Cout: { x: 95,  y: 58,  z: "drug",   name: "Drug",         sub: "in the medium", lab: "right" },
+  Cin:  { x: 95,  y: 195, z: "drug",   name: "Drug",         sub: "inside the cell" },
+  D:    { x: 235, y: 195, z: "stress", name: "DNA damage",   sub: "" },
+  ATM:  { x: 375, y: 195, z: "stress", name: "ATM",          sub: "damage sensor" },
+  p53:  { x: 515, y: 195, z: "stress", name: "p53",          sub: "the alarm" },
+  MDM2: { x: 600, y: 305, z: "stress", name: "MDM2",         sub: "turns p53 off" },
+  p21:  { x: 375, y: 310, z: "stress", name: "p21",          sub: "brake on division", lab: "left" },
+  CycD: { x: 95,  y: 470, z: "cycle",  name: "Cyclin D",     sub: "start" },
+  E2F:  { x: 225, y: 470, z: "cycle",  name: "E2F",          sub: "opens the gate" },
+  CycE: { x: 355, y: 470, z: "cycle",  name: "Cyclin E",     sub: "enter S" },
+  CycA: { x: 485, y: 470, z: "cycle",  name: "Cyclin A",     sub: "copy DNA" },
+  CycB: { x: 615, y: 470, z: "cycle",  name: "Cyclin B",     sub: "divide" },
+  Puma: { x: 840, y: 80,  z: "death",  name: "PUMA",         sub: "death signal",        lab: "left" },
+  Bax:  { x: 840, y: 165, z: "death",  name: "BAX",          sub: "pierces mitochondria", lab: "left" },
+  MOMP: { x: 840, y: 250, z: "death",  name: "Mitochondria", sub: "opened",              lab: "left" },
+  CytC: { x: 775, y: 345, z: "death",  name: "Cytochrome c", sub: "released" },
+  Smac: { x: 905, y: 345, z: "death",  name: "Smac",         sub: "released" },
+  C9:   { x: 840, y: 435, z: "death",  name: "Caspase-9",    sub: "",                    lab: "left" },
+  C3:   { x: 840, y: 520, z: "death",  name: "Caspase-3",    sub: "the executioner",     lab: "left" },
+};
+// [from, to, kind] — "act" pushes the target up, "inh" holds it down
+const EDGES = [
+  ["Cout", "Cin", "act"], ["Cin", "D", "act"], ["D", "ATM", "act"], ["ATM", "p53", "act"],
+  ["p53", "MDM2", "act"], ["MDM2", "p53", "inh"], ["p53", "p21", "act"], ["p21", "CycE", "inh"],
+  ["CycD", "E2F", "act"], ["E2F", "CycE", "act"], ["CycE", "CycA", "act"], ["CycA", "CycB", "act"],
+  ["p53", "Puma", "act"], ["Puma", "Bax", "act"], ["Bax", "MOMP", "act"],
+  ["MOMP", "CytC", "act"], ["MOMP", "Smac", "act"], ["CytC", "C9", "act"],
+  ["C9", "C3", "act"], ["Smac", "C3", "act"],
+];
+const R = 24;
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function drawMap() {
+  const svg = $("map");
+  svg.innerHTML = "";
+  const defs = el("defs", {}, svg);
+  for (const [id, colour] of [["a", "#3a4856"], ["aon", "#6fd3c4"]]) {
+    const m = el("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5,
+      markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", fill: colour }, m);
+  }
+  for (const [id, colour] of [["i", "#3a4856"], ["ion", "#e0675a"]]) {
+    const m = el("marker", { id, viewBox: "0 0 10 10", refX: 5, refY: 5,
+      markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
+    el("path", { d: "M5,0 L5,10", stroke: colour, "stroke-width": 3 }, m);
+  }
+  // zone frames, so the three programmes read as three programmes
+  const frames = [["damage response", 30, 125, 625, 245], ["cell cycle", 30, 405, 640, 125],
+                  ["death", 690, 30, 270, 545]];
+  for (const [lab, x, y, w, h] of frames) {
+    el("rect", { class: "zone", x, y, width: w, height: h, rx: 10 }, svg);
+    el("text", { class: "zone-label", x: x + w - 12, y: y + 18, "text-anchor": "end" },
+       svg).textContent = lab;
+  }
+  const edgeLayer = el("g", {}, svg);
+  for (const [a, b, kind] of EDGES) {
+    const A = NODES[a], B = NODES[b];
+    const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
+    const ux = dx / L, uy = dy / L;
+    // two curved strokes between p53 and MDM2 so the loop reads as a loop
+    const bend = (a === "p53" && b === "MDM2") ? 16 : (a === "MDM2" && b === "p53") ? 16 : 0;
+    const x1 = A.x + ux * R, y1 = A.y + uy * R, x2 = B.x - ux * (R + 3), y2 = B.y - uy * (R + 3);
+    const mx = (x1 + x2) / 2 - uy * bend, my = (y1 + y2) / 2 + ux * bend;
+    const p = el("path", { class: `edge ${kind === "inh" ? "inhib" : ""}`,
+      d: `M${x1},${y1} Q${mx},${my} ${x2},${y2}`,
+      "marker-end": `url(#${kind === "inh" ? "i" : "a"})` }, edgeLayer);
+    p.dataset.from = a; p.dataset.kind = kind;
+  }
+  for (const [key, n] of Object.entries(NODES)) {
+    const g = el("g", { class: "node", transform: `translate(${n.x},${n.y})` }, svg);
+    g.dataset.key = key;
+    el("circle", { class: "halo", r: R + 10, fill: ZONES[n.z].colour, opacity: 0 }, g);
+    el("circle", { class: "core", r: R, fill: "#1d262e", stroke: ZONES[n.z].colour }, g);
+    const side = n.lab || "below";
+    const [lx, ly, anchor] = side === "left" ? [-R - 9, -1, "end"]
+                           : side === "right" ? [R + 9, -1, "start"] : [0, R + 15, "middle"];
+    el("text", { x: lx, y: ly, "text-anchor": anchor }, g).textContent = n.name;
+    if (n.sub) el("text", { class: "sub", x: lx, y: ly + 13, "text-anchor": anchor }, g).textContent = n.sub;
+    el("text", { class: "val", y: 4, "text-anchor": "middle" }, g);
+  }
+}
+
+/* ── colour by level ───────────────────────────────────────────── */
+function mix(hex, t) {
+  const c = parseInt(hex.slice(1), 16), base = [0x1d, 0x26, 0x2e];
+  const rgb = [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+  return `rgb(${rgb.map((v, i) => Math.round(base[i] + (v - base[i]) * t)).join(",")})`;
+}
+// How bright each species is drawn. FIXED, so that "lit" means the same
+// thing in every scenario: the first version scaled each species to its own
+// maximum in the run, which made a healthy cell's flat, resting p53 (0.096)
+// glow exactly as brightly as nutlin's (2.0) — and told the viewer "p53 has
+// risen" about a cell with no damage at all.
+//
+// Scales come from the engine's measured ranges across untreated,
+// cisplatin, paclitaxel, nutlin and doxorubicin runs. Signalling proteins
+// that sit at a non-zero resting level are drawn as their RISE above that
+// level (taken from the run's first frame, before any drug has acted), so a
+// resting cell is dark and a responding one lights up.
+const DISPLAY = {
+  // signalling: [scale, measured from rest]
+  ATM: [1.0, true], p53: [0.30, true], MDM2: [0.60, true], MDM2_mRNA: [0.60, true],
+  p21: [0.50, true],
+  // the cycle oscillates in every healthy cell; show its natural swing
+  CycD: [1.5], Rb: [0.9], E2F: [1.0], CycE: [0.75], CycA: [0.6], CycB: [0.9],
+  // damage and the death cascade start at zero
+  D: [0.30], Puma: [0.50], Bax: [0.30], MOMP: [0.15], CytC: [0.50], Smac: [0.50],
+  C9: [0.40], C3: [0.40], Exec: [0.70],
+};
+function level(key, f) {
+  const cell = S.trace.cells[S.cell];
+  if (key === "Cout") {
+    const t = S.trace.t_h[f], ex = S.trace.exposure_h;
+    return S.trace.conc_uM > 0 && (ex == null || t < ex) ? 1 : 0;
+  }
+  const v = cell.series[key][f];
+  // the drug's own level depends on the dose, so it alone is scaled per run
+  if (key === "Cin") return Math.max(0, Math.min(1, v / (S.scale.Cin || 1)));
+  const [scale, fromRest] = DISPLAY[key] || [1.0];
+  const rest = fromRest ? (S.rest[key] || 0) : 0;
+  return Math.max(0, Math.min(1, (v - rest) / Math.max(scale - rest, 1e-6)));
+}
+
+function render() {
+  if (!S.trace) return;
+  const f = S.frame, cell = S.trace.cells[S.cell], t = S.trace.t_h[f];
+  const alive = cell.alive[f];
+  for (const g of $("map").querySelectorAll(".node")) {
+    const key = g.dataset.key, lv = level(key, f), z = ZONES[NODES[key].z].colour;
+    g.querySelector(".core").setAttribute("fill", mix(z, alive || key === "Cout" ? lv : lv * 0.35));
+    g.querySelector(".halo").setAttribute("opacity", (alive ? lv : 0) * 0.32);
+    const raw = key === "Cout" ? S.trace.conc_uM * lv : cell.series[key][f];
+    g.querySelector(".val").textContent =
+      key === "Cout" ? (lv ? `${S.trace.conc_uM}` : "0")
+      // two significant figures, so nanomolar paclitaxel (~0.02) is not
+      // rounded to "0.0" and read as no drug at all
+      : key === "Cin" ? (raw >= 10 ? raw.toFixed(0) : raw === 0 ? "0" : raw.toPrecision(2))
+      : raw.toFixed(2);
+  }
+  for (const p of $("map").querySelectorAll(".edge")) {
+    const on = alive && level(p.dataset.from, f) > 0.45;
+    p.classList.toggle("on", on);
+    const inh = p.dataset.kind === "inh";
+    p.setAttribute("marker-end", `url(#${inh ? (on ? "ion" : "i") : (on ? "aon" : "a")})`);
+    if (inh && on) p.style.stroke = "#e0675a"; else p.style.stroke = "";
+  }
+  $("clock").textContent = `${t.toFixed(1)} h`;
+  $("scrub").value = f;
+  drawCell(f);
+  explain(f);
+  drawLog(t);
+  for (const c of document.querySelectorAll(".track .cursor")) {
+    const x = (f / (S.trace.t_h.length - 1)) * 100;
+    c.setAttribute("x1", `${x}%`); c.setAttribute("x2", `${x}%`);
+  }
+}
+
+/* ── the cell itself ───────────────────────────────────────────── */
+const PHASE = { G1: ["#4ea8de", "G1 — growing, getting ready"],
+                S:  ["#35b3a2", "S — copying its DNA"],
+                G2: ["#7c9cf0", "G2 — checking the copy"],
+                M:  ["#f0c050", "M — dividing"],
+                dead: ["#596572", "dead"] };
+function drawCell(f) {
+  const cell = S.trace.cells[S.cell], ph = cell.phase[f], svg = $("cellview");
+  svg.innerHTML = "";
+  const [col, words] = PHASE[ph] || PHASE.G1;
+  const arrested = cell.arrested[f];
+  const justDivided = cell.events.some(e => e.kind === "divided" &&
+    Math.abs(e.t_h - S.trace.t_h[f]) < 0.6);
+  if (ph === "dead") {
+    // apoptotic bodies: the cell breaks into small blebs
+    const pts = [[90, 100, 22], [125, 92, 16], [108, 128, 18], [140, 125, 12], [80, 132, 11]];
+    for (const [x, y, r] of pts) el("circle", { cx: x, cy: y, r, fill: col, opacity: 0.55 }, svg);
+  } else if (ph === "M" || justDivided) {
+    const gap = justDivided ? 34 : arrested ? 10 : 18;
+    for (const dx of [-gap, gap])
+      el("circle", { cx: 110 + dx, cy: 110, r: 50, fill: col, opacity: 0.22,
+                     stroke: col, "stroke-width": 2 }, svg);
+    if (!justDivided) {   // chromosomes on the spindle
+      el("line", { x1: 110, y1: 70, x2: 110, y2: 150, stroke: "#fff", "stroke-opacity": 0.5,
+                   "stroke-width": arrested ? 4 : 2, "stroke-dasharray": "3 4" }, svg);
+    }
+  } else {
+    el("circle", { cx: 110, cy: 110, r: 68, fill: col, opacity: 0.18, stroke: col, "stroke-width": 2 }, svg);
+    const nr = ph === "G2" ? 32 : ph === "S" ? 28 : 24;    // nucleus grows as DNA is copied
+    el("circle", { cx: 110, cy: 110, r: nr, fill: col, opacity: 0.45 }, svg);
+    // damage shown as specks in the nucleus
+    const dmg = level("D", f);
+    for (let i = 0; i < Math.round(dmg * 9); i++) {
+      const a = i * 2.4, rr = nr * 0.6;
+      el("circle", { cx: 110 + Math.cos(a) * rr * (0.4 + (i % 3) * 0.25),
+                     cy: 110 + Math.sin(a) * rr * (0.4 + (i % 3) * 0.25),
+                     r: 2.6, fill: "#e0a640" }, svg);
+    }
+  }
+  if (arrested && ph !== "dead")
+    el("circle", { cx: 110, cy: 110, r: 92, fill: "none", stroke: "#e0675a",
+                   "stroke-width": 2, "stroke-dasharray": "6 5" }, svg);
+  $("phase").textContent = arrested && ph !== "dead" ? "stuck in mitosis" : words;
+  $("phase").style.color = arrested && ph !== "dead" ? "#e0675a" : col;
+}
+
+/* ── plain words for what is happening ─────────────────────────── */
+// Known to be wrong, measured, and shown to the viewer rather than hidden.
+// Watching single cells is how these were found: every earlier check looked
+// only at 72 h, where the endpoints are calibrated but the speeds never were.
+const KNOWN = {
+  "nutlin-3a": "Too fast. Here p53 doubles in about 12 minutes and cells die in about " +
+    "5 hours; in real cells p53 builds over several hours and nutlin works over one " +
+    "to two days. The engine's 72-hour outcome is calibrated — its speed is not.",
+  "cisplatin": "p53 rises less than it should. DNA damage normally raises p53 several-fold; " +
+    "here it stays under two-fold, and much of the killing runs through a route that " +
+    "bypasses p53. The timing of death is plausible; the p53 signal is weak.",
+};
+
+function explain(f) {
+  const cell = S.trace.cells[S.cell], lv = (k) => level(k, f), ph = cell.phase[f];
+  let msg;
+  if (ph === "dead") msg = "This cell has died. Caspase-3 dismantled it from the inside — " +
+    "apoptosis, the orderly kind of cell death — and it broke into small fragments.";
+  else if (lv("C3") > 0.5) msg = "Caspase-3 is active. Once it switches on there is no way back: " +
+    "it is cutting up the cell's own proteins.";
+  else if (lv("MOMP") > 0.5) msg = "The mitochondria have been pierced and are leaking cytochrome c " +
+    "and Smac. Those switch on the caspases.";
+  else if (cell.arrested[f]) msg = "Stuck in mitosis. The drug has frozen the spindle, so the " +
+    "chromosomes cannot be pulled apart. The longer it waits, the more likely it is to die — " +
+    "or to give up and slip back out without dividing.";
+  else if (lv("Puma") > 0.5) msg = "p53 has switched on PUMA, the signal that starts the death " +
+    "programme. Whether the cell dies now depends on how much protection it has.";
+  else if (lv("p53") > 0.6) msg = "p53 has risen — the cell's alarm. It turns on p21 to stop " +
+    "division and, if the damage is bad enough, PUMA to start the death programme.";
+  else if (lv("D") > 0.4) msg = "The drug is damaging DNA. ATM senses the breaks and starts " +
+    "raising p53.";
+  else if (lv("Cin") > 0.4) msg = "The drug has crossed into the cell and is building up.";
+  else msg = { G1: "Growing and preparing. Cyclin D is pushing the cell toward the gate " +
+                   "(Rb/E2F) where it commits to dividing.",
+               S: "Past the gate and copying its DNA. Cyclin A is driving replication.",
+               G2: "DNA copied. Cyclin B is building up for the division itself.",
+               M: "Dividing — the chromosomes are being pulled into two new cells." }[ph] || "";
+  const warn = KNOWN[S.trace.drug];
+  $("explain").innerHTML = "";
+  $("explain").append(msg);
+  if (warn) {
+    const w = document.createElement("div");
+    w.className = "known";
+    w.innerHTML = `<b>Known limitation.</b> ${warn}`;
+    $("explain").append(w);
+  }
+}
+
+function drawLog(t) {
+  const evs = S.trace.cells[S.cell].events;
+  $("log").innerHTML = evs.length
+    ? evs.map(e => `<li class="${e.t_h <= t + 1e-6 ? "past" : "future"}"><span class="t">${e.t_h.toFixed(1)} h</span>${e.text}</li>`).join("")
+    : `<li class="hint">No division, arrest or death in ${S.trace.t_h.at(-1).toFixed(0)} h.</li>`;
+}
+
+/* ── small multiples ───────────────────────────────────────────── */
+const TRACKS = [["Cin", "drug inside", "#a78bfa"], ["D", "DNA damage", "#e0a640"],
+                ["p53", "p53", "#e0a640"], ["C3", "caspase-3", "#e0675a"]];
+function drawTracks() {
+  const cell = S.trace.cells[S.cell], n = S.trace.t_h.length;
+  $("tracks").innerHTML = TRACKS.map(([k, lab]) =>
+    `<div class="track"><div class="tl">${lab}</div><svg viewBox="0 0 100 34" preserveAspectRatio="none" data-k="${k}"></svg></div>`).join("");
+  for (const [k, , colour] of TRACKS) {
+    const svg = $("tracks").querySelector(`svg[data-k="${k}"]`);
+    // the same rule as the map's brightness, so the chart and the glow
+    // never disagree about how large a change was
+    const pts = cell.series[k].map((_, i) =>
+      `${(i / (n - 1)) * 100},${32 - level(k, i) * 30}`).join(" ");
+    el("polyline", { points: pts, fill: "none", stroke: colour, "stroke-width": 1.4,
+                     "vector-effect": "non-scaling-stroke" }, svg);
+    el("line", { class: "cursor", x1: "0%", x2: "0%", y1: 0, y2: 34,
+                 "vector-effect": "non-scaling-stroke" }, svg);
+  }
+}
+
+/* ── cell picker ───────────────────────────────────────────────── */
+function fateOf(cell) {
+  const d = cell.events.find(e => e.kind === "died");
+  if (d) return `died ${d.t_h.toFixed(0)} h`;
+  const n = cell.events.filter(e => e.kind === "divided").length;
+  if (cell.arrested.some(Boolean)) return "arrested";
+  return n ? `${n} division${n > 1 ? "s" : ""}` : "no change";
+}
+function drawPicker() {
+  $("cellpick").innerHTML = S.trace.cells.map((c, i) =>
+    `<button data-i="${i}" class="${i === S.cell ? "on" : ""}">Cell ${i + 1}<span class="fate">${fateOf(c)}</span></button>`).join("");
+  for (const b of $("cellpick").querySelectorAll("button")) b.onclick = () => {
+    S.cell = Number(b.dataset.i); drawPicker(); drawTracks(); render();
+  };
+}
+
+/* ── playback ──────────────────────────────────────────────────── */
+function play(on) {
+  S.playing = on;
+  $("play").textContent = on ? "❚❚" : "▶";
+  clearInterval(S.timer);
+  if (!on) return;
+  S.timer = setInterval(() => {
+    const step = Number($("speed").value);
+    if (S.frame >= S.trace.t_h.length - 1) { play(false); return; }
+    S.frame = Math.min(S.frame + step, S.trace.t_h.length - 1);
+    render();
+  }, 80);
+}
+
+/* ── engine ────────────────────────────────────────────────────── */
+async function boot() {
+  $("engine-state").textContent = "downloading Python…";
+  S.py = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/" });
+  $("engine-state").textContent = "loading numpy and scipy…";
+  await S.py.loadPackage(["numpy", "scipy", "micropip"]);
+  $("engine-state").textContent = "installing cellsim…";
+  // Same wheel as the dose-response page: built from the deployed commit.
+  const wheel = (await (await fetch("wheel/LATEST")).text()).trim();
+  if (!wheel.endsWith(".whl")) throw new Error(`no wheel found (LATEST = "${wheel}")`);
+  const url = new URL(`wheel/${wheel}`, location.href).href;
+  await S.py.runPythonAsync(`import micropip\nawait micropip.install(${JSON.stringify(url)})`);
+  const meta = JSON.parse(await S.py.runPythonAsync(`
+import json
+from cellsim.cell.library import CELL_LINES, DRUGS
+json.dumps({"lines": list(CELL_LINES), "drugs": list(DRUGS)})`));
+  for (const n of meta.lines) $("line").add(new Option(n, n));
+  for (const n of meta.drugs) $("drug").add(new Option(n, n));
+  $("line").value = "A549"; $("drug").value = "cisplatin";
+  $("engine-state").textContent = "engine ready";
+  $("run").disabled = false;
+}
+
+async function simulate() {
+  $("run").disabled = true; play(false);
+  $("engine-state").textContent = "simulating…";
+  $("bar").classList.add("indet");
+  const cfg = { line: $("line").value, drug: $("drug").value || null,
+                conc: Number($("conc").value) || 0,
+                exposure: $("exposure").value ? Number($("exposure").value) : null };
+  try {
+    const out = JSON.parse(await S.py.runPythonAsync(`
+import json
+from cellsim.cell.trace import trace_cells
+cfg = json.loads(${JSON.stringify(JSON.stringify(cfg))})
+tr = trace_cells(cfg["line"], cfg["drug"], cfg["conc"] if cfg["drug"] else 0.0,
+                 hours=72.0, n_cells=6, every_h=0.25, exposure_h=cfg["exposure"])
+d = tr.to_dict(); d["exposure_h"] = cfg["exposure"]
+json.dumps(d)`));
+    S.trace = out;
+    // scale each species to the largest level it reaches in this run, with
+    // a floor, so a flat-zero species is not inflated into noise
+    // the drug inside is dose-dependent, so it alone is scaled to this run
+    let m = 0;
+    for (const c of out.cells) for (const v of c.series.Cin) if (v > m) m = v;
+    S.scale.Cin = Math.max(m, 1e-6);
+    // resting levels: the median across cells of the first frame, before
+    // any drug has had time to act
+    S.rest = {};
+    for (const k of Object.keys(out.species)) {
+      const first = out.cells.map(c => c.series[k][0]).sort((a, b) => a - b);
+      S.rest[k] = first[Math.floor(first.length / 2)];
+    }
+    S.cell = 0; S.frame = 0;
+    $("placeholder").hidden = true;
+    $("scrub").max = out.t_h.length - 1;
+    for (const id of ["scrub", "play"]) $(id).disabled = false;
+    drawPicker(); drawTracks(); render(); play(true);
+  } catch (e) {
+    $("explain").textContent = `The simulation did not complete: ${String(e).slice(0, 300)}`;
+  } finally {
+    $("run").disabled = false; $("bar").classList.remove("indet");
+    $("engine-state").textContent = "engine ready";
+  }
+}
+
+const PRESETS = {
+  none: { drug: "", conc: 0, exposure: "" },
+  cis:  { drug: "cisplatin", conc: 20, exposure: "" },
+  pac:  { drug: "paclitaxel", conc: 0.1, exposure: "" },
+  nut:  { drug: "nutlin-3a", conc: 10, exposure: "" },
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  drawMap();
+  $("run").onclick = simulate;
+  $("play").onclick = () => play(!S.playing);
+  $("scrub").oninput = () => { play(false); S.frame = Number($("scrub").value); render(); };
+  for (const b of document.querySelectorAll(".preset")) b.onclick = () => {
+    const p = PRESETS[b.dataset.preset];
+    $("line").value = "A549"; $("drug").value = p.drug; $("conc").value = p.conc;
+    $("exposure").value = p.exposure;
+    if (!$("run").disabled) simulate();
+  };
+  boot().catch(e => {
+    $("engine-state").textContent = "engine failed to start";
+    $("explain").textContent = String(e).slice(0, 300);
+  });
+});
