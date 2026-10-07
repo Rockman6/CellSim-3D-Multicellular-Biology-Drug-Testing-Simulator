@@ -304,7 +304,14 @@ jobs:
       - name: bridge rate-law accuracy (PR #12)
         run: python -u tests/bridge/test_rate_law_accuracy_smoke.py
 
-      - name: cell module smoke (PR #12 — every tests/cell/test_*.py, seconds each)
+      # MECHANISM tier only: every gate that checks the code does what it
+      # claims. The slow VALIDATION tier — multi-day spheroids, calibration
+      # recovered from simulated plates — runs nightly in cell-nightly.yml.
+      # This step was named "seconds each" until two files reached five
+      # minutes apiece and it became the bottleneck on every merge.
+      - name: cell module, mechanism tier (validation tier runs nightly)
+        env:
+          CELLSIM_TESTS: mechanism
         run: |
           set -e
           for t in tests/cell/test_*.py; do

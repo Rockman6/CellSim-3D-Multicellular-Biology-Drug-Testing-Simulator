@@ -31,7 +31,7 @@ from cellsim.cell.library import get_drug, get_line  # noqa: E402
 LINE = get_line("A549")
 DRUG = get_drug("cisplatin")
 K = calibrate_cycle_scale(LINE, Params())
-DOSE_UM = ic50(LINE, DRUG, guess_uM=10.0, n_cells_per_conc=24, k_cyc=K)
+DOSE_UM = ic50(LINE, DRUG, guess_uM=10.0, n_cells_per_conc=24, k_cyc=K, n_seeds=1)
 DAYS = 5.0
 MUT_RATE, MUT_SD = 0.05, 0.3
 
