@@ -6,12 +6,16 @@
 <title>CellSim Lab</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%2335b3a2%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%222.5%22 fill=%22%230e1317%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="cell.css">
 </head>
 <body>
 
 <header>
   <div class="brand">Cell<span>Sim</span> Lab</div>
-  <div class="subtitle">run a cell experiment in your browser</div>
+  <nav class="tabs">
+    <a href="./" class="on">Dose–response</a>
+    <a href="cell.html">Inside a cell</a>
+  </nav>
   <div class="spacer"></div>
   <span id="engine-state" class="subtitle">starting the engine…</span>
   <button id="run" class="primary" disabled>Run experiment</button>

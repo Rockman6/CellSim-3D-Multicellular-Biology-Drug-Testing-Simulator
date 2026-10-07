@@ -1506,6 +1506,42 @@ digitised here, so the hit rate and walk speed remain literature values
 and the magnitudes are unchecked. The mechanism is validated; the
 numbers are not.
 
+## What watching a single cell revealed (October 2026)
+
+Every check before this looked at one moment: viability, or an IC50, at
+72 hours. The "Inside a cell" view (`cellsim/cell/trace.py`, `web/lab/`)
+shows what each simulated cell does minute by minute, and the first
+thing it showed was two time courses that are wrong although the 72-hour
+endpoints they lead to are calibrated.
+
+Median time to each step, A549, six cells:
+
+| | p53 doubles | PUMA rises | death |
+|---|:-:|:-:|:-:|
+| cisplatin 20 µM | **never** | 7 h | 30.6 h |
+| nutlin-3a 10 µM | **0.2 h** | 0.5 h | **5.4 h** |
+| nutlin-3a 2 µM | 0.2 h | 0.5 h | 5.5 h |
+
+**Nutlin is roughly five to ten times too fast.** p53 doubles in twelve
+minutes and cells die in five hours. In real cells p53 accumulates over
+several hours after nutlin, and the apoptosis it drives takes one to two
+days — in A549 it is mostly arrest. The identical timing at 2 and 10 µM is
+not itself a fault: nutlin binds MDM2 with a constant near 90 nM, so both
+doses saturate it fully. The speed is the fault, not the dose response.
+
+**Cisplatin barely moves p53.** It never reaches twice its resting level,
+where DNA damage normally raises p53 several-fold. Cells still die on a
+plausible schedule, but much of the killing runs through the
+p53-independent route the engine models.
+
+Neither is patched here. Both need measured time courses — p53
+accumulation after nutlin and after cisplatin, and the timing of
+apoptosis — and a constant changed without data to constrain it is how
+the paclitaxel death rate was wrong for a month. Until then the Lab shows
+a *Known limitation* note on both drugs, beside the explanation the viewer
+is already reading, rather than letting a wrong timeline pass as a true
+one.
+
 ## GDSC reference data (the Phase-1 validation target)
 
 Extracted by `scripts/gdsc_reference.py` into
