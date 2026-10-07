@@ -1,0 +1,78 @@
+/* "Inside a cell" — the signalling map, the cell drawing, the timeline.
+   Shares style.css's tokens; only what this view adds lives here. */
+
+.tabs { display: flex; gap: 4px; margin-left: 12px; }
+.tabs a {
+  color: var(--muted); text-decoration: none; font-size: 13px;
+  padding: 6px 12px; border-radius: var(--radius); border: 1px solid transparent;
+}
+.tabs a:hover { color: var(--text); background: var(--panel-2); }
+.tabs a.on { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+
+main.cellmain { grid-template-columns: 290px 1fr 300px; }
+
+.cellstage {
+  display: grid; grid-template-rows: 3px 1fr auto auto; min-height: 0;
+  background: #090d10;
+}
+.mapwrap { position: relative; min-height: 0; }
+#map { width: 100%; height: 100%; display: block; }
+
+/* map nodes */
+.node circle.halo { transition: opacity .15s; }
+.node circle.core { stroke-width: 1.5; transition: fill .15s; }
+.node text { font: 600 11.5px var(--sans); fill: var(--text); pointer-events: none; }
+.node text.sub { font: 10.5px var(--sans); fill: var(--muted); }
+.node text.val { font: 11px var(--mono); fill: var(--muted); }
+.edge { fill: none; stroke: #3a4856; stroke-width: 1.6; }
+.edge.on { stroke: #6fd3c4; }
+.edge.inhib { stroke-dasharray: 4 3; }
+.zone { fill: none; stroke: #1f2a33; stroke-width: 1; }
+.zone-label { font: 600 10.5px var(--sans); fill: #556574; letter-spacing: .8px; text-transform: uppercase; }
+
+/* timeline */
+.timeline {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel);
+}
+.timeline input[type=range] { flex: 1; }
+.timeline button { width: 38px; padding: 6px 0; }
+.timeline select { width: auto; padding: 5px 8px; }
+.clock { font: 600 13px var(--mono); min-width: 64px; text-align: right; }
+
+/* small multiples under the timeline: a few species over the whole run */
+.tracks {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  background: var(--line); border-top: 1px solid var(--line);
+}
+.track { background: var(--panel); padding: 6px 10px 4px; position: relative; }
+.track .tl { font: 600 10.5px var(--sans); color: var(--muted); }
+.track svg { width: 100%; height: 34px; display: block; }
+.track .cursor { stroke: var(--accent); stroke-width: 1; }
+
+/* the right-hand panel */
+#cellview { width: 100%; max-width: 220px; display: block; margin: 0 auto 6px; }
+.phase { text-align: center; font: 600 15px var(--sans); margin-bottom: 8px; }
+.results h4 { margin: 18px 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.log { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; }
+.log li.past { color: var(--text); }
+.log li.future { color: #4a5866; }
+.log .t { font-family: var(--mono); color: var(--muted); margin-right: 6px; }
+
+.cellpick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cellpick button { padding: 5px 10px; font-size: 12px; }
+.cellpick button.on { border-color: var(--accent); color: var(--accent); }
+.cellpick button .fate { font-size: 10.5px; color: var(--muted); margin-left: 4px; }
+
+@media (max-width: 1100px) {
+  main.cellmain { grid-template-columns: 250px 1fr; }
+  .tracks { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* a known engine limitation, shown where the viewer is already reading */
+.known {
+  margin-top: 10px; padding: 8px 10px; border-radius: var(--radius);
+  background: #2a2113; border: 1px solid #6b5520; color: #e6c98a;
+  font-size: 11.5px; line-height: 1.5;
+}
+.known b { color: var(--warn); }
