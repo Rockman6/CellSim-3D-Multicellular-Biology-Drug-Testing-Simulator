@@ -771,9 +771,44 @@ to. What survives the caveat is narrower:
   that `doubling_time_h` was conflating them.
 
 What would settle it is a different HeLa time-lapse, or another line
-with tracked single cells, held out entirely. Until then this sits in
-the same category as the spheroid growth constant: calibrated on one
-dataset, not independently validated.
+with tracked single cells, held out entirely.
+
+**A held-out test of half of it (October 2026).** The Cell Tracking
+Challenge also publishes **DIC-C2DH-HeLa** — different cultures,
+different microscopy, never used for any calibration here. At 84 frames
+of 10 min it spans only **14 h**, too short to repeat the test above: a
+daughter born during the movie needs ~19 h to divide, so no complete
+cycle and no 30–40 h plateau can be measured. But it can test something
+the two parameterisations disagree on — what fraction of the cells
+present at the start divide within 14 h:
+
+| | founders dividing within 14 h | against 14 of 15 measured |
+|---|:-:|:-:|
+| old HeLa: 31 h cycle | 0.56 ± 0.17 | **rejected**, p ≈ 0.002 |
+| current HeLa: 19 h cycle + 50 % quiescent | 0.75 ± 0.12 | consistent, p ≈ 0.08 |
+| measured, DIC-C2DH-HeLa (2 sequences) | **0.93** | — |
+
+So independent data **rejects the old 31 h cycle and supports the 19 h
+one.** That is the first part of the HeLa change to be validated rather
+than calibrated.
+
+It covers only half. Quiescence is decided at mitotic exit, so cells
+present at the start are never quiescent in the engine, and this
+observable tests the **cycle time alone**. The **50 % quiescent
+fraction** acts on daughters, whose fate plays out beyond a 14 h window,
+and remains calibrated on one dataset and untested.
+
+One thing worth recording without over-reading: the measurement sits on
+the high side of even the new model. This field is sparse — about 10
+founders, against 43–125 in the calibration movie — and sparse cultures
+proliferate more freely. If that is the reason, the quiescent fraction
+depends on culture density rather than being a fixed property of HeLa,
+and `CellLine.quiescent_fraction` is the wrong home for it. Fifteen
+cells cannot settle that; a long, sparse held-out movie could.
+
+`scripts/validate_hela_heldout.py` downloads the movie, scores it and
+re-runs both models, so the comparison is repeated whenever the engine
+changes rather than resting on a number recorded once.
 
 Quiescence alone was not enough: it fixed the plateau at 30 h and left
 the engine far too slow at 20 h. The cycling cells also had to cycle
