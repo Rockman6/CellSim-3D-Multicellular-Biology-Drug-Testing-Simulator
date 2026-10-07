@@ -849,18 +849,64 @@ with Ki-67 rims; solid stress is known to limit spheroid proliferation
 this way (Helmlinger et al. 1997 Nat Biotechnol 15:778). Without a
 mechanical limit the spheroid grows four times too fast.
 
-**A miss in the necrotic core.** Feeding the model's (radius, necrotic
-radius) pairs through Grimes's own anoxic-core relation should return
-their 233 ± 22 µm diffusion limit if the model's core tracks anoxia.
-With PhysiCell's generic necrosis threshold (5 mmHg) it returns 155 µm;
-moving the threshold to near-anoxia, which is how Grimes define the
-core, gives 173 µm. The core is still too large. The likely
-cause is an overshoot built into its formation: the first cells die
-under the profile of a fully consuming sphere, and once the dead core
-stops consuming, oxygen reaches deeper than the dead region, so the core
-is bigger than the anoxic region it now sits in. A surface-growth
-lattice also roughens the surface, so the equivalent radius understates
-how far oxygen must travel. Open.
+**The necrotic core: a numerical bug, found and fixed (October 2026).**
+Feeding the model's (radius, necrotic radius) pairs through Grimes's own
+anoxic-core relation should return their 233 ± 22 µm diffusion limit if
+the model's core tracks anoxia. It returned 173 µm — and, more tellingly,
+the value **drifted down every day** (196 → 189 → 181 → 173 → 169 → 163
+→ 157 µm), although a diffusion limit is a fixed physical property.
+
+This page used to give two likely causes. **Both were wrong**, and so
+was a third tried along the way:
+
+| Hypothesis | Test | Verdict |
+|---|---|---|
+| Formation overshoot: the core outgrows the anoxic region after it stops consuming | compared the dead radius with the *currently* anoxic radius | **rejected** — the dead core sits 2–13 µm *inside* the anoxic region |
+| Surface roughening makes the equivalent radius understate the travel distance | compared the volume radius with the mean surface radius | **rejected** — the surface gets *smoother* as it grows, and the surface radius gives the same drift |
+| Quiescent cells consume less oxygen (Freyer & Sutherland 1985) | swept their consumption | **rejected as the cause** — it lifts the level but leaves the drift at −6 µm/day |
+
+The clue that cracked it: the engine's own constants give an analytic
+limit √(6Dc/q) of **exactly 233 µm**, with Km 1 % of the medium so the
+kinetics are effectively zero-order. The parameters were right; the
+*solve* was not delivering them. And oxygen at the spheroid's surface
+was falling from 88 to **32 mmHg** as it grew — with the unstirred
+boundary layer set to zero.
+
+The cause was where the medium began. The field applied the medium's
+oxygen at the distance of the **single outermost occupied site**. A thin
+tail of stray cells drifted out, so by day 12 the medium sat **159 µm
+beyond the spheroid**, and all of its oxygen had to diffuse through that
+much nearly empty fluid first. Real medium is stirred and carries no
+such gradient. The artificial layer thickened as the spheroid grew —
+32, then 93, then 159 µm — which is exactly what produced the drift.
+
+The medium now begins at the **equivalent-sphere radius**, the same R
+that Grimes's relation is written in. That choice is made for
+consistency between the simulation and its own analysis, not tuned
+toward 233 — a percentile sweep showed the answer moves with the choice,
+which is why a principled definition was preferred over the best fit:
+
+| Medium boundary at | Implied r_l | Drift | Surface O₂ over the run |
+|---|:-:|:-:|:-:|
+| outermost straggler (old) | 173 µm | −6.5 µm/day | 88 → 32 mmHg |
+| **equivalent radius (now)** | **240 µm** | **+1.9 µm/day** | **94 → 93 mmHg** |
+| analytic, from the engine's constants | 233 µm | 0 | — |
+| measured, Grimes 2014 | 233 ± 22 µm | — | — |
+
+The strongest evidence it is right is that the oxygen physics **stopped
+depending on the mechanics**. Before the fix the implied limit varied
+with `push_sites` (172, 188, 189, 219 µm for reach 1, 2, 3, ∞, a spread
+of 47 µm); after it, 240, 242, 245 and 248 µm, a spread of 8 — physics
+now depends only on physics.
+
+**What it cost:** `push_sites = 1` had been calibrated to Grimes's growth
+rate *under the broken boundary*, and the two errors had partly
+cancelled, which is how the bug survived. With the surface properly
+oxygenated, growth after onset is now **17.1 µm/day** against Grimes's
+~15 (it was 15.3). Reach 1 is still the best of those tried (reach 2
+gives 32), so the choice stands, about 14 % fast. Onset moved from day 6
+at 206 µm to day 8 at **238 µm** — which is now consistent with a 233 µm
+diffusion limit, where the old 206 was not.
 
 **What the dish does not do yet.** One cell per site, so no compression
 or multilayering beyond a fixed reach; necrotic debris never lyses; no
