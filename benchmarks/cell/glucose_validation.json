@@ -1,0 +1,98 @@
+{
+ "days": 4.0,
+ "n_seed": 30000,
+ "seeds": [
+  1
+ ],
+ "rows": [
+  {
+   "live": 42309.0,
+   "necrotic": 5242.0,
+   "radius_um": 337.1177405264458,
+   "necrotic_um": 161.64442405348163,
+   "viable_rim_um": 175.47331647296417,
+   "quiescent": 0.8562244439717318,
+   "glucose_mM": 16.5,
+   "o2_mmHg": 152.0,
+   "o2_label": "20 %"
+  },
+  {
+   "live": 42309.0,
+   "necrotic": 5242.0,
+   "radius_um": 337.1177405264458,
+   "necrotic_um": 161.64442405348163,
+   "viable_rim_um": 175.47331647296417,
+   "quiescent": 0.8562244439717318,
+   "glucose_mM": 5.5,
+   "o2_mmHg": 152.0,
+   "o2_label": "20 %"
+  },
+  {
+   "live": 42309.0,
+   "necrotic": 5242.0,
+   "radius_um": 337.1177405264458,
+   "necrotic_um": 161.64442405348163,
+   "viable_rim_um": 175.47331647296417,
+   "quiescent": 0.8562244439717318,
+   "glucose_mM": 1.65,
+   "o2_mmHg": 152.0,
+   "o2_label": "20 %"
+  },
+  {
+   "live": 42309.0,
+   "necrotic": 5242.0,
+   "radius_um": 337.1177405264458,
+   "necrotic_um": 161.64442405348163,
+   "viable_rim_um": 175.47331647296417,
+   "quiescent": 0.8562244439717318,
+   "glucose_mM": 0.8,
+   "o2_mmHg": 152.0,
+   "o2_label": "20 %"
+  },
+  {
+   "live": 17884.0,
+   "necrotic": 21135.0,
+   "radius_um": 315.612189134055,
+   "necrotic_um": 257.2739454182041,
+   "viable_rim_um": 58.338243715850865,
+   "quiescent": 0.7482666070230374,
+   "glucose_mM": 16.5,
+   "o2_mmHg": 38.0,
+   "o2_label": "5 %"
+  },
+  {
+   "live": 17884.0,
+   "necrotic": 21135.0,
+   "radius_um": 315.612189134055,
+   "necrotic_um": 257.2739454182041,
+   "viable_rim_um": 58.338243715850865,
+   "quiescent": 0.7482666070230374,
+   "glucose_mM": 5.5,
+   "o2_mmHg": 38.0,
+   "o2_label": "5 %"
+  },
+  {
+   "live": 17884.0,
+   "necrotic": 21135.0,
+   "radius_um": 315.612189134055,
+   "necrotic_um": 257.2739454182041,
+   "viable_rim_um": 58.338243715850865,
+   "quiescent": 0.7482666070230374,
+   "glucose_mM": 1.65,
+   "o2_mmHg": 38.0,
+   "o2_label": "5 %"
+  },
+  {
+   "live": 17884.0,
+   "necrotic": 21135.0,
+   "radius_um": 315.612189134055,
+   "necrotic_um": 257.2739454182041,
+   "viable_rim_um": 58.338243715850865,
+   "quiescent": 0.7482666070230374,
+   "glucose_mM": 0.8,
+   "o2_mmHg": 38.0,
+   "o2_label": "5 %"
+  }
+ ],
+ "directional_claims_pass": false
+}
