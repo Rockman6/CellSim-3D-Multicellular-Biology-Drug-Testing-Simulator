@@ -132,6 +132,14 @@ class DishParams:
     # `glucose_quiescent_mM` it survives but does not cycle.
     glucose_death_mM: float = 0.06
     glucose_quiescent_mM: float = 0.30
+    # RESPIRATION RISES AS GLUCOSE FALLS (Casciari, Sotirchos & Sutherland
+    # 1992 J Cell Physiol 151:386): EMT6/Ro oxygen consumption "increased
+    # by nearly a factor of 2 as the glucose concentration was decreased
+    # from 5.5 mM to 0.4 mM". Those two points are sourced; the saturating
+    # curve through them (half-effect near `respiration_Kd_mM`) is a shape
+    # choice, not a measurement. Set the boost to 1 to remove the coupling.
+    respiration_boost: float = 2.0
+    respiration_Kd_mM: float = 0.5
     # ── migration ──────────────────────────────────────────────────────
     # A random walk on the lattice: each live cell that has an empty
     # neighbouring site hops into one at this rate. On a lattice of
@@ -199,6 +207,25 @@ def _geometry(edges: np.ndarray, kind: str):
     gaps[1:-1] = centres[1:] - centres[:-1]
     gaps[-1] = r[-1] - centres[-1]         # outer face to the Dirichlet boundary
     return area, vol, gaps
+
+
+def _respiration_factor(glucose_mM: np.ndarray, dp: "DishParams") -> np.ndarray:
+    """Oxygen consumption relative to well-fed cells, as a function of the
+    local glucose concentration.
+
+    Pinned to Casciari 1992's two measured points — 1.0 at 5.5 mM and
+    `respiration_boost` (about 2) at 0.4 mM — through a saturating curve
+    h(C) = Kd / (C + Kd), rescaled to hit both. It rises toward a finite
+    ceiling as glucose runs out rather than diverging, and it is clipped
+    at 1 so that rich medium never makes cells burn LESS than at 5.5 mM.
+    """
+    if dp.respiration_boost == 1.0:
+        return np.ones_like(glucose_mM)
+    kd = dp.respiration_Kd_mM
+    h = lambda c: kd / (np.asarray(c, float) + kd)
+    lo, hi = h(5.5), h(0.4)
+    scale = (dp.respiration_boost - 1.0) / (hi - lo)
+    return np.maximum(1.0, 1.0 + scale * (h(glucose_mM) - lo))
 
 
 def solve_steady(edges: np.ndarray, kind: str, D: float, boundary: float, uptake: np.ndarray,
@@ -431,17 +458,10 @@ class Dish:
         with np.errstate(invalid="ignore", divide="ignore"):
             phi_live = np.where(sites_per_bin > 0, live_per_bin / sites_per_bin, 0.0)
             phi_occ = np.where(sites_per_bin > 0, occupied_per_bin / sites_per_bin, 0.0)
-        # Oxygen: quasi-steady (it equilibrates in seconds).
-        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_live, 0.0, 1.0)
-        guess = self.profile_o2 if len(self.profile_o2) == nb else None
-        o2 = solve_steady(edges, "sphere", dp.o2_D_um2_per_s, dp.o2_medium_mmHg, uptake,
-                          dp.o2_Km_mmHg, guess=guess)
-        self.profile_r_um = 0.5 * (edges[1:] + edges[:-1])
-        self.profile_o2 = o2
-        self.o2 = o2[cell_bin]
-        # Glucose, the same quasi-steady reaction-diffusion problem with
-        # its own diffusivity and uptake. Solved only when the medium
-        # carries any, so the default costs nothing.
+        # Glucose first, because oxygen consumption depends on it. Same
+        # quasi-steady reaction-diffusion problem as oxygen with its own
+        # diffusivity and uptake; solved only when the medium carries any.
+        respiration = np.ones(nb)
         if dp.glucose_medium_mM > 0:
             g_uptake = dp.glucose_uptake_mM_per_s * np.clip(phi_live, 0.0, 1.0)
             guess_g = (self.profile_glucose if len(self.profile_glucose) == nb else None)
@@ -450,8 +470,19 @@ class Dish:
                                guess=guess_g)
             self.profile_glucose = glc
             self.glucose = glc[cell_bin]
+            respiration = _respiration_factor(glc, dp)
         else:
             self.glucose = np.full(len(cell_bin), dp.glucose_medium_mM)
+        # Oxygen: quasi-steady (it equilibrates in seconds). Starved of
+        # glucose, a cell burns more oxygen to make the same ATP, so the
+        # uptake carries the respiration factor computed above.
+        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_live, 0.0, 1.0) * respiration
+        guess = self.profile_o2 if len(self.profile_o2) == nb else None
+        o2 = solve_steady(edges, "sphere", dp.o2_D_um2_per_s, dp.o2_medium_mmHg, uptake,
+                          dp.o2_Km_mmHg, guess=guess)
+        self.profile_r_um = 0.5 * (edges[1:] + edges[:-1])
+        self.profile_o2 = o2
+        self.o2 = o2[cell_bin]
         # Drug: transient, with cellular uptake as a linearised sink.
         eps = 1.0 - np.clip(phi_occ, 0.0, 1.0) * (1.0 - dp.extracellular_fraction)
         shell_vol = _geometry(edges, "sphere")[1]
