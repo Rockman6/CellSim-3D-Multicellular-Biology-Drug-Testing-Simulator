@@ -1,0 +1,20 @@
+{
+ "measured_divided": 14,
+ "measured_observed": 15,
+ "window_h": 14.0,
+ "models": {
+  "current (19 h cycle)": {
+   "mean": 0.7499999999999999,
+   "sd": 0.12449899597988734,
+   "p_at_least_measured": 0.08018076606094823,
+   "verdict": "consistent"
+  },
+  "old (31 h cycle)": {
+   "mean": 0.56,
+   "sd": 0.16552945357246848,
+   "p_at_least_measured": 0.002135725339414348,
+   "verdict": "rejected"
+  }
+ },
+ "current_supported_old_rejected": true
+}
