@@ -1,0 +1,91 @@
+{
+ "rows": [
+  {
+   "et": 0.0,
+   "live": 870.0,
+   "lysis": 0.0,
+   "kills": 0.0,
+   "hits": 0.0,
+   "hits_per_kill": NaN
+  },
+  {
+   "et": 0.1,
+   "live": 868.0,
+   "lysis": 0.0022988505747126853,
+   "kills": 1.0,
+   "hits": 418.0,
+   "hits_per_kill": 418.0
+  },
+  {
+   "et": 0.3,
+   "live": 855.0,
+   "lysis": 0.017241379310344862,
+   "kills": 8.0,
+   "hits": 1310.0,
+   "hits_per_kill": 163.75
+  },
+  {
+   "et": 1.0,
+   "live": 522.0,
+   "lysis": 0.4,
+   "kills": 231.0,
+   "hits": 3886.0,
+   "hits_per_kill": 16.82251082251082
+  },
+  {
+   "et": 3.0,
+   "live": 0.0,
+   "lysis": 1.0,
+   "kills": 466.0,
+   "hits": 1890.0,
+   "hits_per_kill": 4.055793991416309
+  }
+ ],
+ "repair_window": [
+  {
+   "window_min": 15,
+   "live": 822.0,
+   "kills": 28.0,
+   "lysis": 0.05517241379310345
+  },
+  {
+   "window_min": 30,
+   "live": 710.0,
+   "kills": 103.0,
+   "lysis": 0.1839080459770115
+  },
+  {
+   "window_min": 50,
+   "live": 522.0,
+   "kills": 231.0,
+   "lysis": 0.4
+  },
+  {
+   "window_min": 120,
+   "live": 31.0,
+   "kills": 544.0,
+   "lysis": 0.964367816091954
+  }
+ ],
+ "single_hit": [
+  {
+   "et": 0.1,
+   "live": 531.0,
+   "lysis": 0.3896551724137931,
+   "kills": 199.0
+  },
+  {
+   "et": 0.3,
+   "live": 113.0,
+   "lysis": 0.8701149425287357,
+   "kills": 446.0
+  },
+  {
+   "et": 1.0,
+   "live": 0.0,
+   "lysis": 1.0,
+   "kills": 448.0
+  }
+ ],
+ "mechanism_checks_pass": true
+}
