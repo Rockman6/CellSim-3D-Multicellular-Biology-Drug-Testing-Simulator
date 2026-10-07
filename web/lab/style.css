@@ -30,6 +30,10 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 * { box-sizing: border-box; }
+/* [hidden] loses to any rule that sets display, which is how the
+   'Nothing run yet' placeholder stayed on top of a finished plot.
+   The viewer hit the same bug; this is the same fix. */
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg); color: var(--text);
@@ -110,7 +114,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .stage { position: relative; background: #090d10; min-height: 0; }
 .stage canvas { display: block; width: 100%; height: 100%; }
 .overlay {
-  position: absolute; left: 14px; top: 14px;
+  position: absolute; left: 66px; bottom: 58px;
   background: rgba(14,19,23,.82); backdrop-filter: blur(6px);
   border: 1px solid var(--line); border-radius: var(--radius);
   padding: 9px 12px; font: 12px var(--mono); color: var(--muted);

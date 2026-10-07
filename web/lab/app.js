@@ -28,9 +28,14 @@ async function boot() {
   $("engine-state").textContent = "loading numpy and scipy…";
   await state.py.loadPackage(["numpy", "scipy", "micropip"]);
   $("engine-state").textContent = "installing cellsim…";
+  // Install the wheel built from this very deployment, not PyPI's — so the
+  // browser runs exactly the engine on main. LATEST names the file.
+  const wheel = (await (await fetch("wheel/LATEST")).text()).trim();
+  if (!wheel.endsWith(".whl")) throw new Error(`no wheel found (LATEST = "${wheel}")`);
+  const url = new URL(`wheel/${wheel}`, location.href).href;
   await state.py.runPythonAsync(`
 import micropip
-await micropip.install("cellsim")
+await micropip.install(${JSON.stringify(url)})
 `);
   const meta = JSON.parse(await state.py.runPythonAsync(`
 import json
@@ -128,6 +133,13 @@ for sd in (1, 2, 3):
                          perturbations=pert)
     runs.append(v[1:])
 runs = np.array(runs)
+# With a gene perturbed, the question is always a comparison, so the
+# unperturbed arm is run too and plotted beside it.
+wt = None
+if pert is not None:
+    w, _ = dose_response(line, drug, conc, t_end_h=cfg["hours"], n_cells_per_conc=24,
+                         k_cyc=k, p=p, exposure_h=cfg["exposure"])
+    wt = w[1:].tolist()
 ics = [ic50(line, drug, guess_uM=guess, n_cells_per_conc=16, k_cyc=k, p=p, seed=sd,
             n_seeds=1, exposure_h=cfg["exposure"], perturbations=pert) for sd in (1,2,3)]
 fin = [x for x in ics if np.isfinite(x)]
@@ -140,6 +152,7 @@ json.dumps({
   "ic50_lo": float(min(fin)) if fin else None,
   "ic50_hi": float(max(fin)) if fin else None,
   "reached": len(fin) > 1,
+  "wt": wt,
 })
 `));
     draw(out, cfg);
@@ -157,16 +170,28 @@ function draw(o, cfg) {
     x: o.conc.concat([...o.conc].reverse()),
     y: o.hi.concat([...o.lo].reverse()),
     fill: "toself", fillcolor: "rgba(53,179,162,.16)",
-    line: { width: 0 }, hoverinfo: "skip", showlegend: false, type: "scatter",
+    // mode must be explicit: Plotly adds markers by default under 20
+    // points, which scattered stray dots over the band's outline.
+    mode: "lines", line: { width: 0 },
+    hoverinfo: "skip", showlegend: false, type: "scatter",
   };
   const mid = {
     x: o.conc, y: o.mid, mode: "lines+markers", type: "scatter",
     line: { color: "#35b3a2", width: 2 },
     marker: { size: 7, color: "#35b3a2" },
-    name: "surviving fraction",
+    name: cfg.gene ? `${cfg.gene} knocked out` : "these cells",
     hovertemplate: "%{x:.3g} µM → %{y:.0%}<extra></extra>",
   };
-  Plotly.newPlot("stage", [band, mid], {
+  const traces = [band, mid];
+  if (o.wt) {
+    traces.unshift({
+      x: o.conc, y: o.wt, mode: "lines+markers", type: "scatter",
+      line: { color: "#8d9cab", width: 1.6, dash: "dot" },
+      marker: { size: 5, color: "#8d9cab" }, name: "normal cells",
+      hovertemplate: "normal: %{x:.3g} µM → %{y:.0%}<extra></extra>",
+    });
+  }
+  Plotly.newPlot("stage", traces, {
     paper_bgcolor: "#090d10", plot_bgcolor: "#090d10",
     font: { color: "#8d9cab", family: "ui-monospace, Menlo, monospace", size: 11 },
     margin: { l: 58, r: 22, t: 46, b: 52 },
@@ -179,10 +204,12 @@ function draw(o, cfg) {
       gridcolor: "#1d262e", zerolinecolor: "#2a3540",
     },
     yaxis: {
-      title: "fraction surviving", range: [0, 1.08], tickformat: ".0%",
+      title: "cells, relative to untreated", range: [0, 1.15], tickformat: ".0%",
       gridcolor: "#1d262e", zerolinecolor: "#2a3540",
     },
-    showlegend: false,
+    showlegend: Boolean(o.wt),
+    legend: { x: 0.02, y: 0.12, bgcolor: "rgba(14,19,23,.7)",
+              font: { size: 11 }, orientation: "h" },
   }, { displayModeBar: false, responsive: true });
 
   const pct = (v) => (v * 100).toFixed(0) + "%";
@@ -201,16 +228,23 @@ function draw(o, cfg) {
     <div class="metric">
       <div class="k">At the highest dose tested</div>
       <div class="v">${pct(o.mid[o.mid.length - 1])}</div>
-      <div class="band">still alive</div>
+      <div class="band">of the untreated count</div>
     </div>
+    ${o.wt ? `<div class="metric">
+      <div class="k">Normal cells, same drug and dose</div>
+      <div class="v">${pct(o.wt[o.wt.length - 1])}</div>
+      <div class="band">at the highest dose — compare with above</div>
+    </div>` : ""}
     <div class="note">
       The shaded band is three repeats of the same experiment. The engine
       draws a finite sample of cell lineages and survival is set by the
       resistant few, so repeats move by 10–20 %. <b>Two numbers closer
-      than the band are not different.</b>
+      than the band are not different.</b> That is also why a low dose can
+      read slightly above 100 %: those cells grew a little more than the
+      untreated ones, by chance, not because the drug helped.
     </div>
     <table class="data">
-      <tr><th>µM</th><th>alive</th><th>range</th></tr>
+      <tr><th>µM</th><th>vs untreated</th><th>range</th></tr>
       ${o.conc.map((c, i) => `<tr>
         <td>${c.toPrecision(3)}</td><td>${pct(o.mid[i])}</td>
         <td>${pct(o.lo[i])}–${pct(o.hi[i])}</td></tr>`).join("")}
@@ -222,11 +256,16 @@ function draw(o, cfg) {
 }
 
 /* ── presets ───────────────────────────────────────────────────── */
+// Every preset must be something this page can actually run. Two of the
+// first four were not: one promised a spheroid with drug penetration and
+// hypoxia, which the Lab does not simulate, and one promised effector
+// cells, for which there is no control here yet. Both ran a plain
+// dose-response under a label describing something else.
 const PRESETS = {
-  pulse:     { line: "A549", drug: "paclitaxel", exposure: "12", hours: 72, gene: "" },
-  p53:       { line: "A549", drug: "cisplatin", exposure: "", hours: 72, gene: "TP53" },
-  resistant: { line: "DLD-1", drug: "doxorubicin", exposure: "", hours: 72, gene: "" },
-  immune:    { line: "A549", drug: "cisplatin", exposure: "", hours: 72, gene: "BCL2" },
+  pulse:  { line: "A549", drug: "paclitaxel", exposure: "12", hours: 72, gene: "" },
+  p53:    { line: "A549", drug: "cisplatin", exposure: "", hours: 72, gene: "TP53" },
+  efflux: { line: "A549", drug: "doxorubicin", exposure: "", hours: 72, gene: "ABCB1" },
+  death:  { line: "A549", drug: "cisplatin", exposure: "", hours: 72, gene: "BAX" },
 };
 
 document.addEventListener("DOMContentLoaded", () => {
