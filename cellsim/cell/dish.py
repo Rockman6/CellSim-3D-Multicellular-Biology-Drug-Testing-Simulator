@@ -93,6 +93,14 @@ class DishParams:
     # apoptosis duration (Macklin et al. 2012 J Theor Biol 301:122).
     apoptotic_clearance_h: float = 8.6
     boundary_layer_um: float = 0.0       # unstirred medium between aggregate and bulk
+    # Where the stirred medium begins. 0 (the default) uses the
+    # equivalent-sphere radius — the same R that Grimes's anoxic-core
+    # relation is written in, chosen for consistency with that analysis
+    # rather than tuned toward any measured value. A positive value uses
+    # that percentile of the occupied radii instead; 100 reproduces the
+    # old behaviour (the outermost straggler), which built an artificial
+    # unstirred layer that thickened as the spheroid grew.
+    body_edge_percentile: float = 0.0
     extracellular_fraction: float = 0.4  # interstitial share of a packed site's volume
     # Small-molecule interstitial diffusivity, 1e-6 cm2/s (Nugent & Jain
     # 1984 Cancer Res 44:238), the same default as cellsim.cell.tissue.
@@ -132,6 +140,23 @@ class DishParams:
     # `glucose_quiescent_mM` it survives but does not cycle.
     glucose_death_mM: float = 0.06
     glucose_quiescent_mM: float = 0.30
+    # RESPIRATION RISES AS GLUCOSE FALLS (Casciari, Sotirchos & Sutherland
+    # 1992 J Cell Physiol 151:386): EMT6/Ro oxygen consumption "increased
+    # by nearly a factor of 2 as the glucose concentration was decreased
+    # from 5.5 mM to 0.4 mM". Those two points are sourced; the saturating
+    # curve through them (half-effect near `respiration_Kd_mM`) is a shape
+    # choice, not a measurement. Set the boost to 1 to remove the coupling.
+    respiration_boost: float = 2.0
+    respiration_Kd_mM: float = 0.5
+    # Oxygen consumption of an ARRESTED cell relative to a proliferating
+    # one. Freyer & Sutherland 1985 (J Cell Physiol 124:516) found cell
+    # cycle arrest in growing EMT6/Ro spheroids accompanied by reduced
+    # oxygen consumption, traced later to downregulated mitochondrial
+    # function in quiescent cells (J Cell Physiol 1998 176:138). The
+    # DIRECTION is sourced; the magnitude was not available in the
+    # literature reachable here, so this defaults to 1 (no reduction) and
+    # the value used is reported wherever it is set.
+    quiescent_o2_factor: float = 1.0
     # ── migration ──────────────────────────────────────────────────────
     # A random walk on the lattice: each live cell that has an empty
     # neighbouring site hops into one at this rate. On a lattice of
@@ -160,10 +185,21 @@ class DishParams:
     # a drug-killed one does.
     effector_speed_per_h: float = 3.0          # hops/h on the effector layer
     effector_tumour_bias: float = 0.7          # fraction of hops toward the nearest target
-    effector_kill_per_h: float = 1.0           # kill rate while conjugated
-    effector_conjugate_h: float = 1.0          # busy after each kill
+    # Rate of delivering a HIT while in contact. With
+    # effector_hits_to_kill = 1 a hit is a kill and this is a kill rate.
+    effector_kill_per_h: float = 1.0
+    effector_conjugate_h: float = 1.0          # rests after each hit
     effector_max_kills: int = 5
     effector_lifetime_h: float = 96.0          # effectors die off in culture
+    # ADDITIVE CYTOTOXICITY (Weigelin et al. 2021 Nat Commun 12:5217).
+    # Live imaging showed a single CTL contact rarely kills: each delivers
+    # a SUBLETHAL hit — perforin pores, nuclear envelope rupture, DNA
+    # damage — that the tumour cell repairs. Death needs about three hits
+    # arriving within ~50 min of one another, usually from several CTLs
+    # transiting between targets. Set hits_to_kill = 1 for the older
+    # single-lethal-hit picture, which that work overturned.
+    effector_hits_to_kill: int = 3
+    effector_hit_decay_h: float = 50.0 / 60.0
 
     @property
     def site_volume_um3(self) -> float:
@@ -188,6 +224,25 @@ def _geometry(edges: np.ndarray, kind: str):
     gaps[1:-1] = centres[1:] - centres[:-1]
     gaps[-1] = r[-1] - centres[-1]         # outer face to the Dirichlet boundary
     return area, vol, gaps
+
+
+def _respiration_factor(glucose_mM: np.ndarray, dp: "DishParams") -> np.ndarray:
+    """Oxygen consumption relative to well-fed cells, as a function of the
+    local glucose concentration.
+
+    Pinned to Casciari 1992's two measured points — 1.0 at 5.5 mM and
+    `respiration_boost` (about 2) at 0.4 mM — through a saturating curve
+    h(C) = Kd / (C + Kd), rescaled to hit both. It rises toward a finite
+    ceiling as glucose runs out rather than diverging, and it is clipped
+    at 1 so that rich medium never makes cells burn LESS than at 5.5 mM.
+    """
+    if dp.respiration_boost == 1.0:
+        return np.ones_like(glucose_mM)
+    kd = dp.respiration_Kd_mM
+    h = lambda c: kd / (np.asarray(c, float) + kd)
+    lo, hi = h(5.5), h(0.4)
+    scale = (dp.respiration_boost - 1.0) / (hi - lo)
+    return np.maximum(1.0, 1.0 + scale * (h(glucose_mM) - lo))
 
 
 def solve_steady(edges: np.ndarray, kind: str, D: float, boundary: float, uptake: np.ndarray,
@@ -328,6 +383,9 @@ class Dish:
         # Fields: per-cell local values and, for a spheroid, radial profiles.
         self.o2 = np.full(n_seed, dp.o2_medium_mmHg)
         self.glucose = np.full(n_seed, dp.glucose_medium_mM)
+        # Sublethal effector damage carried by each tumour cell.
+        self.hits = np.zeros(n_seed, dtype=np.int64)
+        self.last_hit_t = np.full(n_seed, -np.inf)
         self.gs = np.ones(n_seed)
         self.profile_r_um = np.zeros(0)
         self.profile_o2 = np.zeros(0)
@@ -343,6 +401,7 @@ class Dish:
         self.eff_busy_until = np.zeros(0)
         self.eff_born = np.zeros(0)
         self.n_killed_by_effectors = 0
+        self.n_hits_delivered = 0
         self.record = DishRecord()
 
     # ── set-up helpers ──
@@ -387,7 +446,32 @@ class Dish:
         grid = np.indices(self.shape).reshape(3, -1).T
         d_sites = np.linalg.norm(grid - c, axis=1) * h
         occupied = (self.occ != EMPTY).reshape(-1)
-        r_out = (d_sites[occupied].max() if occupied.any() else 0.0) + 0.5 * h
+        # Where the stirred medium begins. This used to be the single
+        # OUTERMOST occupied site, which let a thin tail of stray cells set
+        # it: by day 12 of a DLD-1 spheroid the medium sat 159 um beyond
+        # the body, and the whole spheroid's oxygen had to diffuse through
+        # that much nearly empty fluid, falling from 100 to 31 mmHg before
+        # it arrived. Real medium is stirred and carries no such gradient,
+        # and the layer thickened as the spheroid grew — which is what made
+        # the implied diffusion limit slide from 196 to 157 um although the
+        # engine's own constants put it at 233 (Grimes 2014: 233 +- 22).
+        #
+        # A high percentile of the occupied radii marks the edge of the
+        # body and ignores the stragglers, which then sit in the outermost
+        # shell at medium concentration, as cells drifting in medium should.
+        if not occupied.any():
+            r_body = 0.0
+        elif self.dp.body_edge_percentile <= 0:
+            # The equivalent-sphere radius: the radius of a sphere holding
+            # the same occupied volume. Grimes's anoxic-core relation is
+            # written in exactly this R, so placing the medium here makes
+            # the simulation and its own analysis use one definition of
+            # where the spheroid ends — a choice made for consistency,
+            # not tuned toward any measured diffusion limit.
+            r_body = (3.0 * occupied.sum() * h ** 3 / (4.0 * math.pi)) ** (1.0 / 3.0)
+        else:
+            r_body = float(np.percentile(d_sites[occupied], self.dp.body_edge_percentile))
+        r_out = r_body + 0.5 * h
         r_out += self.dp.boundary_layer_um
         dr = 0.5 * h
         nb = max(4, int(math.ceil(r_out / dr)))
@@ -416,17 +500,10 @@ class Dish:
         with np.errstate(invalid="ignore", divide="ignore"):
             phi_live = np.where(sites_per_bin > 0, live_per_bin / sites_per_bin, 0.0)
             phi_occ = np.where(sites_per_bin > 0, occupied_per_bin / sites_per_bin, 0.0)
-        # Oxygen: quasi-steady (it equilibrates in seconds).
-        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_live, 0.0, 1.0)
-        guess = self.profile_o2 if len(self.profile_o2) == nb else None
-        o2 = solve_steady(edges, "sphere", dp.o2_D_um2_per_s, dp.o2_medium_mmHg, uptake,
-                          dp.o2_Km_mmHg, guess=guess)
-        self.profile_r_um = 0.5 * (edges[1:] + edges[:-1])
-        self.profile_o2 = o2
-        self.o2 = o2[cell_bin]
-        # Glucose, the same quasi-steady reaction-diffusion problem with
-        # its own diffusivity and uptake. Solved only when the medium
-        # carries any, so the default costs nothing.
+        # Glucose first, because oxygen consumption depends on it. Same
+        # quasi-steady reaction-diffusion problem as oxygen with its own
+        # diffusivity and uptake; solved only when the medium carries any.
+        respiration = np.ones(nb)
         if dp.glucose_medium_mM > 0:
             g_uptake = dp.glucose_uptake_mM_per_s * np.clip(phi_live, 0.0, 1.0)
             guess_g = (self.profile_glucose if len(self.profile_glucose) == nb else None)
@@ -435,8 +512,32 @@ class Dish:
                                guess=guess_g)
             self.profile_glucose = glc
             self.glucose = glc[cell_bin]
+            respiration = _respiration_factor(glc, dp)
         else:
             self.glucose = np.full(len(cell_bin), dp.glucose_medium_mM)
+        # Oxygen: quasi-steady (it equilibrates in seconds). Starved of
+        # glucose, a cell burns more oxygen to make the same ATP, so the
+        # uptake carries the respiration factor computed above.
+        # An arrested cell consumes less than a proliferating one, so the
+        # consuming density weights each cell by its growth signal. With
+        # quiescent_o2_factor = 1 this is exactly phi_live.
+        qf = dp.quiescent_o2_factor
+        if qf < 1.0 and len(self.gs) == len(cell_bin):
+            w = qf + (1.0 - qf) * np.clip(self.gs, 0.0, 1.0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                phi_consume = np.where(
+                    sites_per_bin > 0,
+                    np.bincount(cell_bin, weights=w, minlength=nb)[:nb] / sites_per_bin,
+                    0.0)
+        else:
+            phi_consume = phi_live
+        uptake = dp.o2_uptake_mmHg_per_s * np.clip(phi_consume, 0.0, 1.0) * respiration
+        guess = self.profile_o2 if len(self.profile_o2) == nb else None
+        o2 = solve_steady(edges, "sphere", dp.o2_D_um2_per_s, dp.o2_medium_mmHg, uptake,
+                          dp.o2_Km_mmHg, guess=guess)
+        self.profile_r_um = 0.5 * (edges[1:] + edges[:-1])
+        self.profile_o2 = o2
+        self.o2 = o2[cell_bin]
         # Drug: transient, with cellular uptake as a linearised sink.
         eps = 1.0 - np.clip(phi_occ, 0.0, 1.0) * (1.0 - dp.extracellular_fraction)
         shell_vol = _geometry(edges, "sphere")[1]
@@ -611,6 +712,10 @@ class Dish:
         self.pos = np.vstack([self.pos, np.array(sites)])
         self.o2 = np.concatenate([self.o2, self.o2[idx]])
         self.glucose = np.concatenate([self.glucose, self.glucose[idx]])
+        # A daughter starts undamaged: hits are repaired lesions in one
+        # cell, not something inherited.
+        self.hits = np.concatenate([self.hits, np.zeros(len(idx), dtype=np.int64)])
+        self.last_hit_t = np.concatenate([self.last_hit_t, np.full(len(idx), -np.inf)])
         self.gs = np.concatenate([self.gs, self.gs[idx]])
 
     def _bury(self, die: np.ndarray, kind: int) -> None:
@@ -635,6 +740,7 @@ class Dish:
         self.birth_t = self.birth_t[keep]
         self.o2, self.gs = self.o2[keep], self.gs[keep]
         self.glucose = self.glucose[keep]
+        self.hits, self.last_hit_t = self.hits[keep], self.last_hit_t[keep]
         live = self.occ >= 0
         self.occ[live] = EMPTY
         self.occ[tuple(self.pos.T)] = np.arange(len(self.pos))
@@ -729,15 +835,31 @@ class Dish:
                 who = self.occ[tuple(here)]
                 # a live tumour cell at this site: engage
                 if who >= 0 and self.cells.alive[who]:
-                    if self.rng.random() < p_kill:
+                    if self.rng.random() >= p_kill:
+                        continue                  # still engaging
+                    # A hit. Damage older than the decay window has been
+                    # repaired, so the count restarts.
+                    if t - self.last_hit_t[who] > dp.effector_hit_decay_h:
+                        self.hits[who] = 0
+                    self.hits[who] += 1
+                    self.last_hit_t[who] = t
+                    self.n_hits_delivered += 1
+                    if self.hits[who] >= dp.effector_hits_to_kill:
                         die = np.zeros(len(self.cells.alive), bool)
                         die[who] = True
                         self.cells.alive[who] = False
                         self._bury(die, APOPTOTIC)
                         self.eff_kills[e] += 1
-                        self.eff_busy_until[e] = t + dp.effector_conjugate_h
                         self.n_killed_by_effectors += 1
-                    continue                      # stays conjugated, does not move
+                    self.eff_busy_until[e] = t + dp.effector_conjugate_h
+                    # Detach and move on, as CTLs transit between targets;
+                    # this is what makes the next hit on the same cell
+                    # usually come from a different effector.
+                    cand = here + near
+                    cand = cand[np.all((cand >= 0) & (cand < shape), axis=1)]
+                    if len(cand):
+                        self.eff_pos[e] = cand[self.rng.integers(len(cand))]
+                    continue
                 if self.rng.random() >= p_hop:
                     continue
                 cand = here + near

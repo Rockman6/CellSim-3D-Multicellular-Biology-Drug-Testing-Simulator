@@ -50,14 +50,23 @@ def test_the_defaults_leave_the_dish_exactly_as_it_was():
     assert len(d.eff_pos) == 0, "no effectors until add_effectors() is called"
 
 
-def test_plentiful_glucose_changes_nothing():
+def test_plentiful_glucose_barely_moves_the_answer():
     """Switching the field on at a normal medium concentration must not
-    move the answer: if it does, the coupling is wrong rather than the
-    biology interesting."""
+    move the answer by much: if it does, the coupling is wrong rather
+    than the biology interesting.
+
+    This used to require EXACT equality, which was right while glucose
+    acted only through a starvation threshold that 5.5 mM never reached.
+    Glucose now also raises respiration along a continuous curve
+    (Casciari 1992), and a spheroid's centre sits a little below the
+    medium, so its cells burn very slightly more oxygen than at exactly
+    5.5 mM. The honest effect is about 0.2 %; the gate allows 2 %, which
+    is still ten times below the engine's own run-to-run spread and would
+    catch a coupling that had been made too strong."""
     off = _spheroid(glucose=0.0)
     plenty = _spheroid(glucose=5.5)
-    assert off.record.n_live[-1] == plenty.record.n_live[-1], (
-        f"{off.record.n_live[-1]} vs {plenty.record.n_live[-1]} at 5.5 mM")
+    a, b = off.record.n_live[-1], plenty.record.n_live[-1]
+    assert abs(a - b) / a < 0.02, f"{a} vs {b} at 5.5 mM ({abs(a - b) / a:.1%})"
 
 
 # ── glucose ───────────────────────────────────────────────────────────
@@ -120,10 +129,11 @@ def test_a_faster_hop_rate_moves_cells_further():
 
 
 # ── effector cells ────────────────────────────────────────────────────
-def _assay(et_ratio, hours=24.0, seeds=(1, 2), n_tumour=400):
+def _assay(et_ratio, hours=24.0, seeds=(1, 2), n_tumour=400, **dish_kw):
     lives = []
     for seed in seeds:
-        dp = DishParams(geometry="monolayer", spacing_um=20.0, field_dt_h=0.5, dt_h=0.02)
+        dp = DishParams(geometry="monolayer", spacing_um=20.0, field_dt_h=0.5, dt_h=0.02,
+                        **dish_kw)
         d = Dish(A549, n_seed=n_tumour, grid_sites=(40, 40), seed=seed, p=Params(), dp=dp)
         d.add_effectors(int(round(et_ratio * n_tumour)))
         for _ in range(int(hours / 0.5)):
@@ -140,22 +150,34 @@ def test_killing_rises_with_the_effector_to_target_ratio():
     assert low < base, f"effectors must kill: {base} -> {low}"
     assert mid < low, f"and more of them must kill more: {low} -> {mid}"
     assert high <= mid, f"saturating at the top: {mid} -> {high}"
-    assert high < base * 0.1, f"E:T 1 should clear most of the monolayer: {base} -> {high}"
+    # Clearance needs a HIGHER ratio than it used to. Under the three-hit
+    # rule (Weigelin 2021) a lone effector cannot kill: its hits are
+    # repaired before a third arrives, so lysis only takes off once the
+    # density is enough for several effectors to hit one target inside
+    # the repair window. E:T 1 now leaves ~40 % lysis; E:T 3 clears it.
+    very_high = _assay(3.0)
+    assert very_high < base * 0.1, (
+        f"E:T 3 should clear most of the monolayer: {base} -> {very_high}")
 
 
 def test_exhaustion_caps_what_one_effector_can_do():
-    """Serial killing is limited. With the cap at one kill each, a small
-    effector dose must do strictly less than with the cap at five."""
+    """Serial killing is limited: a higher cap must allow more killing.
+
+    Run at a density where killing actually happens. Under the three-hit
+    rule 40 effectors on 400 targets kill almost nothing — their hits are
+    repaired before a third lands — so this test compared 1 kill against
+    1 kill and failed when the model changed, which is the right way for
+    a gate to react to a mechanism it no longer matches."""
     def run(max_kills):
         dp = DishParams(geometry="monolayer", spacing_um=20.0, field_dt_h=0.5,
                         dt_h=0.02, effector_max_kills=max_kills)
         d = Dish(A549, n_seed=400, grid_sites=(40, 40), seed=1, p=Params(), dp=dp)
-        d.add_effectors(40)
+        d.add_effectors(1200)                     # E:T 3, where lysis is real
         for _ in range(48):
             d.advance(None)
         return d.n_killed_by_effectors
     one, five = run(1), run(5)
-    assert one <= 40, f"with a cap of one kill each, 40 effectors cannot exceed 40: {one}"
+    assert one > 0, f"the test must be run where killing happens, got {one}"
     assert five > one, f"a higher cap must allow more killing: {one} -> {five}"
 
 
