@@ -160,10 +160,21 @@ class DishParams:
     # a drug-killed one does.
     effector_speed_per_h: float = 3.0          # hops/h on the effector layer
     effector_tumour_bias: float = 0.7          # fraction of hops toward the nearest target
-    effector_kill_per_h: float = 1.0           # kill rate while conjugated
-    effector_conjugate_h: float = 1.0          # busy after each kill
+    # Rate of delivering a HIT while in contact. With
+    # effector_hits_to_kill = 1 a hit is a kill and this is a kill rate.
+    effector_kill_per_h: float = 1.0
+    effector_conjugate_h: float = 1.0          # rests after each hit
     effector_max_kills: int = 5
     effector_lifetime_h: float = 96.0          # effectors die off in culture
+    # ADDITIVE CYTOTOXICITY (Weigelin et al. 2021 Nat Commun 12:5217).
+    # Live imaging showed a single CTL contact rarely kills: each delivers
+    # a SUBLETHAL hit — perforin pores, nuclear envelope rupture, DNA
+    # damage — that the tumour cell repairs. Death needs about three hits
+    # arriving within ~50 min of one another, usually from several CTLs
+    # transiting between targets. Set hits_to_kill = 1 for the older
+    # single-lethal-hit picture, which that work overturned.
+    effector_hits_to_kill: int = 3
+    effector_hit_decay_h: float = 50.0 / 60.0
 
     @property
     def site_volume_um3(self) -> float:
@@ -328,6 +339,9 @@ class Dish:
         # Fields: per-cell local values and, for a spheroid, radial profiles.
         self.o2 = np.full(n_seed, dp.o2_medium_mmHg)
         self.glucose = np.full(n_seed, dp.glucose_medium_mM)
+        # Sublethal effector damage carried by each tumour cell.
+        self.hits = np.zeros(n_seed, dtype=np.int64)
+        self.last_hit_t = np.full(n_seed, -np.inf)
         self.gs = np.ones(n_seed)
         self.profile_r_um = np.zeros(0)
         self.profile_o2 = np.zeros(0)
@@ -343,6 +357,7 @@ class Dish:
         self.eff_busy_until = np.zeros(0)
         self.eff_born = np.zeros(0)
         self.n_killed_by_effectors = 0
+        self.n_hits_delivered = 0
         self.record = DishRecord()
 
     # ── set-up helpers ──
@@ -611,6 +626,10 @@ class Dish:
         self.pos = np.vstack([self.pos, np.array(sites)])
         self.o2 = np.concatenate([self.o2, self.o2[idx]])
         self.glucose = np.concatenate([self.glucose, self.glucose[idx]])
+        # A daughter starts undamaged: hits are repaired lesions in one
+        # cell, not something inherited.
+        self.hits = np.concatenate([self.hits, np.zeros(len(idx), dtype=np.int64)])
+        self.last_hit_t = np.concatenate([self.last_hit_t, np.full(len(idx), -np.inf)])
         self.gs = np.concatenate([self.gs, self.gs[idx]])
 
     def _bury(self, die: np.ndarray, kind: int) -> None:
@@ -635,6 +654,7 @@ class Dish:
         self.birth_t = self.birth_t[keep]
         self.o2, self.gs = self.o2[keep], self.gs[keep]
         self.glucose = self.glucose[keep]
+        self.hits, self.last_hit_t = self.hits[keep], self.last_hit_t[keep]
         live = self.occ >= 0
         self.occ[live] = EMPTY
         self.occ[tuple(self.pos.T)] = np.arange(len(self.pos))
@@ -729,15 +749,31 @@ class Dish:
                 who = self.occ[tuple(here)]
                 # a live tumour cell at this site: engage
                 if who >= 0 and self.cells.alive[who]:
-                    if self.rng.random() < p_kill:
+                    if self.rng.random() >= p_kill:
+                        continue                  # still engaging
+                    # A hit. Damage older than the decay window has been
+                    # repaired, so the count restarts.
+                    if t - self.last_hit_t[who] > dp.effector_hit_decay_h:
+                        self.hits[who] = 0
+                    self.hits[who] += 1
+                    self.last_hit_t[who] = t
+                    self.n_hits_delivered += 1
+                    if self.hits[who] >= dp.effector_hits_to_kill:
                         die = np.zeros(len(self.cells.alive), bool)
                         die[who] = True
                         self.cells.alive[who] = False
                         self._bury(die, APOPTOTIC)
                         self.eff_kills[e] += 1
-                        self.eff_busy_until[e] = t + dp.effector_conjugate_h
                         self.n_killed_by_effectors += 1
-                    continue                      # stays conjugated, does not move
+                    self.eff_busy_until[e] = t + dp.effector_conjugate_h
+                    # Detach and move on, as CTLs transit between targets;
+                    # this is what makes the next hit on the same cell
+                    # usually come from a different effector.
+                    cand = here + near
+                    cand = cand[np.all((cand >= 0) & (cand < shape), axis=1)]
+                    if len(cand):
+                        self.eff_pos[e] = cand[self.rng.integers(len(cand))]
+                    continue
                 if self.rng.random() >= p_hop:
                     continue
                 cand = here + near
