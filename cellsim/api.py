@@ -383,11 +383,13 @@ def killing(line: Union[str, CellLine], *, et_ratios: Sequence[float] = (0, 0.1,
             seeds: Sequence[int] = (1, 2), params: Params = Params(), dish_params=None):
     """A cytotoxicity assay: effector cells on a tumour monolayer.
 
-    Effectors crawl on their own layer, engage a tumour cell on contact,
-    kill it after about an hour, then rest before engaging again and stop
-    after a few kills (Halle et al. 2016). `et_ratios` are effector:target
-    ratios; the 0 arm is the untreated control that specific lysis is
-    measured against.
+    Effectors crawl on their own layer and deliver a SUBLETHAL hit on each
+    contact; a tumour cell dies only after three hits within about 50
+    minutes, so killing needs several effectors working together
+    (Weigelin et al. 2021). A lone effector therefore kills almost
+    nothing — expect little lysis below E:T 0.3 and near-complete
+    clearance by E:T 3. `et_ratios` are effector:target ratios; the 0 arm
+    is the untreated control that specific lysis is measured against.
 
     Returns one row per ratio, averaged over `seeds`."""
     from cellsim.cell.dish import Dish, DishParams
