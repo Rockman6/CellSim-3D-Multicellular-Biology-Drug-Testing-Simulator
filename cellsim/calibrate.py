@@ -342,6 +342,12 @@ def predict_band(calibration: Calibration, fn, *, seeds: Sequence[int] = (1, 2, 
     carefully the first part was computed.
 
     Two schedules whose bands overlap have not been shown to differ.
+
+    If `fn` calls `cellsim.cell.engine.ic50`, pass it `n_seeds=1`. That
+    function takes a median over several seeds by default, so handing it
+    `seed=sd` here would make each point a median over sd, sd+1, sd+2 —
+    overlapping windows that smooth the very spread this band is meant
+    to show, at three times the cost.
     """
     per_label: dict = {}
     for which, label in zip(("low", "value", "high"), labels):
