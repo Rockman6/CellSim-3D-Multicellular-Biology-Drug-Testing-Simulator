@@ -57,14 +57,28 @@ def test_curve_is_tidy_monotone_and_agrees_with_the_engine():
         assert ic <= min(below) + 1e-9, (ic, below)
 
 
-def test_exposure_reports_infinity_where_half_kill_is_unreachable():
-    """A tubulin binder cannot halve an asynchronous colony in 3 h at any
-    concentration; the table must say so rather than return a number."""
+def test_a_three_hour_exposure_needs_an_unusable_concentration():
+    """A spindle poison can only act on cells that attempt mitosis while
+    it is present, so a 3 h window is nearly useless: Georgiadis 1997 put
+    its half-kill above 32 µM, the top of their tested range, against
+    0.027 µM for a continuous exposure.
+
+    This used to assert the 3 h value was INFINITE. It is finite once
+    drug retained after wash-out is modelled — the engine says ~150 µM —
+    and that is the better answer: the measurement says "above 32", not
+    "unreachable". What the gate checks now is that 3 h needs a
+    concentration far beyond anything usable, and orders of magnitude
+    above the continuous one."""
     rows = _rows(api.exposure("A549", "paclitaxel", hours=[3, 72], n_cells=24))
     short, long = rows[0], rows[1]
-    assert short["reaches_half_kill"] is False and not np.isfinite(short["c50_uM"])
-    assert long["reaches_half_kill"] is True and np.isfinite(long["c50_uM"])
-    assert long["c50_uM"] > 0
+    assert long["reaches_half_kill"] is True and long["c50_uM"] > 0
+    if short["reaches_half_kill"]:
+        assert short["c50_uM"] > 32.0, (
+            f"3 h half-kill at {short['c50_uM']:.3g} µM; Georgiadis saw none "
+            f"below 32 µM")
+        assert short["c50_uM"] > 100 * long["c50_uM"], (
+            f"3 h should need orders of magnitude more than continuous: "
+            f"{short['c50_uM']:.3g} vs {long['c50_uM']:.3g} µM")
 
 
 def test_gr_curve_puts_a_simulation_on_the_same_axis_as_a_plate():

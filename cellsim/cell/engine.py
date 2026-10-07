@@ -382,8 +382,13 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     for i, dg in enumerate(drugs):
         ci = Cin_all[i]
         col = N_BASE + i
-        dY[:, col] = ((dg.partition * aux["het_uptake"] * C_out_all[:, i] - ci)
-                      / dg.tau_uptake_h)
+        drive = dg.partition * aux["het_uptake"] * C_out_all[:, i] - ci
+        # Entry and exit need not be symmetric. A drug bound to its target
+        # is retained after wash-out — only the free fraction can leave —
+        # so when the cell is emptying (drive < 0) the slower exit time
+        # constant applies. tau_efflux_h = 0 keeps the old symmetric model.
+        tau_out = dg.tau_efflux_h if dg.tau_efflux_h > 0 else dg.tau_uptake_h
+        dY[:, col] = drive / np.where(drive < 0, tau_out, dg.tau_uptake_h)
         if p.efflux_vmax_uM_per_h > 0 and getattr(dg, "pgp_substrate", False):
             vmax = p.efflux_vmax_uM_per_h * line.efflux_level * aux["het_uptake"]
             dY[:, col] -= vmax * ci / (p.efflux_km_uM + ci)
