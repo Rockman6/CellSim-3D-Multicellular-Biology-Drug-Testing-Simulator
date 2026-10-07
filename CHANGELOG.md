@@ -1,5 +1,34 @@
 # CellSim — Changelog
 
+## 1.5.0 — engine corrections, four new experiments, a browser Lab
+
+Version 1.4.0 on PyPI predates everything below. The two are different
+engines and should not be confused.
+
+**Engine corrections** — each found by checking the engine against a
+measurement, or against what its own constants imply:
+
+- Paclitaxel 24 h exposure was 240x too potent; now 3.4x. Drug retained
+  after wash-out (`Drug.tau_efflux_h`), and a mitotic death rate the GDSC
+  fit had never constrained.
+- Glucose did nothing across its published range. It acts through
+  respiration, not starvation (Casciari 1992): starved cells burn more
+  oxygen. `DishParams.respiration_boost`.
+- The necrotic core was a solver bug: the medium's oxygen was applied at
+  the outermost stray cell, up to 159 um beyond the spheroid. Now at the
+  equivalent-sphere radius; the diffusion limit matches the engine's own
+  constants (240 vs 233 um analytic) and no longer depends on mechanics.
+- Immune killing rebuilt on the measured three-hit mechanism (Weigelin
+  2021): each contact is a sublethal hit; death needs three within ~50 min.
+- `ic50()` is a median over three seeds by default; pass `n_seeds=1` when
+  iterating seeds yourself.
+
+**New experiments:** gene knockouts (`api.knockout`), glucose starvation
+(`api.starve`), cell migration, and immune killing assays (`api.killing`).
+
+**Validation:** a held-out HeLa movie (DIC-C2DH-HeLa) supports the 19 h
+cycle and rejects the old 31 h one.
+
 ## Unreleased — Phase 3: ten drugs, calibrated intervals, evolved resistance
 
 ### Added
