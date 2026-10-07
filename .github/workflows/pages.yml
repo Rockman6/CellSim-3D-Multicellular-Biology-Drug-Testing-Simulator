@@ -57,6 +57,22 @@ jobs:
             node tests/web/viewer_stream_check.js "$f"
           done
 
+      # The Lab runs the engine in the visitor's browser. It installs this
+      # wheel, built from the commit being deployed, rather than whatever
+      # is on PyPI — so the browser runs exactly the code on main, the
+      # same principle as simulating the demos at deploy time. Installing
+      # from PyPI instead would have shipped v1.4.0, from before every
+      # engine fix made in October 2026.
+      - name: build the wheel the Lab installs in the browser
+        run: |
+          pip install build
+          python -m build --wheel --outdir web/lab/wheel .
+          # The wheel keeps its real name, because micropip parses the
+          # version out of it and "latest" is not one. The page reads this
+          # pointer to learn which file to install.
+          cd web/lab/wheel && ls cellsim-*-py3-none-any.whl | head -1 > LATEST
+          echo "Lab will install: $(cat LATEST)"
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
