@@ -70,8 +70,10 @@ def test_cisplatin_short_exposures_follow_concentration_times_time():
     when exposure doubles (slope -1 on log-log). Over 1-4 h, before
     repair has time to matter, the engine must reproduce that law."""
     cis = _drug("cisplatin")
-    c1 = ic50(LINE, cis, guess_uM=400.0, exposure_h=1.0, n_cells_per_conc=16, k_cyc=K)
-    c4 = ic50(LINE, cis, guess_uM=100.0, exposure_h=4.0, n_cells_per_conc=16, k_cyc=K)
+    c1 = ic50(LINE, cis, guess_uM=400.0, exposure_h=1.0, n_cells_per_conc=16, k_cyc=K,
+              n_seeds=1)
+    c4 = ic50(LINE, cis, guess_uM=100.0, exposure_h=4.0, n_cells_per_conc=16, k_cyc=K,
+              n_seeds=1)
     slope = math.log(c4 / c1) / math.log(4.0)
     assert -1.25 < slope < -0.75, (
         f"C50 {c1:.3g} uM at 1 h vs {c4:.3g} uM at 4 h: slope {slope:.2f}, expected ~ -1")
@@ -108,7 +110,7 @@ def test_auc_is_the_wrong_exposure_metric_for_paclitaxel():
     for hours in (24.0, 72.0):
         c50 = ic50(LINE, pac, guess_uM=1.0 if hours < 72 else 0.03,
                    exposure_h=None if hours == 72.0 else hours,
-                   n_cells_per_conc=N_CELLS, k_cyc=K)
+                   n_cells_per_conc=N_CELLS, k_cyc=K, n_seeds=1)
         assert math.isfinite(c50), f"no half-kill at {hours:g} h"
         auc[hours] = c50 * hours
     ratio = auc[24.0] / auc[72.0]

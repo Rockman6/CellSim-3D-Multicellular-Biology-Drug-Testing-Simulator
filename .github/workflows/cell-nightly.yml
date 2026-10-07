@@ -1,0 +1,56 @@
+# The cell layer's VALIDATION tier: every gate, including the slow ones.
+#
+# Pull requests run only the MECHANISM tier (smoke.yml sets
+# CELLSIM_TESTS=mechanism), because the validation gates — several
+# six-day spheroids at different glucose levels, calibration recovered
+# from simulated plates — take minutes each and made the per-PR cell step
+# grow from 21 to 44 minutes in a single day.
+#
+# Nothing is weakened by the split. Every gate still runs here, so a
+# regression a validation gate would catch is caught within a day rather
+# than on the pull request. See tests/cell/_tiers.py for the rule.
+name: cell nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"       # 03:17 UTC, off the hour to avoid the queue spike
+  workflow_dispatch:
+
+concurrency:
+  group: cell-nightly
+  cancel-in-progress: false
+
+jobs:
+  validation:
+    name: cell module, all tiers (conda)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same environment as smoke.yml. Thirteen of the cell tests reach
+      # into the chemistry stack, so a pip-only setup would fail here.
+      - name: Set up miniforge + cellsim env
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: environment.yml
+          activate-environment: cellsim
+          miniforge-version: latest
+          use-mamba: true
+
+      # No install step, deliberately: smoke.yml has none either, because
+      # each test puts the repository root on sys.path. Any difference
+      # between this job and that one is a place for a nightly-only
+      # failure to hide.
+      - name: every cell gate, mechanism and validation
+        env:
+          CELLSIM_TESTS: all
+        run: |
+          set -e
+          for t in tests/cell/test_*.py; do
+            echo "== $t"
+            python -u "$t"
+          done
