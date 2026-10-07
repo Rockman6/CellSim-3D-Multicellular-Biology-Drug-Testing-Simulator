@@ -140,8 +140,8 @@ def test_combination_reports_each_arm_against_independent_action():
     cis, pac = get_drug("cisplatin"), get_drug("paclitaxel")
     line = get_line("A549")
     k = calibrate_cycle_scale(line, Params())
-    ic_c = ic50(line, cis, guess_uM=10.0, k_cyc=k, n_cells_per_conc=16)
-    ic_p = ic50(line, pac, guess_uM=0.03, k_cyc=k, n_cells_per_conc=16)
+    ic_c = ic50(line, cis, guess_uM=10.0, k_cyc=k, n_cells_per_conc=16, n_seeds=1)
+    ic_p = ic50(line, pac, guess_uM=0.03, k_cyc=k, n_cells_per_conc=16, n_seeds=1)
     # 72 h readout, which is the condition docs/VALIDATION.md measured the
     # antagonism under; it weakens as the readout lengthens and survivors
     # resume growing.

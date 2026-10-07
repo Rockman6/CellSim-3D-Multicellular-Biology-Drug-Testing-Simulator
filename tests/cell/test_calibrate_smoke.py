@@ -24,6 +24,9 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _tiers import run, validation  # noqa: E402
 
 from cellsim.calibrate import (calibrate_potency, doubling_time_from_controls,  # noqa: E402
                                predict_band)
@@ -86,7 +89,8 @@ def test_calibration_recovers_a_constant_it_was_not_told():
     drug = get_drug("cisplatin")
     true_value = drug.k_damage_per_uM_h * 1.6
     perturbed = dataclasses.replace(drug, k_damage_per_uM_h=true_value)
-    target = ic50(LINE, perturbed, guess_uM=10.0, n_cells_per_conc=N_CELLS, k_cyc=K, p=P)
+    target = ic50(LINE, perturbed, guess_uM=10.0, n_cells_per_conc=N_CELLS, k_cyc=K, p=P,
+                  n_seeds=1)
     assert np.isfinite(target), "the perturbed drug should still have an IC50"
     cal = calibrate_potency("A549", "cisplatin", target, n_cells=N_CELLS,
                             iters=ITERS, report_ic50=False)
@@ -99,6 +103,7 @@ def test_calibration_recovers_a_constant_it_was_not_told():
         f"({ratio:.2f}x)")
 
 
+@validation
 def test_a_measured_interval_becomes_a_constant_interval():
     """Uncertainty must be propagated, not invented: a wider measurement
     gives a wider constant, and the point estimate sits inside."""
@@ -133,6 +138,7 @@ def test_an_unreachable_measurement_is_refused_with_a_reason():
         raise AssertionError("an unreachable IC50 must be refused")
 
 
+@validation
 def test_predictions_come_back_as_a_band():
     """The point of calibrating with an interval: a later prediction is a
     range, and a difference smaller than that range is not a result."""
@@ -140,13 +146,14 @@ def test_predictions_come_back_as_a_band():
                             n_cells=N_CELLS, iters=ITERS, report_ic50=False)
     band = predict_band(cal, lambda d, sd: ic50(LINE, d, guess_uM=8.0,
                                                 n_cells_per_conc=N_CELLS, k_cyc=K,
-                                                p=P, seed=sd), seeds=(1, 2))
+                                                p=P, seed=sd, n_seeds=1), seeds=(1, 2))
     assert set(band) >= {"low", "value", "high", "spread", "range", "n_runs"}
     assert band["n_runs"] == 6, "three constants x two seeds"
     assert band["range"][0] <= band["value"] <= band["range"][1], band
     assert band["spread"] > 1.0, f"a 2.6-fold measurement should give a real spread: {band}"
 
 
+@validation
 def test_the_band_widens_when_seeds_are_included():
     """The error that a hold-out test caught: a band built from the
     calibration interval alone, at one seed, ignores the engine's own
@@ -156,7 +163,8 @@ def test_the_band_widens_when_seeds_are_included():
                             n_cells=N_CELLS, iters=ITERS, report_ic50=False)
 
     def run(d, sd):
-        return ic50(LINE, d, guess_uM=8.0, n_cells_per_conc=N_CELLS, k_cyc=K, p=P, seed=sd)
+        return ic50(LINE, d, guess_uM=8.0, n_cells_per_conc=N_CELLS, k_cyc=K, p=P, seed=sd,
+                    n_seeds=1)
 
     one_seed = predict_band(cal, run, seeds=(1,))
     three = predict_band(cal, run, seeds=(1, 2, 3))
@@ -165,17 +173,4 @@ def test_the_band_widens_when_seeds_are_included():
 
 
 if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
-    failed = 0
-    for fn in fns:
-        try:
-            fn()
-            print(f"  ok   {fn.__name__}")
-        except AssertionError as e:
-            failed += 1
-            print(f"  FAIL {fn.__name__}: {e}")
-        except Exception as e:                      # noqa: BLE001 - report, don't crash
-            failed += 1
-            print(f"  ERROR {fn.__name__}: {type(e).__name__}: {e}")
-    print(f"{len(fns) - failed}/{len(fns)} calibration gates pass")
-    raise SystemExit(1 if failed else 0)
+    raise SystemExit(run(globals(), "calibration"))

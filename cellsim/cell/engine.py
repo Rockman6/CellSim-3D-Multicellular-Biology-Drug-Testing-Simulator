@@ -756,7 +756,12 @@ def ic50(line: CellLine, drug: Drug, *, guess_uM: float = 1.0, t_end_h: float = 
 
     `n_seeds=1` restores the old single-run behaviour and costs a third
     as much; `cellsim.api.ic50_spread` reports the spread itself when
-    what matters is how far the number could move."""
+    what matters is how far the number could move.
+
+    Pass `n_seeds=1` whenever YOU are iterating over seeds. Otherwise each
+    call is already a median over `seed, seed+1, seed+2`, the windows of
+    neighbouring calls overlap, and a spread computed across them comes
+    out narrower than the engine's real run-to-run variation."""
     if n_seeds < 1:
         raise ValueError(f"n_seeds must be at least 1, got {n_seeds}")
     if n_seeds > 1:
