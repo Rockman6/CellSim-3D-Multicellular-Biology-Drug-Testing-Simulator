@@ -329,6 +329,42 @@ Rules that keep it honest rather than merely pretty:
 * the preset that produced a figure is shareable as a URL, so a result
   can be checked by someone else.
 
+### Stage 3b: inside a cell, then any drug (October 2026)
+
+The Lab's second page shows one cell at a time: every species the engine
+tracks, minute by minute, on a signalling map. Watching it is the most
+direct check the engine has had — its first week found two wrong time
+courses and, chasing them, seven drugs running placeholder constants
+(`docs/VALIDATION.md`). The plan from there, in order:
+
+1. **Fix what the view shows.** Done in 1.5.1: the library carries its
+   fitted constants; p53 kills only with damage signalling, fitted to
+   measured nutlin outcomes; notes on screen say what real cells do.
+2. **Any drug by name or structure.** PubChem for the structure,
+   ChEMBL's curated mechanism for the target, RDKit (its browser build)
+   for drawing and for molecules nobody has made. A drug whose target the
+   engine models runs with its potency *borrowed* from a library drug of
+   the same class and labelled uncalibrated; any other target is refused
+   by name. An impossible structure is rejected with the atom and the
+   rule it breaks.
+3. **More mechanisms on the existing map.** CDK4/6 inhibitors (cyclin D),
+   BCL-2 inhibitors, ATM/ATR/CHK1, PARP, mitotic kinases — each a hook
+   into a node already there, each calibrated on GDSC and checked on held
+   out lines. In GDSC's 542 drugs, about 131 act on pathways the network
+   already contains.
+4. **Design mode.** Block or boost any molecule on the map, or give a
+   drawn molecule a mechanism, and watch the cell. Labelled a
+   hypothesis, kept apart from validated results.
+5. **Growth signalling** (EGFR → RAS → ERK, PI3K → AKT → mTOR, feeding
+   cyclin D), with per-line mutations from DepMap. About another 131 GDSC
+   drugs act there. The largest single step.
+6. **The cell's anatomy** — nucleus, mitochondria, spindle, membrane —
+   with each species drawn where it acts.
+
+What stays out: predicting a new molecule's target or strength from its
+structure alone. Docking places poses well (87 % top-3) but its energies
+are not reliable enough to set a potency, and nothing else available is.
+
 ### Stage 4: finish the honesty work
 
 | Feature | State |

@@ -54,6 +54,7 @@
     "het_sigma": 0.3,
     "p73_gain": 0.1,
     "p73_atm_on": 0.5,
+    "p53_apoptosis_damage_free": 0.3,
     "cycle_cv": 0.0,
     "quiescent_fraction": 0.0,
     "quiescence_exit_per_h": 0.0
@@ -61,18 +62,18 @@
   "drugs": {
     "cisplatin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.0011843241922848732,
+      "gain": 0.0012741157432745454,
       "per_line_gain": {
-        "A549": 0.0011843241922848734
+        "A549": 0.0012741157432745451
       },
       "fit_on": [
         "A549"
       ],
       "spearman_vs_reference": -0.2571428571428572,
       "null_ic50_uM": 9.7673,
-      "log10_rmse_model": 0.5352498871524795,
+      "log10_rmse_model": 0.5186126818531588,
       "log10_rmse_null": 0.4306877970311103,
-      "log10_rmse_model_heldout": 0.5863339132647204,
+      "log10_rmse_model_heldout": 0.5680889991230912,
       "log10_rmse_null_heldout": 0.4717948433522912,
       "n_heldout_in_range": 5,
       "pass": 8,
@@ -84,20 +85,20 @@
     },
     "doxorubicin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.017539229570755634,
+      "gain": 0.01860566847553842,
       "per_line_gain": {
-        "A549": 0.008398201563781698,
-        "MCF7": 0.03662981551459046
+        "A549": 0.008933913898597523,
+        "MCF7": 0.03874795563856813
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.6454545454545455,
+      "spearman_vs_reference": 0.5818181818181819,
       "null_ic50_uM": 0.05742796304794019,
-      "log10_rmse_model": 0.34501362596089563,
+      "log10_rmse_model": 0.35669809547825687,
       "log10_rmse_null": 0.41279074667168153,
-      "log10_rmse_model_heldout": 0.3605797077003625,
+      "log10_rmse_model_heldout": 0.3739516063373422,
       "log10_rmse_null_heldout": 0.43760321576764993,
       "n_heldout_in_range": 9,
       "pass": 9,
@@ -109,23 +110,23 @@
     },
     "paclitaxel": {
       "fit_target": "partition",
-      "gain": 0.2120000000000001,
+      "gain": 0.21500045378750515,
       "per_line_gain": {
         "A549": 0.5226146310998765,
-        "MCF7": 0.08599835772950419
+        "MCF7": 0.08844986798695093
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": -0.19090909090909092,
+      "spearman_vs_reference": 0.06363636363636364,
       "null_ic50_uM": 0.02792310870945425,
-      "log10_rmse_model": 0.37589174605550096,
+      "log10_rmse_model": 0.3682540093339887,
       "log10_rmse_null": 0.34811187088143924,
-      "log10_rmse_model_heldout": 0.3753288598883951,
+      "log10_rmse_model_heldout": 0.36580360593382427,
       "log10_rmse_null_heldout": 0.33930336352508045,
       "n_heldout_in_range": 9,
-      "pass": 9,
+      "pass": 11,
       "null_pass": 9,
       "n": 11,
       "class_correct": 10,
@@ -134,20 +135,20 @@
     },
     "etoposide": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.009581760526682418,
+      "gain": 0.01022166125500354,
       "per_line_gain": {
-        "A549": 0.009772152468683244,
-        "MCF7": 0.009395078012230445
+        "A549": 0.010454111055910908,
+        "MCF7": 0.009994380034155531
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.6,
+      "spearman_vs_reference": 0.5393939393939393,
       "null_ic50_uM": 0.9593118992277746,
-      "log10_rmse_model": 0.4590953140588796,
+      "log10_rmse_model": 0.4651717471395121,
       "log10_rmse_null": 0.5030758538502763,
-      "log10_rmse_model_heldout": 0.5130624024434982,
+      "log10_rmse_model_heldout": 0.5199150460885704,
       "log10_rmse_null_heldout": 0.5624525739205628,
       "n_heldout_in_range": 8,
       "pass": 6,
@@ -159,20 +160,20 @@
     },
     "sn-38": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 2.074409684286958,
+      "gain": 2.19436361591694,
       "per_line_gain": {
-        "A549": 1.5882824399824642,
-        "MCF7": 2.709326395569182
+        "A549": 1.64276776309964,
+        "MCF7": 2.931170057643752
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": -0.3727272727272728,
+      "spearman_vs_reference": -0.23636363636363636,
       "null_ic50_uM": 0.013423013820692529,
-      "log10_rmse_model": 0.6364554449998612,
+      "log10_rmse_model": 0.6101950897528071,
       "log10_rmse_null": 0.49697337587872115,
-      "log10_rmse_model_heldout": 0.7014490329827349,
+      "log10_rmse_model_heldout": 0.6723908014851204,
       "log10_rmse_null_heldout": 0.5457033321383423,
       "n_heldout_in_range": 9,
       "pass": 8,
@@ -184,20 +185,20 @@
     },
     "gemcitabine": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 1.2263743170671124,
+      "gain": 1.3082755309933254,
       "per_line_gain": {
-        "A549": 1.6801257844567485,
-        "MCF7": 0.895167480599155
+        "A549": 1.7673169923777916,
+        "MCF7": 0.9684651210720605
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.7575757575757575,
+      "spearman_vs_reference": 0.6363636363636362,
       "null_ic50_uM": 0.022711168695988663,
-      "log10_rmse_model": 0.1653036126798696,
+      "log10_rmse_model": 0.1640940524782266,
       "log10_rmse_null": 0.2714049671453164,
-      "log10_rmse_model_heldout": 0.17173645394477702,
+      "log10_rmse_model_heldout": 0.17023642903162534,
       "log10_rmse_null_heldout": 0.2977331476213294,
       "n_heldout_in_range": 8,
       "pass": 10,
@@ -209,18 +210,18 @@
     },
     "5-fluorouracil": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.0031339289406449693,
+      "gain": 0.0032414369799324857,
       "per_line_gain": {
-        "A549": 0.003133928940644969
+        "A549": 0.003241436979932487
       },
       "fit_on": [
         "A549"
       ],
       "spearman_vs_reference": 0.942857142857143,
       "null_ic50_uM": 9.2776,
-      "log10_rmse_model": 0.18808746958289654,
+      "log10_rmse_model": 0.1953320795236281,
       "log10_rmse_null": 0.2667530009354992,
-      "log10_rmse_model_heldout": 0.20538724545011924,
+      "log10_rmse_model_heldout": 0.2130706961822789,
       "log10_rmse_null_heldout": 0.2922132717891392,
       "n_heldout_in_range": 5,
       "pass": 9,
@@ -282,20 +283,20 @@
     },
     "nutlin-3a": {
       "fit_target": "partition",
-      "gain": 0.012965610438227136,
+      "gain": 0.015963385442879414,
       "per_line_gain": {
-        "A549": 0.013372749306023661,
-        "MCF7": 0.012570867081172438
+        "A549": 0.017712954850082188,
+        "MCF7": 0.014386627017047482
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": -0.3,
+      "spearman_vs_reference": -0.7,
       "null_ic50_uM": 5.467113706987059,
-      "log10_rmse_model": 0.18249824839185502,
+      "log10_rmse_model": 0.20688388528803991,
       "log10_rmse_null": 0.1627055993458662,
-      "log10_rmse_model_heldout": 0.23456006360818732,
+      "log10_rmse_model_heldout": 0.2646779991666302,
       "log10_rmse_null_heldout": 0.2100050897293149,
       "n_heldout_in_range": 3,
       "pass": 11,
@@ -306,11 +307,11 @@
       "n_observed_resistant": 6
     }
   },
-  "paired_vs_null_wins": 32,
-  "paired_vs_null_losses": 41,
-  "paired_vs_null_p": 0.3491818381705883,
+  "paired_vs_null_wins": 31,
+  "paired_vs_null_losses": 42,
+  "paired_vs_null_p": 0.24164472314075197,
   "discriminates_lines": false,
-  "held_out_pass": 67,
+  "held_out_pass": 69,
   "held_out_null_pass": 68,
   "held_out_n": 91,
   "held_out_class_correct": 78,
@@ -322,5 +323,5 @@
     "5-fluorouracil"
   ],
   "exit_gate_met": false,
-  "wall_s": 4324.3
+  "wall_s": 847.9
 }

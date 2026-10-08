@@ -301,6 +301,41 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
             f"{d['null_class_correct']}/{d['n']} ({d['n_observed_resistant']} lines never "
             f"reached half kill in the screen)")
 
+    return rows, summarise(rows, summary, t_start, say)
+
+
+def _one_drug(job: tuple) -> tuple[list[dict], dict]:
+    """One drug's fit and predictions, for a worker process."""
+    name, params, n_cells, iters = job
+    rows, summary = run_validation(params=params, n_cells=n_cells, iters=iters,
+                                   drug_names=(name,), verbose=False)
+    return rows, summary["drugs"][name]
+
+
+def run_parallel(*, params: Params = Params(), n_cells: int = 32, iters: int = 12,
+                 drug_names: tuple[str, ...] = tuple(DRUGS), jobs: int = 4
+                 ) -> tuple[list[dict], dict]:
+    """`run_validation`, one drug per process. Each drug's fit and its
+    predictions are independent of every other drug's; only the paired
+    comparison against the null pools them, and that runs once at the end
+    on the merged rows, so the result is the same as the serial run's."""
+    from concurrent.futures import ProcessPoolExecutor
+    t_start = time.time()
+    with ProcessPoolExecutor(max_workers=jobs) as ex:
+        done = list(ex.map(_one_drug, [(n, params, n_cells, iters) for n in drug_names]))
+    rows = [r for drug_rows, _ in done for r in drug_rows]
+    summary = {"n_cells_per_dose": n_cells, "bisection_steps": iters,
+               "fit_lines": list(FIT_LINES), "params": dataclasses.asdict(params),
+               "drugs": {n: d for n, (_, d) in zip(drug_names, done)}}
+    for n, d in summary["drugs"].items():
+        print(f"{n:15s} {d['fit_target']} = {d['gain']:.4g}   span {d['pass']}/{d['n']} "
+              f"(null {d['null_pass']})   held-out log10 RMSE {d['log10_rmse_model_heldout']:.2f} "
+              f"(null {d['log10_rmse_null_heldout']:.2f})")
+    return rows, summarise(rows, summary, t_start, print)
+
+
+def summarise(rows: list[dict], summary: dict, t_start: float, say) -> dict:
+    """The cross-drug part: held-out totals and the paired sign test."""
     held = [r for r in rows if r["role"] == "held-out"]
     # Paired per-line comparison against the null. This is the exit gate:
     # comparing two RMSE numbers passed on a 0.01 difference once, which
@@ -347,7 +382,49 @@ def run_validation(*, params: Params = Params(), n_cells: int = 32, iters: int =
             "tell cell lines apart better than a single constant.")
     say(f"  (per-drug RMSE comparison, which is not the gate: {beats or 'none'} "
         f"had the lower held-out RMSE)")
-    return rows, summary
+    return summary
+
+
+LIBRARY_PY = REPO_ROOT / "cellsim" / "cell" / "library.py"
+
+
+def write_library(summary: dict, path: Path = LIBRARY_PY) -> list[str]:
+    """Write each drug's fitted constant into cellsim/cell/library.py.
+
+    The fit used to stop at the summary JSON, and the library's
+    "PROVISIONAL, refitted on GDSC2" comments read as if something carried
+    the values across. Nothing did: for a month seven of ten drugs ran
+    their placeholders everywhere a user could reach them. This rewrites
+    only the one `fit_target=<number>` line inside each drug's entry,
+    with a comment saying where the number came from."""
+    import re
+    text = path.read_text()
+    changed = []
+    for name, d in summary["drugs"].items():
+        gain = d.get("gain")
+        if not gain or not math.isfinite(gain):
+            continue
+        start = text.find(f'    "{name}": Drug(')
+        if start < 0:
+            raise KeyError(f"{name} not found in {path.name}")
+        nxt = re.compile(r'\n    "[^"]+": Drug\(|\n}').search(text, start + 1)
+        end = nxt.start() if nxt else len(text)
+        block = text[start:end]
+        field = d["fit_target"]
+        line_rx = re.compile(rf"^(\s+){field}=[0-9.eE+-]+,.*$", re.M)
+        m = line_rx.search(block)
+        if not m:
+            raise KeyError(f"{name}: no '{field}=' line to update")
+        on = " + ".join(d.get("fit_on") or []) or "?"
+        value = f"{gain:.4g}"
+        new = f"{m.group(1)}{field}={value},"
+        new = new.ljust(38) + f"  # FITTED to GDSC on {on} (scripts/validate_gdsc.py)"
+        if m.group(0) != new:
+            changed.append(f"{name}.{field}: {m.group(0).split('=')[1].split(',')[0]} -> {value}")
+        block = block[:m.start()] + new + block[m.end():]
+        text = text[:start] + block + text[end:]
+    path.write_text(text)
+    return changed
 
 
 # ── main ──────────────────────────────────────────────────────────────
@@ -369,12 +446,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--param", type=_parse_param, action="append", default=[],
                     metavar="NAME=VALUE", help="override an engine parameter (repeatable)")
     ap.add_argument("--no-write", action="store_true", help="do not write the results files")
+    ap.add_argument("--write-library", action="store_true",
+                    help="also write the fitted constants into cellsim/cell/library.py "
+                         "(tests/cell/test_library_constants_smoke.py checks they match)")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="drugs fitted in parallel, one per process (same result; "
+                         "the ten-drug panel takes ~72 min serially)")
     a = ap.parse_args(argv)
     params = Params(**dict(a.param))
-    rows, summary = run_validation(
-        params=params, n_cells=a.cells or (16 if a.quick else 32),
-        iters=8 if a.quick else 12,
-        drug_names=tuple(d.strip() for d in a.drugs.split(",") if d.strip()))
+    kw = dict(params=params, n_cells=a.cells or (16 if a.quick else 32),
+              iters=8 if a.quick else 12,
+              drug_names=tuple(d.strip() for d in a.drugs.split(",") if d.strip()))
+    rows, summary = (run_parallel(jobs=a.jobs, **kw) if a.jobs > 1 else run_validation(**kw))
     print("The span check is at least 9x wide, so it tests the potency scale, not "
           "line-to-line discrimination; the paired sign test above is the exit gate.")
     if not a.no_write and rows:
@@ -385,6 +468,12 @@ def main(argv: list[str] | None = None) -> int:
         SUMMARY_JSON.write_text(json.dumps(summary, indent=2, default=float) + "\n")
         print(f"wrote {RESULTS_CSV.relative_to(REPO_ROOT)} and "
               f"{SUMMARY_JSON.relative_to(REPO_ROOT)}")
+    if a.write_library and rows:
+        if len(summary["drugs"]) < len(DRUGS):
+            print("not writing the library from a partial run")
+        else:
+            for c in write_library(summary) or ["library already matched the fit"]:
+                print("library:", c)
     return 0
 
 

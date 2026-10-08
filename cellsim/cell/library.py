@@ -206,7 +206,7 @@ CELL_LINES: dict[str, CellLine] = {
 DRUGS: dict[str, Drug] = {
     "cisplatin": Drug(
         "cisplatin", "dna_adduct",
-        k_damage_per_uM_h=0.001181,   # FITTED: A549 GDSC1 IC50 9.77 uM (scripts/validate_gdsc.py)
+        k_damage_per_uM_h=0.001274,     # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
         tau_uptake_h=0.5,             # slow uptake (CTR1 + passive), hours
         partition=1.0,
         accumulation_ratio=2.0,       # Pt accumulates only a few-fold over medium (order of magnitude)
@@ -215,7 +215,7 @@ DRUGS: dict[str, Drug] = {
                "Chem Rev 99:2467); adduct repair t1/2 of hours (NER) sets repair_rate"),
     "doxorubicin": Drug(
         "doxorubicin", "topo2",
-        k_damage_per_uM_h=0.01749,    # FITTED: geo-mean of A549 + MCF7 fits to GDSC1 (validate_gdsc.py)
+        k_damage_per_uM_h=0.01861,      # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         s_phase_factor=3.0,           # TopII poison: DSBs mostly during replication
         pgp_substrate=True,           # classical P-gp substrate
         tau_uptake_h=0.5,
@@ -238,7 +238,7 @@ DRUGS: dict[str, Drug] = {
         # leaving the 72 h value where GDSC put it.
         k_mitotic_death_per_h=0.03,
         tau_uptake_h=0.2, tau_efflux_h=24.0,
-        partition=0.212,              # FITTED: geo-mean of A549 + MCF7 fits to GDSC2 (validate_gdsc.py)
+        partition=0.215,                # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         # The 72 h potency is set by the arrest threshold: once tubulin
         # occupancy passes theta_arrest every dividing cell stalls in M, so
         # the death rate barely moves the IC50. What does move it is how
@@ -256,7 +256,7 @@ DRUGS: dict[str, Drug] = {
     # points that scripts/validate_gdsc.py replaces.
     "etoposide": Drug(
         "etoposide", "topo2",
-        k_damage_per_uM_h=0.001,      # PROVISIONAL, refitted on GDSC1
+        k_damage_per_uM_h=0.01022,      # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         s_phase_factor=3.0,           # TopII poison, as doxorubicin
         pgp_substrate=True,           # MDR1 substrate
         tau_uptake_h=0.5, partition=1.0, accumulation_ratio=2.0,
@@ -265,7 +265,7 @@ DRUGS: dict[str, Drug] = {
                "Nat Rev Cancer 9:338); P-glycoprotein substrate"),
     "sn-38": Drug(
         "sn-38", "s_phase",
-        k_damage_per_uM_h=0.01,       # PROVISIONAL, refitted on GDSC2
+        k_damage_per_uM_h=2.194,        # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         tau_uptake_h=0.3, partition=1.0, accumulation_ratio=5.0,
         fit_target="k_damage_per_uM_h",
         source="Active metabolite of irinotecan; TOP1 cleavage complexes become DSBs when "
@@ -273,7 +273,7 @@ DRUGS: dict[str, Drug] = {
                "Effluxed mainly by ABCG2, not modelled"),
     "gemcitabine": Drug(
         "gemcitabine", "s_phase",
-        k_damage_per_uM_h=0.01,       # PROVISIONAL, refitted on GDSC2
+        k_damage_per_uM_h=1.308,        # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         tau_uptake_h=1.0,             # nucleoside transport + dCK phosphorylation
         partition=1.0, accumulation_ratio=10.0,
         fit_target="k_damage_per_uM_h",
@@ -282,7 +282,7 @@ DRUGS: dict[str, Drug] = {
                "modelled; the fitted constant absorbs them"),
     "5-fluorouracil": Drug(
         "5-fluorouracil", "s_phase",
-        k_damage_per_uM_h=0.0005,     # PROVISIONAL, refitted on GDSC2
+        k_damage_per_uM_h=0.003241,     # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
         tau_uptake_h=0.5, partition=1.0, accumulation_ratio=1.0,
         fit_target="k_damage_per_uM_h",
         source="FdUMP inhibits thymidylate synthase, starving DNA synthesis (Longley 2003 Nat "
@@ -293,7 +293,7 @@ DRUGS: dict[str, Drug] = {
         Kd_tubulin_uM=0.005,          # ~2x paclitaxel's microtubule affinity (Diaz & Andreu 1993)
         theta_arrest=0.3, k_mitotic_death_per_h=0.3,
         pgp_substrate=True, tau_uptake_h=0.2, tau_efflux_h=24.0,
-        partition=0.2,                # PROVISIONAL, refitted on GDSC2
+        partition=0.274,                # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         accumulation_ratio=100.0,
         fit_target="partition",
         source="Taxane microtubule stabiliser, mechanism as paclitaxel with higher affinity "
@@ -303,7 +303,7 @@ DRUGS: dict[str, Drug] = {
         Kd_tubulin_uM=0.01,           # high-affinity binding at microtubule ends, order of magnitude
         theta_arrest=0.3, k_mitotic_death_per_h=0.3,
         pgp_substrate=True, tau_uptake_h=0.2,
-        partition=0.2,                # PROVISIONAL, refitted on GDSC2
+        partition=0.3015,               # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         accumulation_ratio=50.0,
         fit_target="partition",
         source="Vinca alkaloid: suppresses microtubule dynamics at low nM and arrests cells "
@@ -313,7 +313,19 @@ DRUGS: dict[str, Drug] = {
         "nutlin-3a", "mdm2",
         Kd_target_uM=0.09,            # IC50 90 nM for the MDM2-p53 interaction (Vassilev 2004)
         tau_uptake_h=0.3,
-        partition=1.0,                # PROVISIONAL, refitted on GDSC2
+        # NOT effluxed in effect, although P-gp does transport it. The same
+        # study that found nutlin-3 is a P-gp substrate found it BLOCKS the
+        # pump at concentrations that do not touch viability — vincristine
+        # IC50s fell 92- to 3,434-fold in P-gp-overexpressing lines
+        # (Michaelis et al. 2009 Cancer Res 69:416) — so at its active dose
+        # it disables its own efflux, and this engine's pump has no
+        # self-inhibition to express that. Flagging it a substrate was
+        # tried: U-2-OS (ABCB1 5.2x) went from 5.8 to 13.4 uM against
+        # GDSC1's 2.5 uM. The structure rule in cellsim.cell.compound calls
+        # it a substrate, which is right about transport and wrong about
+        # its consequence.
+        pgp_substrate=False,
+        partition=0.01596,              # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         accumulation_ratio=5.0,
         fit_target="partition",
         source="Occupies MDM2's p53 pocket, stabilising wild-type p53 without DNA damage "
