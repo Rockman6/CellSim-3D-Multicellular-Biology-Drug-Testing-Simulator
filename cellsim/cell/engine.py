@@ -419,9 +419,29 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     # Production is scaled, decay is not: a knockout (factor 0) lets
     # whatever is present decay away with nothing replacing it, which is
     # what losing the gene does. An overexpression scales production up.
+    #
+    # A drug designed to block or boost one species ('target', from the
+    # Lab's design mode) acts the same way, scaled by how much of it is
+    # bound: fully occupied, a blocker with effect 1 is a knockout of that
+    # species and a booster with effect 3 is a three-fold overexpression.
+    mult = np.ones(Y.shape[1])
     sf = aux.get("state_factor")
     if sf is not None:
-        dY = np.where(dY > 0, dY * sf[None, :], dY)
+        # sized for one drug slot; a combination has more Cin columns
+        mult[:len(sf)] = sf[:Y.shape[1]]
+    per_cell = None
+    for i, dg in enumerate(drugs):
+        if dg.mechanism == "target" and dg.target_species in IX:
+            ci = Cin_all[i]
+            occ = ci / (ci + dg.Kd_target_uM)
+            f = (1.0 - dg.target_effect * occ if dg.target_mode == "block"
+                 else 1.0 + (dg.target_effect - 1.0) * occ)
+            if per_cell is None:
+                per_cell = np.ones_like(Y)
+            per_cell[:, IX[dg.target_species]] *= np.maximum(f, 0.0)
+    if sf is not None or per_cell is not None:
+        m = mult[None, :] if per_cell is None else per_cell * mult[None, :]
+        dY = np.where(dY > 0, dY * m, dY)
     return dY
 
 
