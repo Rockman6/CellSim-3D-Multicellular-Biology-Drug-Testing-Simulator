@@ -182,6 +182,23 @@ class Params:
     # p53-only model and over a constant-IC50 null.
     p73_gain: float = 0.1
     p73_atm_on: float = 0.5
+    # How much of p53's pro-apoptotic transactivation survives WITHOUT
+    # damage signalling. p53 raised by DNA damage carries kinase marks
+    # (Ser46 among them) that steer it to its apoptotic genes (Oda et al.
+    # 2000 Cell 102:849); p53 raised by blocking MDM2 lacks them, and in
+    # most p53 wild-type lines it arrests the cycle but rarely kills
+    # (Tovar et al. 2006 PNAS 103:1888: 7.6 % of A549 and 8.8 % of HCT116
+    # cells annexin-positive after 72 h of nutlin-3, against 88 % of the
+    # MDM2-amplified SJSA-1). The same HCT116 cells die in half when p53
+    # rises after cisplatin (Paek et al. 2016 Cell 165:631), so the gate
+    # is on the route, not on the line. The damage signal is the ATM
+    # activity above `p73_atm_on`, the same one that engages p73.
+    # FITTED to Tovar's 72-h A549 / HCT116 fractions
+    # (scripts/fit_p53_damage_gate.py): 0.3 gives 12 % and 9 % dead at
+    # 10 uM, against 7.6 % and 8.8 %. That assumes Tovar's dose was 10 uM
+    # of the active enantiomer; if it was racemic nutlin-3 (5 uM active)
+    # the same fit gives 0.6. 1.0 restores the ungated model.
+    p53_apoptosis_damage_free: float = 0.3
     # Cell-to-cell variability of cycle duration: each cell's interphase
     # time is scaled by a log-normal factor of mean 1 and this coefficient
     # of variation. Real cycles vary: HeLa in the Cell Tracking Challenge
@@ -354,8 +371,9 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     dY[:, 11] = np.where(np.isnan(forced), dD, 0.0)
 
     # ── apoptosis ──
-    p53_act = np.clip((p53 - p.p53_act_lo) / (p.p53_act_hi - p.p53_act_lo), 0, 1) * f53
     p73_act = np.clip((ATM - p.p73_atm_on) / (1.0 - p.p73_atm_on), 0, 1)
+    gate = p.p53_apoptosis_damage_free + (1.0 - p.p53_apoptosis_damage_free) * p73_act
+    p53_act = np.clip((p53 - p.p53_act_lo) / (p.p53_act_hi - p.p53_act_lo), 0, 1) * f53 * gate
     dY[:, 12] = p.puma_k_on * (p53_act + p.p73_gain * p73_act) - p.puma_k_off * Puma
     mit_drive = np.zeros(len(Y))
     if any(dg.mechanism == "tubulin" for dg in drugs):

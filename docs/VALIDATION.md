@@ -960,23 +960,27 @@ express is covered and each has GDSC screens on our lines. Each carries
 exactly one fitted constant, fitted on the clean TP53 wild-type lines and
 applied unchanged everywhere else (`scripts/validate_gdsc.py`).
 
+Refitted in 1.5.1 under the p53 damage gate; before that, seven of these
+constants existed only in the fit and not in the library users ran
+(see *What watching a single cell revealed*).
+
 | Drug | Mechanism | Fitted | In GDSC span | Sensitive/resistant call | Spearman |
 |---|---|---|:-:|:-:|:-:|
-| cisplatin | DNA adduct | `k_damage` 0.00118 | 8/11 | 6/11 | −0.03 |
-| doxorubicin | TopII | `k_damage` 0.0175 | 9/11 | 11/11 | 0.58 |
-| etoposide | TopII | `k_damage` 0.00958 | 6/10 | 10/10 | 0.41 |
-| sn-38 | TOP1, S phase | `k_damage` 2.07 | 8/11 | 11/11 | −0.19 |
-| gemcitabine | antimetabolite | `k_damage` 1.23 | 10/11 | 10/11 | 0.72 |
-| 5-fluorouracil | antimetabolite | `k_damage` 0.00313 | 9/11 | 6/11 | 0.94 |
-| paclitaxel | tubulin | `partition` 0.212 | 9/11 | 10/11 | −0.06 |
-| docetaxel | tubulin | `partition` 0.274 | 7/11 | 11/11 | 0.03 |
-| vinorelbine | tubulin | `partition` 0.302 | 7/11 | 10/11 | 0.44 |
-| **nutlin-3a** | **MDM2** | `partition` 0.013 | **11/11** | **11/11** (null 5/11) | −0.30 |
+| cisplatin | DNA adduct | `k_damage` 0.00127 | 8/11 | 6/11 | −0.26 |
+| doxorubicin | TopII | `k_damage` 0.0186 | 9/11 | 11/11 | 0.58 |
+| etoposide | TopII | `k_damage` 0.0102 | 6/10 | 10/10 | 0.54 |
+| sn-38 | TOP1, S phase | `k_damage` 2.19 | 8/11 | 11/11 | −0.24 |
+| gemcitabine | antimetabolite | `k_damage` 1.31 | 10/11 | 10/11 | 0.64 |
+| 5-fluorouracil | antimetabolite | `k_damage` 0.00324 | 9/11 | 6/11 | 0.94 |
+| paclitaxel | tubulin | `partition` 0.215 | 11/11 | 10/11 | 0.06 |
+| docetaxel | tubulin | `partition` 0.274 | 7/11 | 11/11 | 0.00 |
+| vinorelbine | tubulin | `partition` 0.301 | 7/11 | 10/11 | 0.50 |
+| **nutlin-3a** | **MDM2** | `partition` 0.016 | **11/11** | **11/11** (null 5/11) | −0.70 |
 
 **The Phase-1 conclusion survives the larger panel, and is now much
 better measured.** On held-out lines the engine is closer than a
-constant-IC50 null on 32 and further on 41 (sign test p = 0.35), and
-lands inside GDSC's replicate span 67 times against the null's 68. Ten
+constant-IC50 null on 31 and further on 42 (sign test p = 0.24), and
+lands inside GDSC's replicate span 69 times against the null's 68. Ten
 drugs and 91 predictions say the same thing three drugs and 25 said:
 **the engine reproduces each drug's potency scale and does not rank cell
 lines better than a single number.** That is now a result rather than a
@@ -1541,6 +1545,126 @@ the paclitaxel death rate was wrong for a month. Until then the Lab shows
 a *Known limitation* note on both drugs, beside the explanation the viewer
 is already reading, rather than letting a wrong timeline pass as a true
 one.
+
+### Follow-up: what the two faults actually were
+
+Looking for the measured time courses turned up three things, and the
+first was not a modelling question at all.
+
+**1. Seven of the ten drugs were running placeholder constants.** The
+GDSC fit (`scripts/validate_gdsc.py`) writes each drug's fitted constant
+to `benchmarks/cell/gdsc_validation_summary.json`, and every score on
+this page is computed with those. Everything a user runs — the Lab, the
+CLI, `cellsim.api` — reads `cellsim/cell/library.py`, and only cisplatin,
+doxorubicin and paclitaxel had ever been copied across. The other seven
+carried the provisional values they were added with:
+
+| Drug | Field | Library | Fitted | Library ÷ fitted |
+|---|---|--:|--:|--:|
+| nutlin-3a | `partition` | 1.0 | 0.013 | **77×** too potent |
+| sn-38 | `k_damage` | 0.01 | 2.07 | 1/207 |
+| gemcitabine | `k_damage` | 0.01 | 1.23 | 1/123 |
+| etoposide | `k_damage` | 0.001 | 0.0096 | 1/10 |
+| 5-fluorouracil | `k_damage` | 0.0005 | 0.0031 | 1/6 |
+| vinorelbine | `partition` | 0.2 | 0.30 | 1/1.5 |
+| docetaxel | `partition` | 0.2 | 0.27 | 1/1.4 |
+
+With the library's nutlin, A549's IC50 is 0.063 µM; GDSC measures 4.2
+and 6.9 µM. That alone is most of "nutlin is too fast": at the fitted
+constant p53 rises 2.9-fold rather than 22-fold and the median death
+moves from 6 h to 40 h. It is also what made 2 and 10 µM look identical —
+the explanation given above, that both doses saturate MDM2, was wrong;
+at the library constant *every* dose did. The validation page graded the
+right numbers while the product ran the wrong ones, and nothing tied the
+two together. `tests/cell/test_library_constants_smoke.py` now does: it
+fails when a library constant differs from its fit by more than 2 %, and
+when engine parameters have changed since the fit was made.
+
+**2. p53 killed without DNA damage, and it should not.** At the right
+constant nutlin still killed 75 % of A549 and HCT116 cells by 72 h.
+Measured, it kills few of them:
+
+| | Measured | Source |
+|---|---|---|
+| A549, 72 h nutlin-3 | 7.6 ± 1.1 % annexin-positive | Tovar et al. 2006 PNAS 103:1888 |
+| HCT116, 72 h nutlin-3 | 8.8 ± 2.1 % | Tovar 2006 |
+| SJSA-1 (MDM2 amplified), 72 h | 88 % | Tovar 2006 |
+| HCT116 and U2OS, 24 h nutlin 5 µM | arrested in G1 and G2, alive | Shen et al. 2008 Cancer Res 68:8260 |
+| A549, 5-25 µM nutlin-3 | "limited" apoptosis, attributed to the missing damage signal | Deben et al. 2015 Oncotarget 6:22666 |
+| HCT116, cisplatin at its IC50 | about half the cells die, spread over 72 h | Paek et al. 2016 Cell 165:631 |
+
+The last row is the one that decides the mechanism. The same HCT116
+cells die in half when p53 rises after cisplatin and rarely when it rises
+after nutlin, so the difference is in *how* p53 was raised, not in the
+line. p53 raised by damage carries kinase marks — Ser46 among them — that
+steer it to its apoptotic genes (Oda et al. 2000 Cell 102:849); p53
+raised by blocking MDM2 lacks them. The engine now gates p53's
+pro-apoptotic activity on the same ATM signal that engages p73
+(`Params.p53_apoptosis_damage_free`): with no damage signal, p53 keeps
+that fraction of its push towards PUMA; with full ATM activity, all of
+it. Arrest through p21 is not gated.
+
+The fraction is the one new fitted number, fitted to Tovar's A549 and
+HCT116 values with nutlin's own constant refitted to GDSC at every step
+(`scripts/fit_p53_damage_gate.py`):
+
+| gate | A549, 10 µM | HCT116, 10 µM | A549, 5 µM | HCT116, 5 µM |
+|--:|--:|--:|--:|--:|
+| 1.0 (ungated) | 69 % | 57 % | 13 % | 14 % |
+| 0.6 | 40 % | 33 % | 8.8 % | 10 % |
+| 0.4 | 23 % | 16 % | 3.9 % | 4.0 % |
+| **0.3** | **12 %** | **8.6 %** | 0.8 % | 1.2 % |
+| 0.2 | 3.1 % | 2.1 % | 0.1 % | 0.1 % |
+
+With the gate at 0.3 and every drug refitted under it, the single-cell
+view reads (A549 and HCT116; traced cells and whole populations):
+
+| | Before | After | Measured |
+|---|---|---|---|
+| nutlin 10 µM, dead by 24 h | 100 % | **0 %** | HCT116 alive and arrested (Shen 2008) |
+| nutlin 10 µM, dead at 72 h, A549 / HCT116 | 100 % / 100 % | **12 % / 8.6 %** | 7.6 % / 8.8 % (Tovar 2006, fitted) |
+| HCT116 phases at 24 h in nutlin | all dead | G1 7, S 4, G2 13 of 24 | G1 and G2 arrest, S emptied (Shen 2008) |
+| nutlin p53 | ×22, doubling in 12 min | ×3.2, doubling in 30 min | — |
+| cisplatin 12.5 µM, HCT116, dead at 72 h | — | **42 %**, deaths spread over 24-72 h | about half, spread over 72 h (Paek 2016, **held out**) |
+
+The last row is the check nothing was fitted to: the gate was fitted on
+nutlin, cisplatin's constant on A549's GDSC IC50, and HCT116's response to
+cisplatin in single cells lands near Paek's.
+
+The GDSC panel did not get worse for it: held-out predictions inside
+the GDSC span 69 of 91 (67 before), sensitive/resistant calls 78 of 91
+(unchanged), nutlin still 11 of 11, paired comparison against the null
+31 : 42 (32 : 41 before, p = 0.24). The Phase-1 conclusion stands as it
+was.
+
+**0.3 assumes Tovar's dose was 10 µM of the active enantiomer.** The
+full text could not be retrieved to confirm it; if it was racemic
+nutlin-3 (half active), the same fit gives 0.6. 0.3 is the choice that
+kills less, agrees with "limited apoptosis" in all three nutlin papers,
+and puts 10 µM — GDSC's top dose — where the measurements are. It is
+fitted, not validated: Tovar is the data it was fitted to.
+
+**3. Cisplatin's p53 was not the fault it was reported as.** "DNA damage
+normally raises p53 several-fold" was written from memory. Measured
+across twelve p53 wild-type lines, DNA breaks raise p53 between 1.25-
+and 5-fold (Stewart-Ornstein & Lahav 2017 Sci Signal 10:eaah6671), with
+HCT116 accumulating steadily and A549 in a broad wave. The engine's 1.5-
+1.7-fold is inside that range, at its low end. The Lab's note now says
+that instead of calling it a limitation.
+
+**A fourth, tried and reverted.** Building drug look-up for the Lab
+(`cellsim/cell/compound.py`), the P-glycoprotein "rule of fours" called
+nutlin-3a a substrate where the library said it was not, and P-gp does
+transport it (Michaelis et al. 2009 Cancer Res 69:416). Flagging it and
+refitting moved U-2-OS — ABCB1 at 5.2 times the panel's typical level —
+from a predicted 5.8 µM to 13.4 µM against GDSC1's 2.5 µM, and nutlin's
+held-out error doubled. The same paper explains why: nutlin-3 also
+*blocks* P-gp, at concentrations that leave viability untouched
+(vincristine IC50s in P-gp-overexpressing lines fell 92- to 3,434-fold),
+so at its active dose it disables its own efflux. The engine's pump has
+no self-inhibition, so "substrate" would have meant "protected", which
+the data says it is not. The flag stays off, and the rule's docstring
+now says what it predicts: transport, not net efflux.
 
 ## GDSC reference data (the Phase-1 validation target)
 

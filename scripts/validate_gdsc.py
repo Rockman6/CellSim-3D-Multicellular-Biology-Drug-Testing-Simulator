@@ -385,6 +385,48 @@ def summarise(rows: list[dict], summary: dict, t_start: float, say) -> dict:
     return summary
 
 
+LIBRARY_PY = REPO_ROOT / "cellsim" / "cell" / "library.py"
+
+
+def write_library(summary: dict, path: Path = LIBRARY_PY) -> list[str]:
+    """Write each drug's fitted constant into cellsim/cell/library.py.
+
+    The fit used to stop at the summary JSON, and the library's
+    "PROVISIONAL, refitted on GDSC2" comments read as if something carried
+    the values across. Nothing did: for a month seven of ten drugs ran
+    their placeholders everywhere a user could reach them. This rewrites
+    only the one `fit_target=<number>` line inside each drug's entry,
+    with a comment saying where the number came from."""
+    import re
+    text = path.read_text()
+    changed = []
+    for name, d in summary["drugs"].items():
+        gain = d.get("gain")
+        if not gain or not math.isfinite(gain):
+            continue
+        start = text.find(f'    "{name}": Drug(')
+        if start < 0:
+            raise KeyError(f"{name} not found in {path.name}")
+        nxt = re.compile(r'\n    "[^"]+": Drug\(|\n}').search(text, start + 1)
+        end = nxt.start() if nxt else len(text)
+        block = text[start:end]
+        field = d["fit_target"]
+        line_rx = re.compile(rf"^(\s+){field}=[0-9.eE+-]+,.*$", re.M)
+        m = line_rx.search(block)
+        if not m:
+            raise KeyError(f"{name}: no '{field}=' line to update")
+        on = " + ".join(d.get("fit_on") or []) or "?"
+        value = f"{gain:.4g}"
+        new = f"{m.group(1)}{field}={value},"
+        new = new.ljust(38) + f"  # FITTED to GDSC on {on} (scripts/validate_gdsc.py)"
+        if m.group(0) != new:
+            changed.append(f"{name}.{field}: {m.group(0).split('=')[1].split(',')[0]} -> {value}")
+        block = block[:m.start()] + new + block[m.end():]
+        text = text[:start] + block + text[end:]
+    path.write_text(text)
+    return changed
+
+
 # ── main ──────────────────────────────────────────────────────────────
 def _parse_param(text: str) -> tuple[str, float]:
     key, _, val = text.partition("=")
@@ -404,6 +446,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--param", type=_parse_param, action="append", default=[],
                     metavar="NAME=VALUE", help="override an engine parameter (repeatable)")
     ap.add_argument("--no-write", action="store_true", help="do not write the results files")
+    ap.add_argument("--write-library", action="store_true",
+                    help="also write the fitted constants into cellsim/cell/library.py "
+                         "(tests/cell/test_library_constants_smoke.py checks they match)")
     ap.add_argument("--jobs", type=int, default=1,
                     help="drugs fitted in parallel, one per process (same result; "
                          "the ten-drug panel takes ~72 min serially)")
@@ -423,6 +468,12 @@ def main(argv: list[str] | None = None) -> int:
         SUMMARY_JSON.write_text(json.dumps(summary, indent=2, default=float) + "\n")
         print(f"wrote {RESULTS_CSV.relative_to(REPO_ROOT)} and "
               f"{SUMMARY_JSON.relative_to(REPO_ROOT)}")
+    if a.write_library and rows:
+        if len(summary["drugs"]) < len(DRUGS):
+            print("not writing the library from a partial run")
+        else:
+            for c in write_library(summary) or ["library already matched the fit"]:
+                print("library:", c)
     return 0
 
 
