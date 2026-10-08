@@ -121,13 +121,15 @@ function drawMap() {
     el("path", { d: "M5,0 L5,10", stroke: colour, "stroke-width": 3 }, m);
   }
   // zone frames, so the three programmes read as three programmes
-  // the cell-cycle heading sits left: the drug's arrow enters that zone on the right
-  const frames = [["damage response", 30, 125, 625, 245, "end"], ["cell cycle", 30, 405, 640, 125, "start"],
-                  ["death", 690, 30, 270, 545, "end"]];
-  for (const [lab, x, y, w, h, side] of frames) {
+  // The cell-cycle heading sits at the zone's bottom edge: drug arrows enter
+  // that zone from above, at either end (cyclin D on the left, cyclin B on
+  // the right), and a heading in a top corner was crossed by one or the other.
+  const frames = [["damage response", 30, 125, 625, 245, "top"], ["cell cycle", 30, 405, 640, 142, "bottom"],
+                  ["death", 690, 30, 270, 545, "top"]];
+  for (const [lab, x, y, w, h, edge] of frames) {
     el("rect", { class: "zone", x, y, width: w, height: h, rx: 10 }, svg);
-    el("text", { class: "zone-label", x: side === "end" ? x + w - 12 : x + 12, y: y + 18,
-                 "text-anchor": side }, svg).textContent = lab;
+    el("text", { class: "zone-label", x: x + w - 12, y: edge === "top" ? y + 18 : y + h - 9,
+                 "text-anchor": "end" }, svg).textContent = lab;
   }
   const edgeLayer = el("g", {}, svg);
   for (const [a, b, kind] of EDGES) drawEdge(edgeLayer, a, b, kind);
