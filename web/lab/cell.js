@@ -454,6 +454,9 @@ json.dumps({"c": c and c.__dict__, "notes": t.notes, "pgp": t.pgp_substrate})`))
         <div class="from">Not calibrated: borrowed from ${esc(py.c.reference)}, which works the
           same way. Drugs of one class can differ a hundred-fold in strength.</div>
         <button class="use primary" data-custom="1">Use ${esc(r.name)}</button>`;
+    } else if (r.chemblError) {
+      html += `<div class="verdict no"><b>ChEMBL did not answer</b> (${esc(r.chemblError)}),
+        so what this drug targets is unknown for now. Try the look-up again in a moment.</div>`;
     } else if (texts.length) {
       html += `<div class="verdict no"><b>Not something the engine models yet.</b> ChEMBL says:
         ${texts.map((t) => "“" + esc(t) + "”").join(", ")}. Running it as anything else
