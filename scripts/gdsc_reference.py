@@ -42,7 +42,7 @@ DRUG_ALIASES = {"cisplatin": "Cisplatin", "doxorubicin": "Doxorubicin",
                 "paclitaxel": "Paclitaxel", "etoposide": "Etoposide", "sn-38": "SN-38",
                 "gemcitabine": "Gemcitabine", "5-fluorouracil": "5-Fluorouracil",
                 "docetaxel": "Docetaxel", "vinorelbine": "Vinorelbine",
-                "nutlin-3a": "Nutlin-3a (-)"}
+                "nutlin-3a": "Nutlin-3a (-)", "palbociclib": "Palbociclib"}
 # GDSC2 exposes cells to drug for 72 h before the CellTiter-Glo readout.
 GDSC_ASSAY_HOURS = 72.0
 

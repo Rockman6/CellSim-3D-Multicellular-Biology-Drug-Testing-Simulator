@@ -39,6 +39,7 @@ CHEMBL = {
     "docetaxel": ["Tubulin inhibitor", "Tubulin stabiliser"],
     "vinorelbine": ["Tubulin inhibitor"],
     "idasanutlin": ["Tumour suppressor p53/oncoprotein Mdm2 inhibitor"],
+    "palbociclib": ["CDK6/cyclin D1 inhibitor", "Cyclin-dependent kinase 4/cyclin D1 inhibitor"],
 }
 
 

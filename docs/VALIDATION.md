@@ -966,13 +966,13 @@ constants existed only in the fit and not in the library users ran
 
 | Drug | Mechanism | Fitted | In GDSC span | Sensitive/resistant call | Spearman |
 |---|---|---|:-:|:-:|:-:|
-| cisplatin | DNA adduct | `k_damage` 0.00127 | 8/11 | 6/11 | −0.26 |
+| cisplatin | DNA adduct | `k_damage` 0.00127 | 8/11 | 5/11 | −0.26 |
 | doxorubicin | TopII | `k_damage` 0.0186 | 9/11 | 11/11 | 0.58 |
 | etoposide | TopII | `k_damage` 0.0102 | 6/10 | 10/10 | 0.54 |
-| sn-38 | TOP1, S phase | `k_damage` 2.19 | 8/11 | 11/11 | −0.24 |
-| gemcitabine | antimetabolite | `k_damage` 1.31 | 10/11 | 10/11 | 0.64 |
-| 5-fluorouracil | antimetabolite | `k_damage` 0.00324 | 9/11 | 6/11 | 0.94 |
-| paclitaxel | tubulin | `partition` 0.215 | 11/11 | 10/11 | 0.06 |
+| sn-38 | TOP1, S phase | `k_damage` 2.19 | 8/11 | 11/11 | −0.09 |
+| gemcitabine | antimetabolite | `k_damage` 1.31 | 10/11 | 10/11 | 0.75 |
+| 5-fluorouracil | antimetabolite | `k_damage` 0.00325 | 9/11 | 6/11 | 0.77 |
+| paclitaxel | tubulin | `partition` 0.214 | 11/11 | 11/11 | 0.06 |
 | docetaxel | tubulin | `partition` 0.274 | 7/11 | 11/11 | 0.00 |
 | vinorelbine | tubulin | `partition` 0.301 | 7/11 | 10/11 | 0.50 |
 | **nutlin-3a** | **MDM2** | `partition` 0.016 | **11/11** | **11/11** (null 5/11) | −0.70 |
@@ -1030,6 +1030,78 @@ including a line whose genotype points the wrong way. That is the case
 for building more mechanism rather than more markers.
 
 Gated by `tests/cell/test_mdm2_p53_smoke.py` (4 gates, 8 s).
+
+## Phase 3b: a CDK4/6 inhibitor, and Rb as the mechanism (October 2026)
+
+Palbociclib blocks cyclin D–CDK4/6, so Rb stays unphosphorylated and the
+cell stops in G1. Where there is no working Rb there is nothing to stop,
+and it "does not inhibit the growth of Rb-deficient cells" (Fry et al.
+2004 Mol Cancer Ther 3:1427; breast lines lacking Rb were fully resistant
+in Finn et al. 2009 Breast Cancer Res 11:R77). It is the second drug,
+after nutlin, whose line-to-line differences are mechanism rather than a
+marker.
+
+Two library lines lack Rb, for different reasons, and the engine now
+knows (`CellLine.rb_functional`): **MDA-MB-468** has lost RB1 (its
+transcript is 4–8× below every other line in DepMap), and **HeLa**'s
+HPV18 E7 binds Rb and cuts its half-life from over 6 h to 2–3 h (Oh et
+al. 2009 Virology 396:118) — the same virus whose E6 makes HeLa resist
+nutlin. Neither line was used in the fit (A549 and MCF7, GDSC1).
+
+| Line | Rb | Engine IC50 | GDSC | |
+|---|---|--:|--:|---|
+| **HeLa** | E7 | **none** | > 30 µM (both screens) | ✓ held out |
+| **MDA-MB-468** | lost | **none** | > 32 µM (both screens) | ✓ held out |
+| A549 | yes | 1.5 µM | 0.68–7.5 µM | fit |
+| MCF7 | yes | 2.6 µM | 1.5 µM | fit |
+| HCT116, HT-29, MDA-MB-231, MIA-PaCa-2 | yes | 1.1–3.7 µM | 1.0–3.0 µM | ✓ held out |
+| HT-1080 | yes | 4.4 µM | 1.2 µM | outside the span |
+| **U-2-OS** | yes | 10.6 µM | 2.0 µM | ✗ called resistant |
+| **T47D** | yes | > 100 µM | 1.2 µM | ✗ called resistant |
+
+**The mechanism calls are right; the values are fragile.** Both Rb-less
+lines are predicted to ignore the drug at any dose and both did, with
+nothing fitted to them. The two misses have identifiable causes:
+
+* **T47D** — at 72 h a cytostatic drug cannot push a count below the
+  cells already committed to divide, and in this engine that floor sits
+  at about half the untreated count (0.47–0.52 in every Rb-positive line
+  at saturating dose: the cells past the restriction point divide once,
+  and some later slip through as cyclin E–CDK2 builds without CDK4/6).
+  An IC50 is the 50 % line, so whether one exists at all turns on a few
+  per cent: MCF7 just crosses it, T47D just does not. GDSC shows the same
+  fragility from the other side — GDSC1 found IC50s of 1–3 µM in most
+  lines, while GDSC2, in the same 72-hour format, called most of them
+  out of range. For a drug that stops cells rather than killing them, a
+  72-hour IC50 is close to the wrong readout, and the engine's floor may
+  also be somewhat high; how deep and how lasting a CDK4/6 arrest is
+  needs time-lapse data before it is tuned.
+* **U-2-OS** — palbociclib is a P-gp substrate (Parrish et al. 2015 JPET
+  355:264; de Gooijer et al. 2015 Int J Cancer 137:2007), flagged before
+  any fit was run, and U-2-OS has the panel's third-highest ABCB1 level
+  (5.2×, after DLD-1 and HeLa).
+  The same line was the one nutlin's P-gp flag broke. Either the line's
+  efflux level is too high for drugs other than the ones it was set
+  from, or the pump is less protective in these cells than the engine's
+  saturable model makes it; one line cannot say which.
+
+Panel totals with palbociclib: held-out span 75/100 (null 75),
+sensitive/resistant calls **86/100** (null 80), paired comparison 31 : 49
+(p = 0.057). The ten drugs before it are unchanged in substance (span
+69/91, calls 79/91 — one better than before, from the Rb correction to
+HeLa and MDA-MB-468 — paired 31 : 42); palbociclib's tight GDSC1 values
+(all 1–3 µM where measured) suit a constant null, and it adds seven of
+those losses.
+
+The RB1 knockout in `cellsim.cell.perturb` now means what the line flag
+means. Rb's ODE variable is the *active*, unphosphorylated fraction and
+its "production" is dephosphorylation, so zeroing it only stopped Rb
+being reactivated: under a CDK4/6 inhibitor nothing phosphorylated it,
+the old Rb stayed active, and the "knockout" arrested like the parent
+line. It now sets `rb_functional=False`, as a TP53 knockout sets
+`p53_functional=False`.
+
+Gated by `tests/cell/test_cdk46_smoke.py` (4 gates).
 
 ## Phase 3: how wrong is a predicted IC50?
 
