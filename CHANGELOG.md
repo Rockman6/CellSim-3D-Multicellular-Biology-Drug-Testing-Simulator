@@ -1,5 +1,22 @@
 # CellSim — Changelog
 
+## 1.7.0 — a CDK4/6 inhibitor, and Rb as the mechanism
+
+**Palbociclib** (`mechanism = "cdk46"`): blocks cyclin D–CDK4/6, so Rb
+stays active and cells stop in G1 — and does nothing where Rb is missing.
+Two library lines now lack it (`CellLine.rb_functional`): MDA-MB-468 (RB1
+lost) and HeLa (HPV18 E7). Both are predicted resistant and both were in
+GDSC, with nothing fitted to them. The values are fragile: at 72 h a
+cytostatic drug's effect floors near half the control count, right on the
+IC50 line, and T47D and U-2-OS are called resistant against GDSC1's ~1–2
+µM (docs/VALIDATION.md).
+
+The **RB1 knockout** now means no Rb (`rb_functional=False`), as the TP53
+knockout means no p53; it used to leave already-active Rb in place.
+
+The look-up recognises CDK4/6 inhibitors, design mode offers the
+mechanism, and the map draws its arrow to cyclin D.
+
 ## 1.6.0 — any drug, and drugs you design
 
 **Inside a cell** takes any drug by name or structure. PubChem supplies

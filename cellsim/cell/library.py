@@ -71,6 +71,12 @@ class CellLine:
     # half quiescent doubles at half the rate its cycling cells divide,
     # so the two must be set together or the population growth moves.
     quiescent_fraction: float = 0.0
+    # Is there a working Rb restriction-point brake? False where RB1 is
+    # lost (MDA-MB-468) or Rb is held off by HPV E7 (HeLa). Then E2F runs
+    # free of cyclin D-CDK4/6, which is what makes CDK4/6 inhibitors fail
+    # there (Fry et al. 2004 Mol Cancer Ther 3:1427: palbociclib "does not
+    # inhibit the growth of Rb-deficient cells").
+    rb_functional: bool = True
     gdsc_name: str = ""              # name in GDSC tables, when it differs
     source: str = ""
 
@@ -80,7 +86,8 @@ class Drug:
     name: str
     # 'dna_adduct' | 'topo2' | 'tubulin' | 's_phase' (damage only while the
     # cell replicates: TOP1 poisons, antimetabolites) | 'mdm2' (blocks
-    # MDM2-mediated p53 degradation) | 'target' (designed: blocks or boosts
+    # MDM2-mediated p53 degradation) | 'cdk46' (blocks cyclin D-CDK4/6, so
+    # Rb stays unphosphorylated) | 'target' (designed: blocks or boosts
     # one species, see target_species below)
     mechanism: str
     k_damage_per_uM_h: float = 0.0   # damage-index gain per µM intracellular per hour (FIT)
@@ -88,7 +95,7 @@ class Drug:
     Kd_tubulin_uM: float = 0.0       # tubulin-site dissociation constant
     theta_arrest: float = 0.3        # tubulin occupancy that blocks anaphase
     k_mitotic_death_per_h: float = 0.0  # Bax drive per hour of mitotic arrest (FIT)
-    Kd_target_uM: float = 0.0        # target affinity for 'mdm2' (MDM2-p53 site)
+    Kd_target_uM: float = 0.0        # target affinity for 'mdm2' / 'cdk46' / 'target' 
     tau_uptake_h: float = 0.1        # passive permeation time constant
     # Time constant for drug LEAVING the cell after the medium is cleared.
     # 0 means "same as tau_uptake_h": a freely diffusing drug, which is
@@ -156,7 +163,7 @@ CELL_LINES: dict[str, CellLine] = {
     # Tracking Challenge movie on both axes, where the 31 h population
     # figure used before matched the counts and made every single-cell
     # cycle 1.6x too slow (docs/VALIDATION.md).
-    "HeLa": CellLine("HeLa", 19.0, True, "cervix", quiescent_fraction=0.50,
+    "HeLa": CellLine("HeLa", 19.0, True, "cervix", quiescent_fraction=0.50, rb_functional=False,
                      efflux_level=9.79, p53_mdm2_independent_deg_per_h=10.0,
                      source="Doubling 1.3 d (Cellosaurus CVCL_0030, PubMed 29156801; DSMZ "
                             "~48 h); the Cell Tracking Challenge HeLa movie's own counts "
@@ -166,7 +173,9 @@ CELL_LINES: dict[str, CellLine] = {
                             "fraction are now set separately, which is what reproduces "
                             "both. TP53 wild-type but degraded by HPV18 E6 independently "
                             "of MDM2 (Hengstermann 2001); the E6 rate holds p53 below its "
-                            "apoptotic threshold even with MDM2 fully blocked"),
+                            "apoptotic threshold even with MDM2 fully blocked. Rb is held off "
+                            "by HPV18 E7, which binds it and cuts its half-life from >6 h to "
+                            "2-3 h (Oh et al. 2009 Virology 396:118), so rb_functional=False"),
 
     # ── Added 2026-10 to test the p53-independent death route against
     # lines that played no part in choosing its parameter. Doubling
@@ -184,8 +193,11 @@ CELL_LINES: dict[str, CellLine] = {
                      efflux_level=0.97,
                      source="ATCC HTB-133 ~32 h; TP53 p.L194F (CVCL_0553)"),
     "MDA-MB-468": CellLine("MDA-MB-468", 38.0, False, "breast (TNBC)",
-                           efflux_level=2.25,
-                           source="TP53 p.R273H (CVCL_0419). Doubling time is poorly "
+                           efflux_level=2.25, rb_functional=False,
+                           source="TP53 p.R273H (CVCL_0419). RB1 lost: Rb-negative and fully "
+                                  "resistant to palbociclib (Finn et al. 2009 Breast Cancer Res "
+                                  "11:R77); RB1 transcript 4-8x below every other line here "
+                                  "(DepMap). Doubling time is poorly "
                                   "agreed: DSMZ 30-40 h, others 40.6 h, NCI-DCTD 62 h; "
                                   "38 h used, uncertainty ~1.6x"),
     "MIA-PaCa-2": CellLine("MIA-PaCa-2", 30.0, False, "pancreas",
@@ -215,7 +227,7 @@ CELL_LINES: dict[str, CellLine] = {
 DRUGS: dict[str, Drug] = {
     "cisplatin": Drug(
         "cisplatin", "dna_adduct",
-        k_damage_per_uM_h=0.001274,     # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
+        k_damage_per_uM_h=0.00127,      # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
         tau_uptake_h=0.5,             # slow uptake (CTR1 + passive), hours
         partition=1.0,
         accumulation_ratio=2.0,       # Pt accumulates only a few-fold over medium (order of magnitude)
@@ -247,7 +259,7 @@ DRUGS: dict[str, Drug] = {
         # leaving the 72 h value where GDSC put it.
         k_mitotic_death_per_h=0.03,
         tau_uptake_h=0.2, tau_efflux_h=24.0,
-        partition=0.215,                # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
+        partition=0.2144,               # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
         # The 72 h potency is set by the arrest threshold: once tubulin
         # occupancy passes theta_arrest every dividing cell stalls in M, so
         # the death rate barely moves the IC50. What does move it is how
@@ -291,7 +303,7 @@ DRUGS: dict[str, Drug] = {
                "modelled; the fitted constant absorbs them"),
     "5-fluorouracil": Drug(
         "5-fluorouracil", "s_phase",
-        k_damage_per_uM_h=0.003241,     # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
+        k_damage_per_uM_h=0.00325,      # FITTED to GDSC on A549 (scripts/validate_gdsc.py)
         tau_uptake_h=0.5, partition=1.0, accumulation_ratio=1.0,
         fit_target="k_damage_per_uM_h",
         source="FdUMP inhibits thymidylate synthase, starving DNA synthesis (Longley 2003 Nat "
@@ -340,6 +352,21 @@ DRUGS: dict[str, Drug] = {
         source="Occupies MDM2's p53 pocket, stabilising wild-type p53 without DNA damage "
                "(Vassilev et al. 2004 Science 303:844). No effect on mutant p53's targets, and "
                "none where p53 is degraded independently of MDM2 (HPV E6)"),
+    "palbociclib": Drug(
+        "palbociclib", "cdk46",
+        Kd_target_uM=0.011,           # IC50 11 nM CDK4/cyclin D1, 16 nM CDK6 (Fry et al. 2004)
+        tau_uptake_h=0.3,
+        # Carried by P-gp: in-cell accumulation (Parrish et al. 2015 JPET
+        # 355:264) and ~115x more brain exposure without the pumps (de
+        # Gooijer et al. 2015 Int J Cancer 137:2007). Set from those papers,
+        # before any fit was looked at.
+        pgp_substrate=True,
+        partition=0.1073,               # FITTED to GDSC on A549 + MCF7 (scripts/validate_gdsc.py)
+        accumulation_ratio=5.0,
+        fit_target="partition",
+        source="Blocks cyclin D-CDK4/6, so Rb is not phosphorylated and cells stop in G1; "
+               "a G1 arrest only, and none where Rb is absent (Fry et al. 2004 Mol Cancer "
+               "Ther 3:1427). Cytostatic: a 72-h count falls because cells stop dividing"),
 }
 
 
