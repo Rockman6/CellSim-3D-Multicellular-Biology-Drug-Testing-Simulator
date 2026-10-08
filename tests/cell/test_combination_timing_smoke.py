@@ -99,7 +99,10 @@ def test_a_cytostatic_antagonises_a_phase_specific_partner():
 
 
 # Engine 72 h IC50 at the design potency above (cellsim.cell.engine.ic50).
-IC50_CIS, IC50_PAC = 13.24, 0.0418
+# Recomputed for 1.5.1: the p53 damage gate moves cisplatin's (12.47 ->
+# 12.78 uM), and both had drifted from the 13.24 / 0.0418 written here
+# earlier. A "matched" dose that is no longer matched tests nothing.
+IC50_CIS, IC50_PAC = 12.78, 0.0387
 
 
 def _ordering_ratio(cis_uM: float, pac_uM: float) -> tuple[float, float]:
