@@ -236,13 +236,22 @@ function drawCell(f) {
 // Known to be wrong, measured, and shown to the viewer rather than hidden.
 // Watching single cells is how these were found: every earlier check looked
 // only at 72 h, where the endpoints are calibrated but the speeds never were.
-const KNOWN = {
-  "nutlin-3a": "Too fast. Here p53 doubles in about 12 minutes and cells die in about " +
-    "5 hours; in real cells p53 builds over several hours and nutlin works over one " +
-    "to two days. The engine's 72-hour outcome is calibrated — its speed is not.",
-  "cisplatin": "p53 rises less than it should. DNA damage normally raises p53 several-fold; " +
-    "here it stays under two-fold, and much of the killing runs through a route that " +
-    "bypasses p53. The timing of death is plausible; the p53 signal is weak.",
+// What the measurements say about a drug, shown beside the explanation the
+// viewer is already reading. "known" is a fault the engine still has;
+// "measured" is what real cells do, for comparison with what is on screen.
+// Both nutlin and cisplatin carried "known" faults until October 2026 —
+// nutlin's was a placeholder constant 77x too potent plus a p53 that killed
+// without damage (docs/VALIDATION.md); cisplatin's turned out to be inside
+// the measured range.
+const NOTES = {
+  "nutlin-3a": ["measured", "In A549 and HCT116, nutlin mostly stops division rather " +
+    "than killing: Tovar et al. (2006) found 7.6 % and 8.8 % of cells dying after 72 hours. " +
+    "The engine is fitted to that. Lines with extra copies of the MDM2 gene, such as SJSA-1 " +
+    "(88 % dying), respond very differently and are not in this library."],
+  "cisplatin": ["measured", "p53 rises about two-fold here. Across twelve cell lines with " +
+    "normal p53, DNA breaks raise it between 1.25- and 5-fold (Stewart-Ornstein & Lahav " +
+    "2017), so this is inside the measured range, at its low end. In single HCT116 cells " +
+    "at a similar dose about half die, spread over three days (Paek et al. 2016)."],
 };
 
 function explain(f) {
@@ -259,6 +268,10 @@ function explain(f) {
     "or to give up and slip back out without dividing.";
   else if (lv("Puma") > 0.5) msg = "p53 has switched on PUMA, the signal that starts the death " +
     "programme. Whether the cell dies now depends on how much protection it has.";
+  else if (lv("p53") > 0.6 && lv("D") < 0.1) msg = "p53 has risen without any DNA damage, " +
+    "because the drug is blocking MDM2, the protein that normally destroys it. p53 raised " +
+    "this way stops division through p21, but it rarely starts the death programme: it lacks " +
+    "the chemical marks that damage puts on it, and those are what point it at PUMA.";
   else if (lv("p53") > 0.6) msg = "p53 has risen — the cell's alarm. It turns on p21 to stop " +
     "division and, if the damage is bad enough, PUMA to start the death programme.";
   else if (lv("D") > 0.4) msg = "The drug is damaging DNA. ATM senses the breaks and starts " +
@@ -269,13 +282,16 @@ function explain(f) {
                S: "Past the gate and copying its DNA. Cyclin A is driving replication.",
                G2: "DNA copied. Cyclin B is building up for the division itself.",
                M: "Dividing — the chromosomes are being pulled into two new cells." }[ph] || "";
-  const warn = KNOWN[S.trace.drug];
+  const note = NOTES[S.trace.drug];
   $("explain").innerHTML = "";
   $("explain").append(msg);
-  if (warn) {
+  if (note) {
+    const [kind, text] = note;
     const w = document.createElement("div");
-    w.className = "known";
-    w.innerHTML = `<b>Known limitation.</b> ${warn}`;
+    w.className = kind;
+    const b = document.createElement("b");
+    b.textContent = kind === "known" ? "Known limitation. " : "What real cells do. ";
+    w.append(b, text);
     $("explain").append(w);
   }
 }
