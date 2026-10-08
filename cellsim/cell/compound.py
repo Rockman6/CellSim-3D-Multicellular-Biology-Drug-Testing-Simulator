@@ -55,6 +55,8 @@ MECHANISM_RULES: tuple[tuple[str, str, str, str], ...] = (
      "starves or corrupts DNA synthesis (an antimetabolite)"),
     (r"\bmdm2\b|p53.{0,20}mdm2|mdm2.{0,20}p53", "mdm2", "nutlin-3a",
      "blocks MDM2, so p53 is no longer destroyed"),
+    (r"cyclin.dependent kinase [46]\b|\bCDK[46]\b", "cdk46", "palbociclib",
+     "blocks cyclin D-CDK4/6, so the cell cannot pass the G1 restriction point"),
     (r"\bDNA (inhibitor|alkylating|cross-?linking)|alkylating agent|cross-?linking agent",
      "dna_adduct", "cisplatin", "binds DNA and damages it directly"),
 )
@@ -163,6 +165,7 @@ ACTIONS = {
     "poison_top2":  ("etoposide",  "poisons topoisomerase II, like etoposide"),
     "freeze":       ("paclitaxel", "freezes the mitotic spindle, like paclitaxel"),
     "block_mdm2":   ("nutlin-3a",  "blocks MDM2 so p53 survives, like nutlin-3a"),
+    "block_cdk46":  ("palbociclib", "blocks CDK4/6 so the cell stops in G1, like palbociclib"),
 }
 # Species a designed drug may block or boost: every one on the map except
 # the drug slot and the damage index (damage has its own actions above).

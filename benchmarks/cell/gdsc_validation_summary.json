@@ -62,33 +62,33 @@
   "drugs": {
     "cisplatin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.0012741157432745454,
+      "gain": 0.0012704241032999964,
       "per_line_gain": {
-        "A549": 0.0012741157432745451
+        "A549": 0.0012704241032999968
       },
       "fit_on": [
         "A549"
       ],
       "spearman_vs_reference": -0.2571428571428572,
       "null_ic50_uM": 9.7673,
-      "log10_rmse_model": 0.5186126818531588,
+      "log10_rmse_model": 0.5204501718991613,
       "log10_rmse_null": 0.4306877970311103,
-      "log10_rmse_model_heldout": 0.5680889991230912,
+      "log10_rmse_model_heldout": 0.569663135677856,
       "log10_rmse_null_heldout": 0.4717948433522912,
       "n_heldout_in_range": 5,
       "pass": 8,
       "null_pass": 8,
       "n": 11,
-      "class_correct": 6,
+      "class_correct": 5,
       "null_class_correct": 6,
       "n_observed_resistant": 5
     },
     "doxorubicin": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.01860566847553842,
+      "gain": 0.018609999999999998,
       "per_line_gain": {
-        "A549": 0.008933913898597523,
-        "MCF7": 0.03874795563856813
+        "A549": 0.008935993773697965,
+        "MCF7": 0.038756976422632136
       },
       "fit_on": [
         "A549",
@@ -96,9 +96,9 @@
       ],
       "spearman_vs_reference": 0.5818181818181819,
       "null_ic50_uM": 0.05742796304794019,
-      "log10_rmse_model": 0.35669809547825687,
+      "log10_rmse_model": 0.35136242678546087,
       "log10_rmse_null": 0.41279074667168153,
-      "log10_rmse_model_heldout": 0.3739516063373422,
+      "log10_rmse_model_heldout": 0.36772581799287873,
       "log10_rmse_null_heldout": 0.43760321576764993,
       "n_heldout_in_range": 9,
       "pass": 9,
@@ -110,10 +110,10 @@
     },
     "paclitaxel": {
       "fit_target": "partition",
-      "gain": 0.21500045378750515,
+      "gain": 0.2143965323465454,
       "per_line_gain": {
-        "A549": 0.5226146310998765,
-        "MCF7": 0.08844986798695093
+        "A549": 0.5211466426583617,
+        "MCF7": 0.08820141841028084
       },
       "fit_on": [
         "A549",
@@ -121,24 +121,24 @@
       ],
       "spearman_vs_reference": 0.06363636363636364,
       "null_ic50_uM": 0.02792310870945425,
-      "log10_rmse_model": 0.3682540093339887,
+      "log10_rmse_model": 0.3667115065763745,
       "log10_rmse_null": 0.34811187088143924,
-      "log10_rmse_model_heldout": 0.36580360593382427,
+      "log10_rmse_model_heldout": 0.36390474231929054,
       "log10_rmse_null_heldout": 0.33930336352508045,
       "n_heldout_in_range": 9,
       "pass": 11,
       "null_pass": 9,
       "n": 11,
-      "class_correct": 10,
+      "class_correct": 11,
       "null_class_correct": 11,
       "n_observed_resistant": 0
     },
     "etoposide": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.01022166125500354,
+      "gain": 0.010220000000000007,
       "per_line_gain": {
-        "A549": 0.010454111055910908,
-        "MCF7": 0.009994380034155531
+        "A549": 0.010423073917557209,
+        "MCF7": 0.01002088259434305
       },
       "fit_on": [
         "A549",
@@ -146,9 +146,9 @@
       ],
       "spearman_vs_reference": 0.5393939393939393,
       "null_ic50_uM": 0.9593118992277746,
-      "log10_rmse_model": 0.4651717471395121,
+      "log10_rmse_model": 0.4589301797391344,
       "log10_rmse_null": 0.5030758538502763,
-      "log10_rmse_model_heldout": 0.5199150460885704,
+      "log10_rmse_model_heldout": 0.512934547064721,
       "log10_rmse_null_heldout": 0.5624525739205628,
       "n_heldout_in_range": 8,
       "pass": 6,
@@ -160,20 +160,20 @@
     },
     "sn-38": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 2.19436361591694,
+      "gain": 2.1939999999999986,
       "per_line_gain": {
-        "A549": 1.64276776309964,
-        "MCF7": 2.931170057643752
+        "A549": 1.6424955490954665,
+        "MCF7": 2.9306843495867594
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": -0.23636363636363636,
+      "spearman_vs_reference": -0.09090909090909091,
       "null_ic50_uM": 0.013423013820692529,
-      "log10_rmse_model": 0.6101950897528071,
+      "log10_rmse_model": 0.5579104447426674,
       "log10_rmse_null": 0.49697337587872115,
-      "log10_rmse_model_heldout": 0.6723908014851204,
+      "log10_rmse_model_heldout": 0.6143805094959016,
       "log10_rmse_null_heldout": 0.5457033321383423,
       "n_heldout_in_range": 9,
       "pass": 8,
@@ -185,20 +185,20 @@
     },
     "gemcitabine": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 1.3082755309933254,
+      "gain": 1.3080000000000014,
       "per_line_gain": {
-        "A549": 1.7673169923777916,
-        "MCF7": 0.9684651210720605
+        "A549": 1.7669447843872785,
+        "MCF7": 0.968261156272225
       },
       "fit_on": [
         "A549",
         "MCF7"
       ],
-      "spearman_vs_reference": 0.6363636363636362,
+      "spearman_vs_reference": 0.7454545454545454,
       "null_ic50_uM": 0.022711168695988663,
-      "log10_rmse_model": 0.1640940524782266,
+      "log10_rmse_model": 0.1659539711388474,
       "log10_rmse_null": 0.2714049671453164,
-      "log10_rmse_model_heldout": 0.17023642903162534,
+      "log10_rmse_model_heldout": 0.17247541815276934,
       "log10_rmse_null_heldout": 0.2977331476213294,
       "n_heldout_in_range": 8,
       "pass": 10,
@@ -210,18 +210,18 @@
     },
     "5-fluorouracil": {
       "fit_target": "k_damage_per_uM_h",
-      "gain": 0.0032414369799324857,
+      "gain": 0.0032501225293778704,
       "per_line_gain": {
-        "A549": 0.003241436979932487
+        "A549": 0.00325012252937787
       },
       "fit_on": [
         "A549"
       ],
-      "spearman_vs_reference": 0.942857142857143,
+      "spearman_vs_reference": 0.7714285714285715,
       "null_ic50_uM": 9.2776,
-      "log10_rmse_model": 0.1953320795236281,
+      "log10_rmse_model": 0.21364818424088244,
       "log10_rmse_null": 0.2667530009354992,
-      "log10_rmse_model_heldout": 0.2130706961822789,
+      "log10_rmse_model_heldout": 0.23402195988914679,
       "log10_rmse_null_heldout": 0.2922132717891392,
       "n_heldout_in_range": 5,
       "pass": 9,
@@ -233,10 +233,10 @@
     },
     "docetaxel": {
       "fit_target": "partition",
-      "gain": 0.273998853543311,
+      "gain": 0.274,
       "per_line_gain": {
-        "A549": 1.1202656283597212,
-        "MCF7": 0.06701568792481225
+        "A549": 1.1202703157370826,
+        "MCF7": 0.06701596832957561
       },
       "fit_on": [
         "A549",
@@ -244,9 +244,9 @@
       ],
       "spearman_vs_reference": 0.0,
       "null_ic50_uM": 0.010827941243526276,
-      "log10_rmse_model": 0.5113607346358123,
+      "log10_rmse_model": 0.5127213016892481,
       "log10_rmse_null": 0.41476544675667815,
-      "log10_rmse_model_heldout": 0.4937769414482049,
+      "log10_rmse_model_heldout": 0.49549836486091087,
       "log10_rmse_null_heldout": 0.3590487718762949,
       "n_heldout_in_range": 9,
       "pass": 7,
@@ -258,10 +258,10 @@
     },
     "vinorelbine": {
       "fit_target": "partition",
-      "gain": 0.3014759358019905,
+      "gain": 0.3014999999999999,
       "per_line_gain": {
-        "A549": 0.38934682390292585,
-        "MCF7": 0.2334364486567548
+        "A549": 0.38937790206855055,
+        "MCF7": 0.23345508185514968
       },
       "fit_on": [
         "A549",
@@ -269,9 +269,9 @@
       ],
       "spearman_vs_reference": 0.5030303030303029,
       "null_ic50_uM": 0.019619285602176125,
-      "log10_rmse_model": 0.41002517424468504,
+      "log10_rmse_model": 0.4084156037913761,
       "log10_rmse_null": 0.4021193855392981,
-      "log10_rmse_model_heldout": 0.4545888188376532,
+      "log10_rmse_model_heldout": 0.4527740292845595,
       "log10_rmse_null_heldout": 0.4465819123665513,
       "n_heldout_in_range": 8,
       "pass": 7,
@@ -283,10 +283,10 @@
     },
     "nutlin-3a": {
       "fit_target": "partition",
-      "gain": 0.015963385442879414,
+      "gain": 0.015960000000000005,
       "per_line_gain": {
-        "A549": 0.017712954850082188,
-        "MCF7": 0.014386627017047482
+        "A549": 0.01770919836640364,
+        "MCF7": 0.014383575965992684
       },
       "fit_on": [
         "A549",
@@ -305,17 +305,42 @@
       "class_correct": 11,
       "null_class_correct": 5,
       "n_observed_resistant": 6
+    },
+    "palbociclib": {
+      "fit_target": "partition",
+      "gain": 0.10734003158673544,
+      "per_line_gain": {
+        "A549": 0.06982229837919397,
+        "MCF7": 0.16501723157934187
+      },
+      "fit_on": [
+        "A549",
+        "MCF7"
+      ],
+      "spearman_vs_reference": -0.7166666666666667,
+      "null_ic50_uM": 1.8280570148822026,
+      "log10_rmse_model": 0.9051796104753508,
+      "log10_rmse_null": 0.16261591901367192,
+      "log10_rmse_model_heldout": 1.0202102595182072,
+      "log10_rmse_null_heldout": 0.17791821296178648,
+      "n_heldout_in_range": 7,
+      "pass": 8,
+      "null_pass": 9,
+      "n": 11,
+      "class_correct": 9,
+      "null_class_correct": 9,
+      "n_observed_resistant": 2
     }
   },
   "paired_vs_null_wins": 31,
-  "paired_vs_null_losses": 42,
-  "paired_vs_null_p": 0.24164472314075197,
+  "paired_vs_null_losses": 49,
+  "paired_vs_null_p": 0.05666442634512114,
   "discriminates_lines": false,
-  "held_out_pass": 69,
-  "held_out_null_pass": 68,
-  "held_out_n": 91,
-  "held_out_class_correct": 78,
-  "held_out_null_class_correct": 73,
+  "held_out_pass": 75,
+  "held_out_null_pass": 75,
+  "held_out_n": 100,
+  "held_out_class_correct": 86,
+  "held_out_null_class_correct": 80,
   "drugs_beating_null_heldout": [
     "doxorubicin",
     "etoposide",
@@ -323,5 +348,5 @@
     "5-fluorouracil"
   ],
   "exit_gate_met": false,
-  "wall_s": 847.9
+  "wall_s": 1876.3
 }

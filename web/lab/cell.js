@@ -84,7 +84,7 @@ function setDrugEdge(mechanism, target, mode) {
   if (!S.drugLayer) return;
   S.drugLayer.innerHTML = "";
   const to = { dna_adduct: ["D", "act"], topo2: ["D", "act"], s_phase: ["D", "act"],
-               mdm2: ["MDM2", "inh"], tubulin: ["CycB", "inh"] }[mechanism]
+               mdm2: ["MDM2", "inh"], tubulin: ["CycB", "inh"], cdk46: ["CycD", "inh"] }[mechanism]
     || (mechanism === "target" && NODES[target] ? [target, mode === "boost" ? "act" : "inh"] : null);
   if (!to) return;
   if (to[0] === "D") { drawEdge(S.drugLayer, "Cin", "D", to[1]); return; }
@@ -284,6 +284,10 @@ const NOTES = {
     "than killing: Tovar et al. (2006) found 7.6 % and 8.8 % of cells dying after 72 hours. " +
     "The engine is fitted to that. Lines with extra copies of the MDM2 gene, such as SJSA-1 " +
     "(88 % dying), respond very differently and are not in this library."],
+  "palbociclib": ["measured", "Palbociclib stops cells in G1 and does not kill them, and " +
+    "it does nothing where Rb is missing (Fry et al. 2004). Here that is HeLa, whose HPV E7 " +
+    "holds Rb off, and MDA-MB-468, which has lost RB1 — the two lines GDSC also found " +
+    "resistant. Cells already past the restriction point divide once more first."],
   "cisplatin": ["measured", "p53 rises about two-fold here. Across twelve cell lines with " +
     "normal p53, DNA breaks raise it between 1.25- and 5-fold (Stewart-Ornstein & Lahav " +
     "2017), so this is inside the measured range, at its low end. In single HCT116 cells " +
