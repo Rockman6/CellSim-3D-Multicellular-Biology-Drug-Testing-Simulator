@@ -1,5 +1,34 @@
 # CellSim — Changelog
 
+## 1.5.1 — seven drugs were running the wrong constants
+
+**Seven of the ten library drugs carried placeholder constants**, not the
+values fitted to GDSC: nutlin-3a 77x too potent, SN-38 and gemcitabine
+over 100x too weak, etoposide 10x, 5-fluorouracil 6x, docetaxel and
+vinorelbine ~1.4x. The validation page scored the fitted values; the Lab,
+CLI and API ran the library's. All ten now carry their fits, and
+`tests/cell/test_library_constants_smoke.py` fails if the two ever differ
+again or if engine parameters change without a refit.
+
+**p53 no longer kills without DNA damage.** In A549 and HCT116 nutlin
+arrests the cycle and kills under 10 % of cells in 72 h (Tovar 2006); the
+engine killed 75 %. p53's push towards apoptosis is now gated by ATM
+activity (`Params.p53_apoptosis_damage_free`, fitted to Tovar), so damage
+and MDM2 blockade raise p53 alike but only damage-raised p53 kills
+readily. Every drug was refitted under it.
+
+**`cellsim.cell.compound`**: drugs the library does not have. Classifies a
+curated mechanism-of-action onto the engine's mechanisms (or refuses it),
+calls P-gp transport from structure, and builds a runnable drug with its
+potency borrowed from a library drug of the same class, labelled
+uncalibrated.
+
+**Inside a cell:** the "known limitation" notes on nutlin and cisplatin
+are replaced by what real cells do — cisplatin's p53 rise was inside the
+measured range all along. Labels no longer have arrows drawn through them.
+
+`scripts/validate_gdsc.py --jobs N` fits drugs in parallel (72 min → ~15).
+
 ## 1.5.0 — engine corrections, four new experiments, a browser Lab
 
 Version 1.4.0 on PyPI predates everything below. The two are different
