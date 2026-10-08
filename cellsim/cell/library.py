@@ -80,7 +80,8 @@ class Drug:
     name: str
     # 'dna_adduct' | 'topo2' | 'tubulin' | 's_phase' (damage only while the
     # cell replicates: TOP1 poisons, antimetabolites) | 'mdm2' (blocks
-    # MDM2-mediated p53 degradation)
+    # MDM2-mediated p53 degradation) | 'target' (designed: blocks or boosts
+    # one species, see target_species below)
     mechanism: str
     k_damage_per_uM_h: float = 0.0   # damage-index gain per µM intracellular per hour (FIT)
     s_phase_factor: float = 1.0      # extra damage in S phase (TopII poisons)
@@ -108,6 +109,14 @@ class Drug:
     accumulation_ratio: float = 1.0
     fit_target: str = ""             # which field is fitted, if any
     source: str = ""
+    # mechanism 'target' — a drug DESIGNED in the Lab to block or boost
+    # one engine species (cellsim.cell.compound.designed). Bound fraction
+    # Cin / (Cin + Kd_target_uM) scales that species' production: a
+    # blocker by (1 - target_effect * bound), a booster up to
+    # target_effect-fold. No library drug uses it; it is a hypothesis tool.
+    target_species: str = ""
+    target_mode: str = "block"       # 'block' | 'boost'
+    target_effect: float = 1.0
 
 
 # `efflux_level` is derived, not fitted: 2^(ABCB1 log2(TPM+1) − panel

@@ -30,6 +30,12 @@
         <select id="line"></select>
         <label for="drug">Drug</label>
         <select id="drug"><option value="">— no drug —</option></select>
+        <label for="q">…or look up any drug or structure</label>
+        <div class="lookup-row">
+          <input id="q" type="text" placeholder="name or SMILES, e.g. topotecan" autocomplete="off" spellcheck="false">
+          <button id="lookup" disabled>Look up</button>
+        </div>
+        <div id="lookup-out" class="lookup-out" hidden></div>
         <label for="conc">Concentration (µM)</label>
         <input type="number" id="conc" value="20" min="0" step="any">
         <label for="exposure">How long the drug is present</label>
@@ -41,8 +47,51 @@
       </div>
     </details>
 
+    <details class="step" id="design-step">
+      <summary><span class="num">2</span> Design your own drug</summary>
+      <div class="step-body">
+        <div class="hint">Say what your drug does and watch the cell. Nothing about it is
+          measured, so the result is your hypothesis played out by the engine, and it is
+          labelled that way.</div>
+        <label for="d-name">Name</label>
+        <input id="d-name" type="text" value="my drug" autocomplete="off">
+        <label for="d-action">What it does</label>
+        <select id="d-action">
+          <option value="block">blocks one molecule…</option>
+          <option value="boost">boosts one molecule…</option>
+          <option value="damage_dna">damages DNA directly (like cisplatin)</option>
+          <option value="damage_s">damages DNA while it is copied (like SN-38)</option>
+          <option value="poison_top2">poisons topoisomerase II (like etoposide)</option>
+          <option value="freeze">freezes the mitotic spindle (like paclitaxel)</option>
+          <option value="block_mdm2">blocks MDM2 so p53 survives (like nutlin-3a)</option>
+        </select>
+        <div id="d-target">
+          <label for="d-species">Which molecule</label>
+          <select id="d-species"></select>
+          <label for="d-kd">How tightly it binds (Kd)</label>
+          <select id="d-kd">
+            <option value="0.01">very tightly — 10 nM</option>
+            <option value="0.1" selected>tightly — 100 nM</option>
+            <option value="1">moderately — 1 µM</option>
+            <option value="10">weakly — 10 µM</option>
+          </select>
+          <label for="d-effect">How much, when fully bound</label>
+          <select id="d-effect"></select>
+        </div>
+        <div id="d-strength-row" hidden>
+          <label for="d-strength">Strength, relative to that drug</label>
+          <select id="d-strength">
+            <option value="0.1">×0.1</option><option value="1" selected>×1</option>
+            <option value="10">×10</option>
+          </select>
+        </div>
+        <div id="d-from" class="hint" hidden></div>
+        <button id="d-use" class="primary" style="width:100%;margin-top:10px" disabled>Use this design</button>
+      </div>
+    </details>
+
     <details class="step" open>
-      <summary><span class="num">2</span> Try one of these</summary>
+      <summary><span class="num">3</span> Try one of these</summary>
       <div class="step-body">
         <button class="preset" data-preset="none"><b>A healthy cell, dividing</b>
           <small>No drug: watch the cyclins cycle and the cell split</small></button>
@@ -56,7 +105,7 @@
     </details>
 
     <details class="step" open>
-      <summary><span class="num">3</span> Which cell to watch</summary>
+      <summary><span class="num">4</span> Which cell to watch</summary>
       <div class="step-body">
         <div id="cellpick" class="cellpick"><span class="hint">Simulate first.</span></div>
         <div class="hint">Each simulated cell starts at a different point in its
@@ -66,7 +115,7 @@
     </details>
 
     <details class="step">
-      <summary><span class="num">4</span> What this does not show</summary>
+      <summary><span class="num">5</span> What this does not show</summary>
       <div class="step-body hint">
         Each circle is one molecular species as the engine tracks it — a single
         normalised level, not individual molecules. The engine follows about
@@ -112,6 +161,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script src="lookup.js"></script>
 <script src="cell.js"></script>
 </body>
 </html>
