@@ -28,11 +28,22 @@ const Lookup = (() => {
     return rdkit;
   }
 
-  async function json(url) {
-    const r = await fetch(url);
-    if (r.status === 404) return null;
-    if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`);
-    return r.json();
+  // Up to three tries: ChEMBL's first request for an item it has not
+  // cached can fail with a server error, and an error response carries no
+  // CORS header, so the browser reports it as a blocked request. Seen on
+  // the live site with both a filter query and a direct look-up; the
+  // second or third try succeeds once ChEMBL has the item cached.
+  const WAITS = [1200, 3000];
+  async function json(url, attempt = 0) {
+    let r = null;
+    try { r = await fetch(url); } catch (e) { r = null; }
+    if (r && r.status === 404) return null;
+    if (r && r.ok) return r.json();
+    if (attempt < WAITS.length) {
+      await new Promise((ok) => setTimeout(ok, WAITS[attempt]));
+      return json(url, attempt + 1);
+    }
+    throw new Error(r ? `${new URL(url).host} answered ${r.status}` : `${new URL(url).host} did not answer`);
   }
 
   // RDKit's own wording, made readable. The atom number is kept: it is
@@ -100,12 +111,9 @@ const Lookup = (() => {
   }
 
   async function chemblMechanisms(inchikey, name) {
-    // a filter query answers an unknown key with an empty list, not a 404
-    let m = null;
-    if (inchikey) {
-      const r = await json(`${CHEMBL}/molecule.json?molecule_structures__standard_inchi_key=${inchikey}&limit=1`);
-      m = r && r.molecules[0];
-    }
+    // The direct lookup by key is cached and fast; the filter query that
+    // would avoid its 404 for unknown keys failed on live requests.
+    let m = inchikey ? await json(`${CHEMBL}/molecule/${inchikey}.json`) : null;
     if (!m && name) {
       // metal complexes (cisplatin) carry different InChIKeys in the two databases
       const r = await json(`${CHEMBL}/molecule.json?pref_name__iexact=${encodeURIComponent(name)}&limit=1`);
@@ -148,11 +156,15 @@ const Lookup = (() => {
         n_plus_o: pc ? countNO(pc.MolecularFormula) : d.lipinskiHBA,
         formula: pc ? pc.MolecularFormula : null,
       };
-      const chembl = pc ? await chemblMechanisms(pc.InChIKey, pc.Title || q) : null;
+      let chembl = null, chemblError = null;
+      if (pc) {
+        try { chembl = await chemblMechanisms(pc.InChIKey, pc.Title || q); }
+        catch (e) { chemblError = String(e.message || e); }
+      }
       return { kind: pc ? "known" : "new", query: q,
                name: pc ? (pc.Title || q) : "your molecule", smiles, svg, props,
                propsFrom: pc ? "PubChem" : "computed from your structure (RDKit)",
-               chembl, from };
+               chembl, chemblError, from };
     } finally {
       mol.delete();
     }
