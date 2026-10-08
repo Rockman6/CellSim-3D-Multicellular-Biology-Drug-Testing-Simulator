@@ -1,5 +1,30 @@
 # CellSim — Changelog
 
+## 1.6.0 — any drug, and drugs you design
+
+**Inside a cell** takes any drug by name or structure. PubChem supplies
+the structure, ChEMBL the curated mechanism, RDKit (in the browser) the
+drawing and the properties of molecules nobody has made. What happens
+next is decided by what is known, and said on screen:
+
+- a library drug runs from the library, calibrated;
+- a drug whose mechanism the engine models runs with its potency borrowed
+  from a library drug of the same class, labelled uncalibrated;
+- any other target is refused by name (gefitinib: "EGFR — not something
+  the engine models yet");
+- an impossible structure is rejected with the atom and the rule it
+  breaks.
+
+**Design mode**: block or boost any molecule on the map, or reuse a
+library mechanism at a chosen strength. A fully bound blocker is exactly a
+knockout and a booster an overexpression (`Drug.mechanism = "target"`,
+tested against `cellsim.cell.perturb`). Shown as a hypothesis.
+
+**Fixed:** the drug's arrow on the map pointed at DNA damage for every
+drug, nutlin and paclitaxel included; it now goes where the drug acts. A
+knockout combined with a two-drug combination crashed on a state-factor
+shape mismatch.
+
 ## 1.5.1 — seven drugs were running the wrong constants
 
 **Seven of the ten library drugs carried placeholder constants**, not the
