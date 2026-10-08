@@ -287,7 +287,9 @@ const NOTES = {
   "palbociclib": ["measured", "Palbociclib stops cells in G1 and does not kill them, and " +
     "it does nothing where Rb is missing (Fry et al. 2004). Here that is HeLa, whose HPV E7 " +
     "holds Rb off, and MDA-MB-468, which has lost RB1 — the two lines GDSC also found " +
-    "resistant. Cells already past the restriction point divide once more first."],
+    "resistant. Cells already past the restriction point divide once more first, and in " +
+    "this engine many slip through again after a day or two as cyclin E builds up without " +
+    "CDK4/6 — which is why its 72-hour effect stops near half the untreated count."],
   "cisplatin": ["measured", "p53 rises about two-fold here. Across twelve cell lines with " +
     "normal p53, DNA breaks raise it between 1.25- and 5-fold (Stewart-Ornstein & Lahav " +
     "2017), so this is inside the measured range, at its low end. In single HCT116 cells " +
