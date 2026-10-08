@@ -37,7 +37,7 @@ from typing import Optional, Sequence
 from cellsim.cell.library import DRUGS, Drug
 
 __all__ = ["Classification", "classify", "transport_from_properties", "Transport",
-           "from_mechanism", "MECHANISM_RULES"]
+           "from_mechanism", "MECHANISM_RULES", "designed", "ACTIONS", "DESIGNABLE"]
 
 # Ordered: the first rule any mechanism text matches wins, so the specific
 # ones come first (doxorubicin is curated as both "DNA inhibitor" and
@@ -151,3 +151,55 @@ def from_mechanism(name: str, classification: Classification, *,
         + (" P-gp status from structure (rule of fours)." if "pgp_substrate" in changes else ""))
     changes["fit_target"] = ref.fit_target
     return dataclasses.replace(ref, **changes)
+
+
+# ── design mode ───────────────────────────────────────────────────────
+# What a designed drug can do. The first five reuse a library drug's
+# whole mechanism (and its fitted potency, times `strength`); 'block' and
+# 'boost' act on any one species through the engine's 'target' mechanism.
+ACTIONS = {
+    "damage_dna":   ("cisplatin",  "damages DNA directly, like cisplatin"),
+    "damage_s":     ("sn-38",      "damages DNA only while it is copied, like SN-38"),
+    "poison_top2":  ("etoposide",  "poisons topoisomerase II, like etoposide"),
+    "freeze":       ("paclitaxel", "freezes the mitotic spindle, like paclitaxel"),
+    "block_mdm2":   ("nutlin-3a",  "blocks MDM2 so p53 survives, like nutlin-3a"),
+}
+# Species a designed drug may block or boost: every one on the map except
+# the drug slot and the damage index (damage has its own actions above).
+DESIGNABLE = ("CycD", "Rb", "E2F", "CycE", "CycA", "CycB", "p21", "ATM", "p53",
+              "MDM2_mRNA", "MDM2", "Puma", "Bax", "MOMP", "CytC", "Smac", "C9", "C3", "Exec")
+
+
+def designed(name: str, action: str, *, species: str = "", kd_uM: float = 0.1,
+             effect: float = 1.0, strength: float = 1.0,
+             transport: Optional[Transport] = None) -> Drug:
+    """A drug that does what the user says it does. Nothing about it is
+    measured: the `source` says so, and the Lab shows it as a hypothesis.
+
+    `action` is a key of ACTIONS, or 'block' / 'boost' with `species` one
+    of DESIGNABLE, `kd_uM` its binding constant and `effect` the fraction
+    blocked (block, 0-1) or the fold reached (boost, > 1) at full binding.
+    """
+    if action in ACTIONS:
+        ref, words = ACTIONS[action]
+        c = Classification(DRUGS[ref].mechanism, ref, words, f"designed: {action}")
+        d = from_mechanism(name, c, strength=strength, transport=transport)
+        return dataclasses.replace(d, source=f"DESIGNED, not measured: {words}; "
+                                             f"strength {ref} x{strength:g}.")
+    if action not in ("block", "boost"):
+        raise ValueError(f"unknown action {action!r}; one of {sorted(ACTIONS) + ['block', 'boost']}")
+    if species not in DESIGNABLE:
+        raise ValueError(f"cannot {action} {species!r}; one of {DESIGNABLE}")
+    if action == "block" and not 0.0 <= effect <= 1.0:
+        raise ValueError("a blocker removes between 0 and all of its target (effect 0-1)")
+    if action == "boost" and effect < 1.0:
+        raise ValueError("a booster multiplies its target (effect >= 1)")
+    if kd_uM <= 0:
+        raise ValueError("kd_uM must be positive")
+    pgp = bool(transport and transport.pgp_substrate)
+    return Drug(name, "target", Kd_target_uM=kd_uM, target_species=species,
+                target_mode=action, target_effect=effect, tau_uptake_h=0.3,
+                partition=1.0, pgp_substrate=pgp,
+                source=f"DESIGNED, not measured: {action}s {species} "
+                       f"({effect:g}{'' if action == 'block' else '-fold'} at full binding, "
+                       f"Kd {kd_uM:g} uM).")

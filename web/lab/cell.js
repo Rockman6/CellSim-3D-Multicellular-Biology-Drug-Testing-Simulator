@@ -45,7 +45,7 @@ const NODES = {
 };
 // [from, to, kind] — "act" pushes the target up, "inh" holds it down
 const EDGES = [
-  ["Cout", "Cin", "act"], ["Cin", "D", "act"], ["D", "ATM", "act"], ["ATM", "p53", "act"],
+  ["Cout", "Cin", "act"], ["D", "ATM", "act"], ["ATM", "p53", "act"],
   ["p53", "MDM2", "act"], ["MDM2", "p53", "inh"], ["p53", "p21", "act"], ["p21", "CycE", "inh"],
   ["CycD", "E2F", "act"], ["E2F", "CycE", "act"], ["CycE", "CycA", "act"], ["CycA", "CycB", "act"],
   ["p53", "Puma", "act"], ["Puma", "Bax", "act"], ["Bax", "MOMP", "act"],
@@ -59,6 +59,51 @@ function el(tag, attrs = {}, parent) {
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   if (parent) parent.appendChild(e);
   return e;
+}
+
+function drawEdge(layer, a, b, kind, bendBy = 0) {
+  const A = NODES[a], B = NODES[b];
+  const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
+  const ux = dx / L, uy = dy / L;
+  // two curved strokes between p53 and MDM2 so the loop reads as a loop
+  const bend = bendBy || ((a === "p53" && b === "MDM2") || (a === "MDM2" && b === "p53") ? 16 : 0);
+  const x1 = A.x + ux * R, y1 = A.y + uy * R, x2 = B.x - ux * (R + 3), y2 = B.y - uy * (R + 3);
+  const mx = (x1 + x2) / 2 - uy * bend, my = (y1 + y2) / 2 + ux * bend;
+  const p = el("path", { class: `edge ${kind === "inh" ? "inhib" : ""}`,
+    d: `M${x1},${y1} Q${mx},${my} ${x2},${y2}`,
+    "marker-end": `url(#${kind === "inh" ? "i" : "a"})` }, layer);
+  p.dataset.from = a; p.dataset.kind = kind;
+  return p;
+}
+
+// Where the drug's arrow goes, by mechanism. It used to point at DNA damage
+// for every drug, which told the viewer that nutlin and paclitaxel damage
+// DNA — neither does. A spindle poison acts in mitosis, so its arrow goes
+// to cyclin B, the division node.
+function setDrugEdge(mechanism, target, mode) {
+  if (!S.drugLayer) return;
+  S.drugLayer.innerHTML = "";
+  const to = { dna_adduct: ["D", "act"], topo2: ["D", "act"], s_phase: ["D", "act"],
+               mdm2: ["MDM2", "inh"], tubulin: ["CycB", "inh"] }[mechanism]
+    || (mechanism === "target" && NODES[target] ? [target, mode === "boost" ? "act" : "inh"] : null);
+  if (!to) return;
+  if (to[0] === "D") { drawEdge(S.drugLayer, "Cin", "D", to[1]); return; }
+  // Anything else is routed along the empty lanes between the zones, so the
+  // arrow never runs through another molecule or its label.
+  const C = NODES.Cin, T = NODES[to[0]], pts = [[C.x + R, C.y - 6]];
+  if (NODES[to[0]].z === "death") {
+    pts.push([140, 110], [672, 110], [672, T.y - 40], [T.x, T.y - 40], [T.x, T.y - R - 3]);
+  } else if (NODES[to[0]].z === "cycle") {
+    pts.push([140, C.y - 6], [140, 388], [T.x, 388], [T.x, T.y - R - 3]);
+  } else if (T.y < 250) {                       // ATM, p53: from above
+    pts.push([140, 150], [T.x, 150], [T.x, T.y - R - 3]);
+  } else {                                      // p21, MDM2: the lane under the row
+    pts.push([140, C.y - 6], [140, 268], [T.x, 268], [T.x, T.y - R - 3]);
+  }
+  const p = el("path", { class: `edge drug ${to[1] === "inh" ? "inhib" : ""}`,
+    d: "M" + pts.map((q) => q.join(",")).join(" L"),
+    "marker-end": `url(#${to[1] === "inh" ? "i" : "a"})` }, S.drugLayer);
+  p.dataset.from = "Cin"; p.dataset.kind = to[1];
 }
 
 function drawMap() {
@@ -76,27 +121,18 @@ function drawMap() {
     el("path", { d: "M5,0 L5,10", stroke: colour, "stroke-width": 3 }, m);
   }
   // zone frames, so the three programmes read as three programmes
-  const frames = [["damage response", 30, 125, 625, 245], ["cell cycle", 30, 405, 640, 125],
-                  ["death", 690, 30, 270, 545]];
-  for (const [lab, x, y, w, h] of frames) {
+  // the cell-cycle heading sits left: the drug's arrow enters that zone on the right
+  const frames = [["damage response", 30, 125, 625, 245, "end"], ["cell cycle", 30, 405, 640, 125, "start"],
+                  ["death", 690, 30, 270, 545, "end"]];
+  for (const [lab, x, y, w, h, side] of frames) {
     el("rect", { class: "zone", x, y, width: w, height: h, rx: 10 }, svg);
-    el("text", { class: "zone-label", x: x + w - 12, y: y + 18, "text-anchor": "end" },
-       svg).textContent = lab;
+    el("text", { class: "zone-label", x: side === "end" ? x + w - 12 : x + 12, y: y + 18,
+                 "text-anchor": side }, svg).textContent = lab;
   }
   const edgeLayer = el("g", {}, svg);
-  for (const [a, b, kind] of EDGES) {
-    const A = NODES[a], B = NODES[b];
-    const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
-    const ux = dx / L, uy = dy / L;
-    // two curved strokes between p53 and MDM2 so the loop reads as a loop
-    const bend = (a === "p53" && b === "MDM2") ? 16 : (a === "MDM2" && b === "p53") ? 16 : 0;
-    const x1 = A.x + ux * R, y1 = A.y + uy * R, x2 = B.x - ux * (R + 3), y2 = B.y - uy * (R + 3);
-    const mx = (x1 + x2) / 2 - uy * bend, my = (y1 + y2) / 2 + ux * bend;
-    const p = el("path", { class: `edge ${kind === "inh" ? "inhib" : ""}`,
-      d: `M${x1},${y1} Q${mx},${my} ${x2},${y2}`,
-      "marker-end": `url(#${kind === "inh" ? "i" : "a"})` }, edgeLayer);
-    p.dataset.from = a; p.dataset.kind = kind;
-  }
+  for (const [a, b, kind] of EDGES) drawEdge(edgeLayer, a, b, kind);
+  S.drugLayer = el("g", {}, svg);
+  setDrugEdge("dna_adduct");
   for (const [key, n] of Object.entries(NODES)) {
     const g = el("g", { class: "node", transform: `translate(${n.x},${n.y})` }, svg);
     g.dataset.key = key;
@@ -276,21 +312,22 @@ function explain(f) {
     "division and, if the damage is bad enough, PUMA to start the death programme.";
   else if (lv("D") > 0.4) msg = "The drug is damaging DNA. ATM senses the breaks and starts " +
     "raising p53.";
-  else if (lv("Cin") > 0.4) msg = "The drug has crossed into the cell and is building up.";
+  else if (lv("Cin") > 0.4) msg = "The drug is inside the cell.";
   else msg = { G1: "Growing and preparing. Cyclin D is pushing the cell toward the gate " +
                    "(Rb/E2F) where it commits to dividing.",
                S: "Past the gate and copying its DNA. Cyclin A is driving replication.",
                G2: "DNA copied. Cyclin B is building up for the division itself.",
                M: "Dividing — the chromosomes are being pulled into two new cells." }[ph] || "";
-  const note = NOTES[S.trace.drug];
+  const note = NOTES[S.trace.drug] || S.trace.customNote;
   $("explain").innerHTML = "";
   $("explain").append(msg);
   if (note) {
     const [kind, text] = note;
     const w = document.createElement("div");
-    w.className = kind;
+    w.className = kind === "measured" ? "measured" : "known";
     const b = document.createElement("b");
-    b.textContent = kind === "known" ? "Known limitation. " : "What real cells do. ";
+    b.textContent = { known: "Known limitation. ", measured: "What real cells do. ",
+                      design: "Your hypothesis. ", uncal: "Not calibrated. " }[kind];
     w.append(b, text);
     $("explain").append(w);
   }
@@ -353,6 +390,165 @@ function play(on) {
   }, 80);
 }
 
+/* ── any drug: look-up ─────────────────────────────────────────── */
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ALIASES = { "fluorouracil": "5-fluorouracil", "5-fu": "5-fluorouracil",
+                  "sn38": "sn-38", "nutlin-3": "nutlin-3a", "nutlin": "nutlin-3a" };
+
+// A drug the library already has is used from the library: that one is
+// calibrated, a looked-up copy of it would not be.
+function libraryName(...names) {
+  const lib = [...$("drug").options].map((o) => o.value).filter((v) => v && v !== "__custom__");
+  for (const n of names) {
+    if (!n) continue;
+    const k = n.trim().toLowerCase();
+    const hit = lib.find((x) => x.toLowerCase() === k) || ALIASES[k];
+    if (hit && lib.includes(hit)) return hit;
+  }
+  return null;
+}
+
+async function doLookup() {
+  const out = $("lookup-out");
+  out.hidden = false;
+  out.innerHTML = `<span class="hint">Looking it up…</span>`;
+  $("lookup").disabled = true;
+  try {
+    const r = await Lookup.lookup($("q").value);
+    if (r.kind === "empty") { out.hidden = true; return; }
+    if (r.kind === "invalid") {
+      out.innerHTML = `<div class="verdict bad"><b>This cannot exist as written.</b></div>
+        <div>${esc(r.error)}</div>`;
+      return;
+    }
+    const lib = r.kind === "known" ? libraryName(r.query, r.name) : null;
+    const texts = (r.chembl && r.chembl.texts) || [];
+    const p = r.props;
+    const py = JSON.parse(await S.py.runPythonAsync(`
+import json
+from cellsim.cell.compound import classify, transport_from_properties
+a = json.loads(${JSON.stringify(JSON.stringify({ texts, p }))})
+c = classify(a["texts"])
+t = transport_from_properties(mw=a["p"]["mw"], tpsa=a["p"]["tpsa"], logp=a["p"]["logp"],
+                              n_plus_o=a["p"]["n_plus_o"])
+json.dumps({"c": c and c.__dict__, "notes": t.notes, "pgp": t.pgp_substrate})`));
+    const num = (v, d = 1) => (v == null || isNaN(v) ? "–" : Number(v).toFixed(d));
+    let html = `<span class="mol">${r.svg}</span>
+      <h5>${esc(r.name)}</h5>
+      <div class="props">${p.formula ? esc(p.formula) + " · " : ""}MW ${num(p.mw, 0)} · logP ${num(p.logp)}
+        · polar surface ${num(p.tpsa, 0)} Å²</div>
+      <div class="from">${esc(r.propsFrom)}${r.chembl ? ` · ChEMBL ${esc(r.chembl.id)}` : ""}</div>`;
+    S.found = null;
+    if (lib) {
+      html += `<div class="verdict">In the library, with its strength fitted to measured
+        GDSC data.</div><button class="use primary" data-lib="${esc(lib)}">Use ${esc(lib)}</button>`;
+    } else if (py.c) {
+      S.found = { name: r.name, texts, p, ref: py.c.reference };
+      html += `<div class="verdict"><b>What it does:</b> ${esc(py.c.words)}
+          <div class="from">ChEMBL: “${esc(py.c.matched)}”</div></div>
+        <div class="strength">Strength
+          <select id="strength">${[0.01, 0.1, 1, 10, 100].map((s) =>
+            `<option value="${s}"${s === 1 ? " selected" : ""}>×${s} of ${esc(py.c.reference)}</option>`).join("")}
+          </select></div>
+        <div class="from">Not calibrated: borrowed from ${esc(py.c.reference)}, which works the
+          same way. Drugs of one class can differ a hundred-fold in strength.</div>
+        <button class="use primary" data-custom="1">Use ${esc(r.name)}</button>`;
+    } else if (texts.length) {
+      html += `<div class="verdict no"><b>Not something the engine models yet.</b> ChEMBL says:
+        ${texts.map((t) => "“" + esc(t) + "”").join(", ")}. Running it as anything else
+        would show a mechanism this drug does not have.</div>`;
+    } else if (r.kind === "known") {
+      html += `<div class="verdict no"><b>No recorded target.</b> PubChem knows this compound,
+        but no curated record says what it binds, so there is nothing to wire it to.</div>`;
+    } else {
+      html += `<div class="verdict no"><b>A molecule nobody has recorded.</b> Its properties
+        above are computed from your structure. What it would bind cannot be computed
+        reliably from structure, so it cannot be run as a drug.</div>`;
+    }
+    if (py.notes.length) html += `<ul>${py.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`;
+    if (!lib && !py.c) html += `<button class="to-design" data-design="1">Design what it does →</button>`;
+    out.innerHTML = html;
+    const des = out.querySelector("button[data-design]");
+    if (des) des.onclick = () => designFromLookup(r.kind === "new" ? "your molecule" : r.name, py.pgp);
+    const use = out.querySelector("button.use");
+    if (use) use.onclick = () => useFound(use.dataset.lib || null);
+  } catch (e) {
+    out.innerHTML = `<div class="verdict bad">The look-up did not complete:
+      ${esc(String(e).slice(0, 200))}</div>`;
+  } finally {
+    $("lookup").disabled = false;
+  }
+}
+
+function useFound(lib) {
+  const sel = $("drug");
+  if (lib) { sel.value = lib; return; }
+  S.custom = { ...S.found, strength: Number($("strength").value) };
+  let opt = [...sel.options].find((o) => o.value === "__custom__");
+  if (!opt) { opt = new Option("", "__custom__"); sel.add(opt); }
+  opt.text = `${S.custom.name} (looked up, uncalibrated)`;
+  sel.value = "__custom__";
+}
+
+/* ── design mode ───────────────────────────────────────────────── */
+// The molecules a design may block or boost (cellsim.cell.compound.DESIGNABLE):
+// everything on the map except the drug itself and the damage index.
+const DESIGNABLE = ["CycD", "Rb", "E2F", "CycE", "CycA", "CycB", "p21", "ATM", "p53",
+  "MDM2_mRNA", "MDM2", "Puma", "Bax", "MOMP", "CytC", "Smac", "C9", "C3", "Exec"];
+
+function designUI() {
+  const a = $("d-action").value, onMolecule = a === "block" || a === "boost";
+  $("d-target").hidden = !onMolecule;
+  $("d-strength-row").hidden = onMolecule;
+  const was = $("d-effect").dataset.kind;
+  if (onMolecule && was !== a) {
+    $("d-effect").innerHTML = (a === "block"
+      ? [[1, "all of it"], [0.8, "most of it — 80 %"], [0.5, "half of it"]]
+      : [[2, "doubles it"], [5, "five-fold"], [10, "ten-fold"]])
+      .map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+    $("d-effect").dataset.kind = a;
+  }
+}
+
+function describeDesign(g) {
+  const sp = $("d-species").selectedOptions[0];
+  if (g.action === "block" || g.action === "boost") {
+    const what = sp ? sp.textContent : g.species;
+    return g.action === "block"
+      ? `blocks ${what} — ${Math.round(g.effect * 100)} % of it when fully bound, binding with Kd ${g.kd} µM`
+      : `boosts ${what} ${g.effect}-fold when fully bound, binding with Kd ${g.kd} µM`;
+  }
+  return $("d-action").selectedOptions[0].textContent + ` at ×${g.strength} its strength`;
+}
+
+function useDesign() {
+  const g = { action: $("d-action").value, species: $("d-species").value,
+              kd: Number($("d-kd").value), effect: Number($("d-effect").value),
+              strength: Number($("d-strength").value) };
+  const name = $("d-name").value.trim() || "my drug";
+  S.custom = { design: g, name, pgp: S.designPgp ?? null, words: describeDesign(g) };
+  const sel = $("drug");
+  let opt = [...sel.options].find((o) => o.value === "__custom__");
+  if (!opt) { opt = new Option("", "__custom__"); sel.add(opt); }
+  opt.text = `${name} (your design)`;
+  sel.value = "__custom__";
+  $("lookup-out").hidden = true;
+}
+
+// From the look-up: a molecule with no usable target can still be given one.
+function designFromLookup(name, pgp) {
+  $("design-step").open = true;
+  $("d-name").value = name;
+  S.designPgp = pgp;
+  $("d-from").hidden = false;
+  $("d-from").textContent = `Designing what ${name} does. Its structure ` +
+    (pgp === true ? "suggests P-glycoprotein will pump it out of cells, and the engine will."
+     : pgp === false ? "suggests P-glycoprotein will not pump it out."
+     : "does not say whether P-glycoprotein pumps it out; the engine assumes not.");
+  $("design-step").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /* ── engine ────────────────────────────────────────────────────── */
 async function boot() {
   $("engine-state").textContent = "downloading Python…";
@@ -368,31 +564,65 @@ async function boot() {
   const meta = JSON.parse(await S.py.runPythonAsync(`
 import json
 from cellsim.cell.library import CELL_LINES, DRUGS
-json.dumps({"lines": list(CELL_LINES), "drugs": list(DRUGS)})`));
+from cellsim.cell.trace import SPECIES
+json.dumps({"lines": list(CELL_LINES), "drugs": list(DRUGS), "species": SPECIES})`));
+  for (const k of DESIGNABLE) $("d-species").add(new Option(meta.species[k] || k, k));
+  $("d-species").value = "Bax";
   for (const n of meta.lines) $("line").add(new Option(n, n));
   for (const n of meta.drugs) $("drug").add(new Option(n, n));
   $("line").value = "A549"; $("drug").value = "cisplatin";
   $("engine-state").textContent = "engine ready";
   $("run").disabled = false;
+  $("lookup").disabled = false;
+  $("d-use").disabled = false;
 }
 
 async function simulate() {
   $("run").disabled = true; play(false);
   $("engine-state").textContent = "simulating…";
   $("bar").classList.add("indet");
+  const custom = $("drug").value === "__custom__" ? S.custom : null;
   const cfg = { line: $("line").value, drug: $("drug").value || null,
-                conc: Number($("conc").value) || 0,
+                conc: Number($("conc").value) || 0, custom,
                 exposure: $("exposure").value ? Number($("exposure").value) : null };
   try {
     const out = JSON.parse(await S.py.runPythonAsync(`
 import json
 from cellsim.cell.trace import trace_cells
+from cellsim.cell.compound import classify, from_mechanism, transport_from_properties
 cfg = json.loads(${JSON.stringify(JSON.stringify(cfg))})
-tr = trace_cells(cfg["line"], cfg["drug"], cfg["conc"] if cfg["drug"] else 0.0,
+drug = cfg["drug"]
+if cfg["custom"] and cfg["custom"].get("design"):
+    from cellsim.cell.compound import Transport, designed
+    c = cfg["custom"]; g = c["design"]
+    t = None if c.get("pgp") is None else Transport(pgp_substrate=c["pgp"], permeable=None)
+    drug = designed(c["name"], g["action"], species=g["species"], kd_uM=g["kd"],
+                    effect=g["effect"], strength=g["strength"], transport=t)
+elif cfg["custom"]:
+    c = cfg["custom"]; p = c["p"]
+    drug = from_mechanism(c["name"], classify(c["texts"]), strength=c["strength"],
+                          transport=transport_from_properties(mw=p["mw"], tpsa=p["tpsa"],
+                                                              logp=p["logp"], n_plus_o=p["n_plus_o"]))
+tr = trace_cells(cfg["line"], drug, cfg["conc"] if drug else 0.0,
                  hours=72.0, n_cells=6, every_h=0.25, exposure_h=cfg["exposure"])
 d = tr.to_dict(); d["exposure_h"] = cfg["exposure"]
+if drug:
+    from cellsim.cell.library import get_drug
+    dg = get_drug(drug) if isinstance(drug, str) else drug
+    d["mechanism"], d["target"], d["target_mode"] = dg.mechanism, dg.target_species, dg.target_mode
 json.dumps(d)`));
+    out.customNote = custom && custom.design ? ["design", `${custom.name} ${custom.words}. ` +
+      `Nothing about it is measured: this is the engine playing out your idea, at the dose ` +
+      `set in step 1, in a cell that is otherwise the Lab's calibrated one.` +
+      (custom.design.action === "boost" ? " A booster multiplies what the cell is already " +
+        "making — if the cell makes none of it at the moment (PUMA, say, while p53 is quiet), " +
+        "there is nothing to multiply." : "")]
+      : custom ? ["uncal", `${custom.name}'s strength is ` +
+      `borrowed from ${custom.ref} (×${custom.strength}), which acts the same way; drugs of one ` +
+      `class can differ a hundred-fold. Read this as what the mechanism does, not as what ` +
+      `${custom.name} does at this dose.`] : null;
     S.trace = out;
+    setDrugEdge(out.mechanism || null, out.target, out.target_mode);
     // scale each species to the largest level it reaches in this run, with
     // a floor, so a flat-zero species is not inflated into noise
     // the drug inside is dose-dependent, so it alone is scaled to this run
@@ -429,6 +659,11 @@ const PRESETS = {
 document.addEventListener("DOMContentLoaded", () => {
   drawMap();
   $("run").onclick = simulate;
+  $("lookup").onclick = doLookup;
+  $("d-action").onchange = designUI;
+  $("d-use").onclick = useDesign;
+  designUI();
+  $("q").onkeydown = (e) => { if (e.key === "Enter" && !$("lookup").disabled) doLookup(); };
   $("play").onclick = () => play(!S.playing);
   $("scrub").oninput = () => { play(false); S.frame = Number($("scrub").value); render(); };
   for (const b of document.querySelectorAll(".preset")) b.onclick = () => {
