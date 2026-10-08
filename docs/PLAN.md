@@ -347,7 +347,9 @@ courses and, chasing them, seven drugs running placeholder constants
    the same class and labelled uncalibrated; any other target is refused
    by name. An impossible structure is rejected with the atom and the
    rule it breaks.
-3. **More mechanisms on the existing map.** CDK4/6 inhibitors (cyclin D),
+3. **More mechanisms on the existing map.** *Started in 1.7.0 with
+   palbociclib: both Rb-less lines correctly resistant, values fragile
+   (VALIDATION, Phase 3b).* CDK4/6 inhibitors (cyclin D),
    BCL-2 inhibitors, ATM/ATR/CHK1, PARP, mitotic kinases — each a hook
    into a node already there, each calibrated on GDSC and checked on held
    out lines. In GDSC's 542 drugs, about 131 act on pathways the network

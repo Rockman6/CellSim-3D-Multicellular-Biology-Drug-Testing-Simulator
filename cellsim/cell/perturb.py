@@ -145,4 +145,12 @@ def apply_to_params(line, p, perturbations: Optional[Sequence[Perturbation]]):
     # route to the same place.
     if any(q.gene == "TP53" and q.factor == 0.0 for q in perturbations):
         line = dataclasses.replace(line, p53_functional=False)
+    # Likewise RB1. The engine's Rb variable is the ACTIVE (hypophosphorylated)
+    # fraction and its "production" is dephosphorylation, so zeroing it only
+    # stopped Rb being reactivated: in a cell whose CDKs were blocked (a
+    # CDK4/6 inhibitor) the old Rb stayed active and the "knockout" arrested
+    # exactly like the parent line. Losing the gene means no Rb at all, which
+    # is CellLine.rb_functional=False — the state HeLa and MDA-MB-468 are in.
+    if any(q.gene == "RB1" and q.factor == 0.0 for q in perturbations):
+        line = dataclasses.replace(line, rb_functional=False)
     return line, p, (factors if not np.all(factors == 1.0) else None)

@@ -295,6 +295,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     gs = 1.0
     p21e = np.minimum(1.0, p21 * 1.5)
     CDK4act = CycD * (1 - p21e * 0.5)
+    # A CDK4/6 inhibitor occupies the kinase: only the unbound fraction
+    # phosphorylates Rb (Fry et al. 2004).
+    for i, dg in enumerate(drugs):
+        if dg.mechanism == "cdk46":
+            ci = Cin_all[i]
+            CDK4act = CDK4act * (1.0 - ci / (ci + dg.Kd_target_uM))
     CDK2Eact = CycE * (1 - p21e)
     RbP = 1 - Rb
     APC_Cdh1 = np.maximum(0, 1 - (CDK2Eact + CycA) * 1.2)
@@ -309,6 +315,12 @@ def rhs(Y: np.ndarray, aux: dict, line: CellLine, drug: Optional[Drug],
     dY[:, 5] = (2.50 * Cdc25 * (1 + CycB * 0.8) - CycB * (0.18 + APC_Cdc20 * 2.5)) * (1 - p21e * 0.3)
     dY[:, 6] = -p21 * 0.18
     dY[:, :7] *= k_cyc
+    # No working Rb (RB1 lost, or held off by HPV E7): whatever Rb a cell
+    # starts with is cleared within minutes and none is made, so E2F runs
+    # free of cyclin D-CDK4/6. Applied here rather than as a perturbation so
+    # the cycle calibration, the dish and the trace all see the same cell.
+    if not getattr(line, "rb_functional", True):
+        dY[:, 1] = -10.0 * Rb
     # Growth signal per cell (0-1), set by the spatial dish for contact
     # inhibition and hypoxia; absent in a well-mixed population. It scales
     # progression through G1 only: S, G2 and M run their fixed course, so
