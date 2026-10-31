@@ -214,3 +214,46 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
   .eyepiece { --ep: min(calc(100vw - 32px), 50vh); }
   .scope-panel { flex: none; width: 100%; }
 }
+
+/* ---------- aiming ---------- */
+.crosshair.on::before, .crosshair.on::after { background: var(--key); }
+.crosshair.blocked::before, .crosshair.blocked::after { background: var(--bad); }
+.prompt .p.blocked { color: var(--bad); }
+
+/* ---------- find anything ---------- */
+.finder { place-items: start center; padding-top: 12vh; background: rgba(6, 9, 11, 0.45); }
+.find-panel { gap: 10px; }
+.find-input { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); font: 500 18px/1.2 var(--font-body); user-select: text; -webkit-user-select: text; }
+.find-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.find-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
+.find-results li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 9px 12px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; }
+.find-results li b { font: 600 15px/1.2 var(--font-display); }
+.find-results li .where { grid-column: 1; color: var(--muted); font-size: 13px; }
+.find-results li .dist { grid-row: 1 / span 2; grid-column: 2; align-self: center; font: 500 13px var(--font-mono); color: var(--muted); }
+.find-results li[aria-selected="true"], .find-results li:hover { background: rgba(91, 140, 255, 0.16); border-color: rgba(91, 140, 255, 0.5); }
+.find-results .empty, .find-results .sect { cursor: default; color: var(--muted); font-size: 13px; padding: 6px 12px; }
+.find-results .sect { font: 600 11px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.find-hint { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: 22px; font-size: 13px; color: var(--muted); background: var(--glass); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+.track-marker { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 2px; margin: -14px 0 0 0; pointer-events: none; text-shadow: 0 1px 3px #000; will-change: transform; }
+.track-marker > * { transform: translateX(-50%); position: relative; left: 0; }
+.track-marker b { font: 600 14px/1.1 var(--font-display); color: #cfe0ff; white-space: nowrap; }
+.track-marker span { font: 500 12px var(--font-mono); color: #cfe0ff; }
+.track-marker .arrow { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(91, 140, 255, 0.3), 0 0 14px rgba(91, 140, 255, 0.8); animation: ping 1.4s ease-out infinite; }
+.track-marker.edge .arrow { border-radius: 0; background: none; box-shadow: none; animation: none; width: 0; height: 0; border-left: 14px solid var(--accent); border-top: 9px solid transparent; border-bottom: 9px solid transparent; transform: translateX(-50%) rotate(var(--a, 0rad)); filter: drop-shadow(0 0 6px rgba(91, 140, 255, 0.9)); }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(91, 140, 255, 0.6), 0 0 14px rgba(91, 140, 255, 0.8); } 100% { box-shadow: 0 0 0 14px rgba(91, 140, 255, 0), 0 0 14px rgba(91, 140, 255, 0.8); } }
+
+/* ---------- micropipette ---------- */
+.pip-readout { font: 600 48px/1 var(--font-mono); text-align: center; letter-spacing: 0.04em; }
+.pip-readout output { color: var(--key); }
+.pip-steps { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.pip-steps .mbtn { min-width: 48px; text-align: center; }
+#pipRange { width: 100%; }
+
+/* ---------- microscope extras ---------- */
+.seg.wells button { font-size: 14px; padding: 7px 4px; }
+.readout.osmo { background: rgba(178, 40, 110, 0.18); border: 1px solid rgba(178, 40, 110, 0.45); border-radius: 6px; padding: 7px 10px; }
+.stage-btns { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+.stage-btns .mbtn { text-align: center; }
+.count-t { border-collapse: collapse; font-size: 14px; }
+.count-t th, .count-t td { padding: 4px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.count-t td { font-family: var(--font-mono); text-align: right; }

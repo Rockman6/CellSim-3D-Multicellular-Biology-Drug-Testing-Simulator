@@ -11,6 +11,25 @@ worker from the wheel the Lab installs, and the drops added in the lab
 set the dose (two 50 µL drops of 10 µM paclitaxel in 5.1 mL give
 0.196 µM). Graphics presets from Low (older laptops, 30 fps) to Ultra.
 
+**Four more experiments in the lab.** A dose–response curve: a
+micropipette (2–200 µL, a fresh tip for every solution), a 6-well plate
+whose wells are each their own engine run, and a plate reader that gives
+viability against the untreated wells and the IC50 (paclitaxel on A549
+at 72 h: about 40 nM). Counting cells: trypsin, trypan blue and a
+Neubauer hemocytometer, the count checked against the engine's dish,
+scaled from the simulated patch to a 60 mm dish. Mitosis in a root tip
+(acid, toluidine blue, squash, name the stage of each cell) and osmosis
+in red onion cells (a simple osmotic model), both drawn, not simulated.
+
+**Finding and handling things.** F finds anything by name, typos and
+all, outlines it through walls and points the way. The thing you aim at
+is outlined; a ring shows where a held item will go, red if something
+is in the way. Walking speeds up and slows down, slides along benches,
+and bobs and sounds with each step. Glassware has real wall thickness,
+and sound effects are made in code. Shared-material parts are merged
+and shadows redraw only when something moves, so the room costs about
+600 draw calls.
+
 **The repository is now `Rockman6/CellSim`**, and the site moved with it
 to <https://rockman6.github.io/CellSim/>. GitHub forwards links to the
 old repository name; links to the old site address no longer work.

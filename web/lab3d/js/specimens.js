@@ -41,6 +41,28 @@ function rng(seed) {
       sizeRange: [45, 75],
       measureWhat: "across",
     },
+    root: {
+      name: "Onion root tip",
+      kind: "plant",
+      best: "toluidine",
+      seed: 53,
+      placeText: "Cut the last 5 mm of a root, soften it in warm acid, stain it and squash it flat under the cover slip.",
+      stainTip: "Tip: toluidine blue stains DNA, so the chromosomes of dividing cells show dark purple.",
+      sizeText: "about 15–25 µm across near the tip",
+      sizeRange: [12, 30],
+      measureWhat: "across",
+    },
+    redonion: {
+      name: "Red onion skin",
+      kind: "plant",
+      best: "water",
+      seed: 71,
+      placeText: "Peel the thin skin from the outside of a red onion scale; its cells are coloured by red sap in the vacuole.",
+      stainTip: "Tip: no stain needed. The red sap shows each protoplast.",
+      sizeText: "about 200–400 µm long",
+      sizeRange: [200, 400],
+      measureWhat: "long",
+    },
     elodea: {
       name: "Pondweed leaf",
       kind: "plant",
@@ -455,9 +477,292 @@ function rng(seed) {
     };
   }
 
+  // ---------- onion root tip squash (mitosis) ----------
+  // Stage shares in a growing onion root's meristem: about 12 % of cells are
+  // dividing; prophase is the longest stage and anaphase the shortest.
+  export const STAGES = ["Interphase", "Prophase", "Metaphase", "Anaphase", "Telophase"];
+  const STAGE_SHARE = [0.875, 0.06, 0.025, 0.015, 0.025];
+  const ROOT_STYLE = {
+    toluidine: { cyto: "rgba(176,170,222,0.30)", wall: "rgba(88,74,150,0.55)", nuc: "rgba(64,36,128,0.82)", chrom: "rgba(42,18,96,0.95)" },
+    water: { cyto: "rgba(226,222,208,0.16)", wall: "rgba(130,124,108,0.32)", nuc: "rgba(150,144,128,0.26)", chrom: "rgba(118,112,98,0.45)" },
+    iodine: { cyto: "rgba(226,190,112,0.28)", wall: "rgba(146,96,30,0.6)", nuc: "rgba(132,78,20,0.6)", chrom: "rgba(100,56,12,0.8)" },
+    mb: { cyto: "rgba(150,180,226,0.24)", wall: "rgba(60,92,160,0.5)", nuc: "rgba(30,56,146,0.78)", chrom: "rgba(18,38,110,0.92)" },
+  };
+
+  function pickStage(r, share) {
+    let u = r(), k = 0;
+    while (k < share.length - 1 && u > share[k]) { u -= share[k]; k++; }
+    return k;
+  }
+
+  function rootField(prep) {
+    const r = rng(53);
+    const soft = !!prep.softened, squashed = !!prep.squashed;
+    // A squash spreads the tip into a broad, loose patch; unsquashed it stays a narrow dark rod.
+    const halfW = squashed ? 650 : 260;
+    const outline = noisyOutline(r, squashed ? 1500 : 1300, halfW, 60, 0.12);
+    const cells = [];
+    for (let y = -halfW - 60; y < halfW + 60; y += 17) {
+      let x = -1700 + r() * 20;
+      while (x < 1700) {
+        const zoneCap = x < -1050, zoneElong = x > 350;
+        const L = zoneElong ? 34 + r() * 22 : zoneCap ? 26 + r() * 10 : 17 + r() * 5;
+        const H = zoneCap ? 22 + r() * 6 : 15 + r() * 3;
+        const cx = x + L / 2, cy = y + (squashed && soft ? (r() - 0.5) * 7 : 0);
+        if (inPoly(cx, cy, outline)) {
+          const share = zoneCap ? [1, 0, 0, 0, 0] : zoneElong ? [0.985, 0.006, 0.003, 0.002, 0.004] : STAGE_SHARE;
+          cells.push({
+            x: cx, y: cy, w: L - (squashed && soft ? 3 + r() * 3 : 1), h: H - (squashed && soft ? 2 + r() * 2 : 1),
+            a: (r() - 0.5) * (squashed && soft ? 0.5 : 0.08), stage: pickStage(r, share), k: r(), zone: zoneCap ? "cap" : zoneElong ? "elongation" : "meristem",
+          });
+        }
+        x += L;
+      }
+    }
+    for (const c of cells) { c.x0 = c.x - c.w; c.x1 = c.x + c.w; c.y0 = c.y - c.h; c.y1 = c.y + c.h; }
+    const bubbles = makeBubbles(r, prep.cover, outline);
+    const dust = makeDust(r);
+    const st = ROOT_STYLE[prep.stain] || ROOT_STYLE.water;
+    // Without acid the cells stay stuck together, and without squashing they lie in thick layers.
+    const clumped = !soft || !squashed;
+
+    function drawChromosomes(ctx, c, s) {
+      const n = c.w * 0.3;
+      ctx.fillStyle = st.chrom; ctx.strokeStyle = st.chrom;
+      ctx.lineWidth = Math.max(1.1, 0.7 / s); ctx.lineCap = "round";
+      if (c.stage === 1) {   // prophase: chromatin condensing into threads inside the nucleus
+        ctx.beginPath(); ctx.ellipse(0, 0, n * 0.95, c.h * 0.36, 0, 0, Math.PI * 2); ctx.fillStyle = st.nuc; ctx.globalAlpha = 0.45; ctx.fill(); ctx.globalAlpha = 1;
+        for (let i = 0; i < 7; i++) {
+          const a = c.k * 9 + i * 0.9;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * n * 0.6, Math.sin(a) * c.h * 0.22);
+          ctx.quadraticCurveTo(Math.cos(a + 1.4) * n * 0.2, Math.sin(a + 2) * c.h * 0.3, Math.cos(a + 2.6) * n * 0.7, Math.sin(a + 3) * c.h * 0.25);
+          ctx.stroke();
+        }
+      } else if (c.stage === 2) {   // metaphase: lined up across the middle
+        for (let i = -4; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(-1.8, i * c.h * 0.075); ctx.lineTo(1.8, i * c.h * 0.075 + 0.6); ctx.stroke(); }
+      } else if (c.stage === 3) {   // anaphase: two sets pulled apart towards the ends
+        const gap = 3 + c.k * 4;
+        for (const side of [-1, 1]) for (let i = -3; i <= 3; i++) {
+          ctx.beginPath(); ctx.moveTo(side * (gap + 3.2), i * c.h * 0.08); ctx.lineTo(side * gap, i * c.h * 0.05 + 0.4); ctx.stroke();
+        }
+      } else if (c.stage === 4) {   // telophase: two new nuclei and the cell plate between them
+        for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(side * c.w * 0.5, 0, c.w * 0.2, c.h * 0.3, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.strokeStyle = st.wall; ctx.beginPath(); ctx.moveTo(0, -c.h * 0.55); ctx.lineTo(0, c.h * 0.55); ctx.stroke();
+      }
+    }
+
+    return {
+      bubbles,
+      inSample: (x, y) => inPoly(x, y, outline),
+      animated: () => false,
+      classify: true,
+      draw(ctx, W, v) {
+        const s = begin(ctx, W, v);
+        const vr = viewRect(v);
+        if (clumped) {
+          // Layers of cells on top of each other: a dark smear with outlines here and there.
+          ctx.fillStyle = st.cyto.replace(/[\d.]+\)$/, "0.75)");
+          ctx.beginPath(); tracePoly(ctx, outline); ctx.fill();
+        }
+        const vis = cells.filter((c) => visible(c, vr));
+        for (const c of vis) {
+          ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.a);
+          ctx.beginPath(); ctx.rect(-c.w / 2, -c.h / 2, c.w, c.h);
+          ctx.fillStyle = st.cyto; ctx.fill();
+          ctx.lineWidth = Math.max(1, 0.6 / s); ctx.strokeStyle = st.wall; ctx.stroke();
+          if (c.stage === 0 || s < 0.25) {
+            ctx.beginPath(); ctx.ellipse(c.w * 0.05 * (c.k - 0.5), 0, Math.min(5.5, c.w * 0.3), Math.min(4.6, c.h * 0.32), 0, 0, Math.PI * 2);
+            ctx.fillStyle = st.nuc; ctx.fill();
+            if (s > 0.6 && c.stage === 0) { ctx.fillStyle = st.chrom; ctx.beginPath(); ctx.arc(1, -0.6, 1.3, 0, Math.PI * 2); ctx.fill(); }
+          } else drawChromosomes(ctx, c, s);
+          ctx.restore();
+        }
+        drawDust(ctx, dust, vr, s);
+        drawBubbles(ctx, bubbles, vr, s);
+      },
+      pickCell(x, y) {
+        let best = null, d2 = 144;
+        for (const c of cells) { const d = (c.x - x) ** 2 + (c.y - y) ** 2; if (d < d2) { d2 = d; best = c; } }
+        return best;
+      },
+      clumped,
+      soft,
+      cells,
+    };
+  }
+
+  // ---------- red onion skin, for osmosis ----------
+  /* Each cell's protoplast holds its volume where the cell sap's osmolarity
+     (about 0.55 osmol/L, varying cell to cell) matches the liquid outside.
+     In a stronger solution water leaves, the protoplast shrinks away from the
+     wall (plasmolysis) and its red sap darkens; in water it swells back
+     against the wall. A simple osmotic model, not the CellSim engine. */
+  export const RED_ONION = { sap: 0.55, spread: 0.18, minV: 0.28, tau: 7 };
+
+  export function protoplastVolume(sapOsm, history, now) {
+    const target = (o) => (o <= sapOsm ? 1 : Math.max(RED_ONION.minV, sapOsm / o));
+    let V = 1;
+    for (let i = 0; i < history.length; i++) {
+      const h = history[i], end = i + 1 < history.length ? history[i + 1].t : now;
+      const T = target(h.osm);
+      V = T + (V - T) * Math.exp(-Math.max(0, end - h.t) / (RED_ONION.tau * 1000));
+    }
+    return V;
+  }
+
+  function redOnionField(prep) {
+    const r = rng(71);
+    const outline = noisyOutline(r, 3200, 2200, 80, 0.13);
+    const cells = brickCells(r, {
+      x0: -3600, x1: 3600, y0: -2600, y1: 2600, h0: 56, hVar: 16, L0: 210, LVar: 150, slant: 24,
+      keep: (x, y) => inPoly(x, y, outline),
+    });
+    for (const c of cells) {
+      c.sap = RED_ONION.sap * (1 + (r() - 0.5) * 2 * RED_ONION.spread);
+      c.cx = (c.left + c.right) / 2; c.cy = (c.top + c.bot) / 2;
+      c.tone = 0.75 + r() * 0.5;
+      c.nx = c.left + (c.right - c.left) * (0.15 + r() * 0.7);
+    }
+    const bubbles = makeBubbles(r, prep.cover, outline);
+    const dust = makeDust(r);
+    const hist = prep.osmo || [];
+    const lastChange = hist.length ? hist[hist.length - 1].t : 0;
+    return {
+      bubbles,
+      inSample: (x, y) => inPoly(x, y, outline),
+      animated: () => performance.now() - lastChange < RED_ONION.tau * 5000,
+      osmosis: true,
+      draw(ctx, W, v) {
+        const s = begin(ctx, W, v);
+        const vr = viewRect(v);
+        const now = performance.now();
+        const vis = cells.filter((c) => visible(c, vr));
+        let shrunk = 0;
+        for (const c of vis) {
+          const V = protoplastVolume(c.sap, hist, now);
+          if (V < 0.97) shrunk++;
+          // The protoplast: the cell outline drawn smaller about its centre.
+          const k = Math.sqrt(V), w = (c.right - c.left) / 2, h = (c.bot - c.top) / 2;
+          const kx = Math.max(0.2, 1 - (1 - k) * 1.12), ky = Math.max(0.25, 1 - (1 - k) * 0.85);
+          ctx.beginPath();
+          if (V > 0.985) tracePoly(ctx, c.poly);
+          else {
+            const rad = Math.min(w * kx, h * ky) * 0.9;
+            roundRect(ctx, c.cx - w * kx, c.cy - h * ky, 2 * w * kx, 2 * h * ky, rad);
+          }
+          const a = Math.min(0.85, (0.34 + 0.18 * c.tone) / Math.max(0.35, V));
+          ctx.fillStyle = `rgba(168,32,${92 + Math.round(30 * c.tone)},${a.toFixed(3)})`;
+          ctx.fill();
+          if (V <= 0.985 && s > 0.12) { ctx.lineWidth = Math.max(1, 0.6 / s); ctx.strokeStyle = "rgba(110,18,66,0.7)"; ctx.stroke(); }
+        }
+        ctx.lineWidth = Math.max(2.2, 0.9 / s);
+        ctx.strokeStyle = "rgba(122,86,96,0.55)";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        for (const c of vis) tracePoly(ctx, c.poly);
+        ctx.stroke();
+        if (s > 0.25) {
+          ctx.fillStyle = "rgba(90,70,80,0.35)";
+          for (const c of vis) { ctx.beginPath(); ctx.ellipse(c.nx, c.top + 9, 7, 5, 0, 0, Math.PI * 2); ctx.fill(); }
+        }
+        drawDust(ctx, dust, vr, s);
+        drawBubbles(ctx, bubbles, vr, s);
+        this.lastShrunk = { shrunk, of: vis.length };
+      },
+    };
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  // ---------- hemocytometer ----------
+  /* An improved Neubauer chamber: a 3 × 3 mm ruled grid of 1 mm squares,
+     0.1 mm deep, so each large square holds 0.1 µL. The four corner squares
+     are ruled into 4 × 4; the centre into 5 × 5 groups with triple lines.
+     Cells sit at random, as they settle in a real chamber, at the density of
+     the suspension: live ones bright with a dark rim, dead ones blue if the
+     sample was mixed with trypan blue. */
+  export const CORNERS = [{ name: "Top left", x: -1500, y: -1500 }, { name: "Top right", x: 500, y: -1500 }, { name: "Bottom left", x: -1500, y: 500 }, { name: "Bottom right", x: 500, y: 500 }];
+
+  export function makeHemoField({ livePerMl, deadPerMl, trypan, seed = 7 }) {
+    const r = rng(seed);
+    const perUm2 = (n) => n * 1e-4 / 1e6;   // cells per µm² of a 0.1 mm deep chamber
+    const cells = [];
+    const area = 3800 * 3800;
+    for (const [rate, dead] of [[perUm2(livePerMl), false], [perUm2(deadPerMl), true]]) {
+      // A Poisson number of cells over the area, then uniform positions.
+      const mean = rate * area;
+      let n = Math.round(mean + Math.sqrt(mean) * gauss(r));
+      for (let i = 0; i < Math.max(0, n); i++) cells.push({ x: (r() - 0.5) * 3800, y: (r() - 0.5) * 3800, d: dead ? 15 + r() * 4 : 12 + r() * 4, dead, k: r(), counted: false });
+    }
+    const dust = makeDust(r);
+    const squareOf = (c) => CORNERS.findIndex((q) => c.x >= q.x && c.x < q.x + 1000 && c.y >= q.y && c.y < q.y + 1000);
+    for (const c of cells) c.sq = squareOf(c);
+    const truth = CORNERS.map((_, i) => ({ live: cells.filter((c) => c.sq === i && !c.dead).length, dead: cells.filter((c) => c.sq === i && c.dead).length }));
+
+    function lines(ctx, s) {
+      const thin = Math.max(0.8, 0.6 / s);
+      ctx.strokeStyle = "rgba(54,60,66,0.75)";
+      const line = (x0, y0, x1, y1, w = thin) => { ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
+      for (let i = 0; i <= 3; i++) {
+        const p = -1500 + i * 1000;
+        for (const d of [-6, 0, 6]) { line(p + d, -1500, p + d, 1500); line(-1500, p + d, 1500, p + d); }
+      }
+      for (const q of CORNERS) for (let i = 1; i < 4; i++) { line(q.x + i * 250, q.y, q.x + i * 250, q.y + 1000); line(q.x, q.y + i * 250, q.x + 1000, q.y + i * 250); }
+      // The centre square: 25 groups of 200 µm, each ruled into 16 small squares.
+      for (let i = 1; i < 5; i++) for (const d of [-4, 0, 4]) { line(-500 + i * 200 + d, -500, -500 + i * 200 + d, 500); line(-500, -500 + i * 200 + d, 500, -500 + i * 200 + d); }
+      if (s > 0.12) for (let i = 1; i < 20; i++) if (i % 4) { line(-500 + i * 50, -500, -500 + i * 50, 500); line(-500, -500 + i * 50, 500, -500 + i * 50); }
+    }
+
+    return {
+      bubbles: [],
+      inSample: (x, y) => Math.abs(x) < 1900 && Math.abs(y) < 1900,
+      animated: () => false,
+      hemo: true,
+      truth,
+      cells,
+      draw(ctx, W, v) {
+        const s = W / v.fov;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "#eef0ec"; ctx.fillRect(0, 0, W, W);
+        ctx.setTransform(s, 0, 0, s, W / 2 - v.cx * s, W / 2 - v.cy * s);
+        const vr = viewRect(v);
+        // The ruled area is a little darker, and so are the corner squares to count.
+        ctx.fillStyle = "rgba(200,206,206,0.35)"; ctx.fillRect(-1500, -1500, 3000, 3000);
+        lines(ctx, s);
+        for (const c of cells) {
+          if (c.x < vr.l - 20 || c.x > vr.r + 20 || c.y < vr.t - 20 || c.y > vr.b + 20) continue;
+          const R = Math.max(c.d / 2, 1.4 / s);
+          ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
+          if (c.dead && trypan) { ctx.fillStyle = "rgba(38,66,168,0.85)"; ctx.fill(); ctx.lineWidth = Math.max(0.8, 0.5 / s); ctx.strokeStyle = "rgba(20,30,90,0.9)"; ctx.stroke(); }
+          else {
+            ctx.fillStyle = c.dead ? "rgba(196,198,190,0.8)" : "rgba(252,252,246,0.95)"; ctx.fill();
+            ctx.lineWidth = Math.max(1, R * 0.28); ctx.strokeStyle = c.dead ? "rgba(90,92,86,0.55)" : "rgba(40,42,40,0.7)"; ctx.stroke();
+            if (s > 0.5 && !c.dead) { ctx.beginPath(); ctx.arc(c.x - R * 0.3, c.y - R * 0.3, R * 0.35, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fill(); }
+          }
+          if (c.counted) { ctx.lineWidth = Math.max(1.4, 1.2 / s); ctx.strokeStyle = "#2fbf5a"; ctx.beginPath(); ctx.arc(c.x, c.y, R + Math.max(2.5, 2 / s), 0, Math.PI * 2); ctx.stroke(); }
+        }
+        drawDust(ctx, dust, vr, s);
+      },
+      pickCell(x, y) {
+        let best = null, d2 = 13 * 13;
+        for (const c of cells) { const d = (c.x - x) ** 2 + (c.y - y) ** 2; if (d < d2) { d2 = d; best = c; } }
+        return best;
+      },
+    };
+  }
+
+  function gauss(r) { return Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(2 * Math.PI * r()); }
+
   export function makeField(prep) {
     if (prep.specimen === "onion") return onionField(prep);
     if (prep.specimen === "cheek") return cheekField(prep);
     if (prep.specimen === "elodea") return elodeaField(prep);
+    if (prep.specimen === "root") return rootField(prep);
+    if (prep.specimen === "redonion") return redOnionField(prep);
     return emptyField(prep);
   }

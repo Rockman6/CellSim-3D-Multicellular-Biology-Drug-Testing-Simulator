@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 // Poly Haven models (CC0), glTF at 1k textures.
 const GLTF = ["yellow_onion", "metal_stool_01", "steel_frame_shelves_01", "mounted_fluorescent_lights", "drawer_cabinet",
@@ -85,7 +86,42 @@ export function link(object, key, value) {
   Object.defineProperty(object.userData, key, { value, writable: true, configurable: true, enumerable: false });
 }
 
+/* Merge every mesh under a static object that shares a material into one,
+   baking in their transforms: a ceiling light made of 14 parts becomes 3
+   draws. Only for things that never move part by part. */
+export function flatten(object) {
+  object.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(object.matrixWorld).invert();
+  const byMat = new Map(), all = [];
+  object.traverse((m) => {
+    if (!m.isMesh || m.isInstancedMesh || Array.isArray(m.material)) return;
+    all.push(m);
+    if (!byMat.has(m.material)) byMat.set(m.material, []);
+    byMat.get(m.material).push(m);
+  });
+  if (all.length < 3) return object;
+  const out = [];
+  for (const [mat, list] of byMat) {
+    const geos = list.map((m) => {
+      const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+      for (const k of Object.keys(geo.attributes)) if (!["position", "normal", "uv"].includes(k)) geo.deleteAttribute(k);
+      if (!geo.attributes.uv) geo.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+      if (!geo.attributes.normal) geo.computeVertexNormals();
+      return geo;
+    });
+    const merged = mergeGeometries(geos, false);
+    if (!merged) return object;
+    const mm = new THREE.Mesh(merged, mat);
+    mm.castShadow = list.some((m) => m.castShadow); mm.receiveShadow = true;
+    out.push(mm);
+  }
+  while (object.children.length) object.remove(object.children[0]);
+  for (const m of out) object.add(m);
+  return object;
+}
+
 export function enableShadows(object) {
-  object.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  // Not the soft contact shadows or the invisible aiming boxes: they would cast square shadows.
+  object.traverse((m) => { if (m.isMesh && m.name !== "shadow" && m.name !== "hitbox") { m.castShadow = true; m.receiveShadow = true; } });
   return object;
 }

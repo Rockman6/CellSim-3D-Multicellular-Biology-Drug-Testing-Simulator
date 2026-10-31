@@ -1,7 +1,7 @@
 // The lab room: walls with real window openings, floor, ceiling, lights and
 // furniture. Furniture that does something is tagged with userData.target.
 import * as THREE from "three";
-import { fit, setMaterial, enableShadows, link } from "./assets.js";
+import { fit, setMaterial, enableShadows, link, flatten } from "./assets.js";
 import { makeWhiteboard, makeLightSwitch, makeGlassBin, makeBlinds, MAT } from "./props.js";
 
 export const ROOM = { x0: -5, x1: 5, z0: -4, z1: 4, h: 3.0 };
@@ -184,7 +184,7 @@ export function buildRoom(scene, assets, preset) {
   target(inc, { kind: "incubator", name: "Incubator" });
 
   /* ---------- teacher's desk, journal and whiteboard ---------- */
-  const desk = enableShadows(fit(assets.gltf.metal_office_desk, { height: 0.79, rotY: -Math.PI / 2 }));
+  const desk = flatten(enableShadows(fit(assets.gltf.metal_office_desk, { height: 0.79, rotY: -Math.PI / 2 })));
   desk.position.set(3.95, 0, -2.3);
   add(desk); surface(desk);
   const deskBox = collide(desk);
@@ -205,7 +205,7 @@ export function buildRoom(scene, assets, preset) {
   target(board, { kind: "whiteboard", name: "Whiteboard" });
 
   /* ---------- storage ---------- */
-  const shelves = enableShadows(fit(assets.gltf.steel_frame_shelves_01, { height: 2.14 }));
+  const shelves = flatten(enableShadows(fit(assets.gltf.steel_frame_shelves_01, { height: 2.14 })));
   shelves.position.set(-3.6, 0, 3.7);
   add(shelves); surface(shelves); collide(shelves);
   const cabinet = enableShadows(fit(assets.gltf.drawer_cabinet, { height: 1.88, rotY: Math.PI }));
@@ -217,7 +217,7 @@ export function buildRoom(scene, assets, preset) {
 
   /* ---------- stools ---------- */
   const stools = [[-1.15, 1.75], [0.0, 1.75], [-2.3, -0.9], [-3.4, -0.9]].map(([x, z], i) => {
-    const s = enableShadows(fit(i === 0 ? assets.gltf.metal_stool_01 : assets.gltf.metal_stool_01.clone(), { height: 0.88 }));
+    const s = flatten(enableShadows(fit(i === 0 ? assets.gltf.metal_stool_01 : assets.gltf.metal_stool_01.clone(), { height: 0.88 })));
     s.position.set(x, 0, z);
     add(s);
     target(s, { kind: "stool", name: "Lab stool" });
@@ -261,7 +261,7 @@ export function buildRoom(scene, assets, preset) {
   /* ---------- ceiling lights ---------- */
   const fixturePos = [[-3, -2.2], [0, -2.2], [3, -2.2], [-3, 1.6], [0, 1.6], [3, 1.6]];
   const fixtures = fixturePos.map(([x, z], i) => {
-    const f = fit(i === 0 ? assets.gltf.mounted_fluorescent_lights : assets.gltf.mounted_fluorescent_lights.clone(), { maxDim: 1.2 });
+    const f = flatten(fit(i === 0 ? assets.gltf.mounted_fluorescent_lights : assets.gltf.mounted_fluorescent_lights.clone(), { maxDim: 1.2 }));
     f.position.set(x, R.h - 0.08, z);
     add(f);
     return f;

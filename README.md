@@ -8,11 +8,12 @@ required.**
 
 **[Walk into the lab →](https://rockman6.github.io/CellSim/lab3d/)**
 — a biology lab you explore in first person, in your browser. Prepare
-slides of onion skin, your own cheek cells or a pondweed leaf and focus
-the microscope on them. Or treat living lung cancer cells with
-paclitaxel, doxorubicin or cisplatin, incubate them and compare them
-with an untreated dish. Those cells are simulated by this engine, on
-your own machine. Use a computer with a keyboard and mouse: WASD to
+slides of onion skin, your own cheek cells, a pondweed leaf or red onion
+(and watch osmosis), squash a root tip and find every stage of mitosis.
+Or work with living lung cancer cells: treat them with paclitaxel,
+doxorubicin or cisplatin, pipette a dose–response plate and read off the
+IC50, or count them in a hemocytometer. Those cells are simulated by
+this engine, on your own machine. Press F to find anything in the lab. Use a computer with a keyboard and mouse: WASD to
 walk, left-click to take, right-click to use. Graphics presets run from
 older laptops to fast graphics cards. Source and controls:
 [`web/lab3d/`](web/lab3d/).

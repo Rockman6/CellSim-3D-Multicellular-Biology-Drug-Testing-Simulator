@@ -3,15 +3,22 @@
 // and drug concentrations dilute by volume, which is what the engine gets.
 import * as THREE from "three";
 
+// osm is osmolarity (osmol/L), used for osmosis in onion cells.
 export const SOLUTIONS = {
-  water:        { name: "Distilled water", color: "#d7ebf2", strength: 0.02, alpha: 0.22 },
-  tap:          { name: "Tap water", color: "#d2e6ee", strength: 0.02, alpha: 0.22 },
-  saline:       { name: "Saline 0.9%", color: "#dcecf2", strength: 0.02, alpha: 0.22 },
-  iodine:       { name: "Iodine solution", color: "#8a4a12", strength: 1, alpha: 0.9, stain: "iodine" },
-  mb:           { name: "Methylene blue", color: "#1b48b0", strength: 1.3, alpha: 0.92, stain: "mb" },
+  water:        { name: "Distilled water", color: "#d7ebf2", strength: 0.02, alpha: 0.22, osm: 0 },
+  tap:          { name: "Tap water", color: "#d2e6ee", strength: 0.02, alpha: 0.22, osm: 0.01 },
+  saline:       { name: "Saline 0.9%", color: "#dcecf2", strength: 0.02, alpha: 0.22, osm: 0.29 },
+  salt:         { name: "Salt solution 1 M", color: "#e4eef0", strength: 0.02, alpha: 0.24, osm: 1.86, note: "1 mol/L NaCl" },
+  iodine:       { name: "Iodine solution", color: "#8a4a12", strength: 1, alpha: 0.9, stain: "iodine", glass: "amber", osm: 0.05 },
+  mb:           { name: "Methylene blue", color: "#1b48b0", strength: 1.3, alpha: 0.92, stain: "mb", glass: "blue", osm: 0.03 },
+  toluidine:    { name: "Toluidine blue 0.05%", color: "#3b2f8f", strength: 1.3, alpha: 0.92, stain: "toluidine", glass: "amber", osm: 0.03, note: "Stains DNA" },
+  hcl:          { name: "Hydrochloric acid 1 M", color: "#eef2e4", strength: 0.02, alpha: 0.24, hazard: "!", osm: 2, note: "CORROSIVE" },
   ethanol:      { name: "Ethanol 70%", color: "#e9f1f3", strength: 0.01, alpha: 0.18 },
   disinfectant: { name: "Disinfectant 1%", color: "#bfe3a6", strength: 0.3, alpha: 0.5 },
-  medium:       { name: "Culture medium (phenol red)", color: "#dc4a63", strength: 0.6, alpha: 0.7 },
+  medium:       { name: "Culture medium (phenol red)", color: "#dc4a63", strength: 0.6, alpha: 0.7, osm: 0.3 },
+  trypsin:      { name: "Trypsin-EDTA 0.25%", color: "#e98a96", strength: 0.3, alpha: 0.5, osm: 0.3, cap: 0xd8342a, note: "Detaches cells" },
+  trypan:       { name: "Trypan blue 0.4%", color: "#2c3d9e", strength: 1.2, alpha: 0.9, osm: 0.3, note: "Stains dead cells" },
+  cells:        { name: "Cell suspension", color: "#e7a3ad", strength: 0.4, alpha: 0.6, osm: 0.3 },
   // Drug stocks. µM is the stock concentration; the dish dilutes it.
   paclitaxel:   { name: "Paclitaxel 10 µM", color: "#f2f1ea", strength: 0.01, alpha: 0.25, drug: "paclitaxel", uM: 10 },
   doxorubicin:  { name: "Doxorubicin 20 µM", color: "#cf2a1e", strength: 0.9, alpha: 0.8, drug: "doxorubicin", uM: 20 },
@@ -49,7 +56,17 @@ export class Container {
     const got = this.take(Math.min(mL, room));
     let moved = 0;
     for (const k in got) moved += other.add(k, got[k]);
+    // Which dish a cell suspension came from travels with it.
+    if (this.meta && got.cells) other.meta = { ...this.meta };
     return moved;
+  }
+  // Osmolarity of the mixture, osmol/L, weighted by volume.
+  osmolarity() {
+    const v = this.volume;
+    if (v <= 0) return 0;
+    let o = 0;
+    for (const k in this.c) o += (SOLUTIONS[k]?.osm ?? 0.3) * this.c[k];
+    return o / v;
   }
   dominant() {
     let best = null, w = 0;
@@ -93,7 +110,8 @@ export class Container {
 export function fmtVol(mL) {
   if (mL >= 10) return `${mL.toFixed(0)} mL`;
   if (mL >= 1) return `${mL.toFixed(1)} mL`;
-  return `${(mL * 1000).toFixed(0)} µL`;
+  if (mL >= 0.001) return `${(mL * 1000).toFixed(0)} µL`;
+  return `${(mL * 1000).toFixed(1)} µL`;
 }
 
 /* A liquid column inside a cylindrical vessel: its height follows the fill
