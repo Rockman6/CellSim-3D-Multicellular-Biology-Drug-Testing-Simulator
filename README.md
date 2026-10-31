@@ -4,9 +4,9 @@
 simulator in Python. Open source, Apple-silicon and Linux, no GPU
 required.**
 
-[![The 3D lab: a microscope bench and an incubator, with daylight through the windows](web/lab3d/screenshot.jpg)](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab3d/)
+[![The 3D lab: a microscope bench and an incubator, with daylight through the windows](web/lab3d/screenshot.jpg)](https://rockman6.github.io/CellSim/lab3d/)
 
-**[Walk into the lab →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab3d/)**
+**[Walk into the lab →](https://rockman6.github.io/CellSim/lab3d/)**
 — a biology lab you explore in first person, in your browser. Prepare
 slides of onion skin, your own cheek cells or a pondweed leaf and focus
 the microscope on them. Or treat living lung cancer cells with
@@ -17,11 +17,11 @@ walk, left-click to take, right-click to use. Graphics presets run from
 older laptops to fast graphics cards. Source and controls:
 [`web/lab3d/`](web/lab3d/).
 
-**[Run an experiment in your browser →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab/)**
+**[Run an experiment in your browser →](https://rockman6.github.io/CellSim/lab/)**
 — pick cells, a drug and a schedule, press Run. The real engine runs on
 your own machine; nothing to install.
 
-**[Watch inside one cell →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab/cell.html)**
+**[Watch inside one cell →](https://rockman6.github.io/CellSim/lab/cell.html)**
 — every molecule the engine tracks, minute by minute, as a cell divides,
 arrests or dies. Type any drug name or structure: a drug whose target the
 engine models runs (labelled uncalibrated), any other is refused by name,
@@ -29,7 +29,7 @@ and an impossible structure is rejected with the atom that breaks it. Or
 design your own: block or boost any molecule on the map and see what the
 cell does.
 
-**[Open a simulated spheroid →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/)**
+**[Open a simulated spheroid →](https://rockman6.github.io/CellSim/)**
 (no install; the demo runs are simulated fresh on every deploy, so they
 show what the current code produces)
 

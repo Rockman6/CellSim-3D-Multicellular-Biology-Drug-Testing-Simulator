@@ -1,13 +1,13 @@
-# CellSim Lab
+# CellSim
 
-A biology lab you walk into in first person. Prepare slides of onion skin, cheek cells or a pondweed leaf, then focus a microscope on them. Or grow living A549 lung cancer cells, treat them with a drug and incubate them. The living cells are simulated by the Cell Sim engine (`cellsim.cell.dish`), running in the browser.
+A biology lab you walk into in first person. Prepare slides of onion skin, cheek cells or a pondweed leaf, then focus a microscope on them. Or grow living A549 lung cancer cells, treat them with a drug and incubate them. The living cells are simulated by the CellSim engine (`cellsim.cell.dish`), running in the browser.
 
 ## Run it
 
 Browsers block 3D models and the engine on pages opened straight from a file, so serve the `web` folder:
 
 ```bash
-cd "Cell Sim/web"
+cd CellSim/web
 python3 -m http.server 8000
 ```
 
@@ -16,7 +16,7 @@ Then open <http://localhost:8000/lab3d/>.
 The engine uses the wheel in `../lab/wheel/` (the same one the Lab page uses). GitHub Pages builds it on every deploy. To build it locally:
 
 ```bash
-cd "Cell Sim"
+cd CellSim
 python -m pip wheel --no-deps --no-build-isolation -w web/lab/wheel .
 cd web/lab/wheel && ls -t cellsim-*-py3-none-any.whl | head -1 > LATEST
 ```
@@ -57,7 +57,7 @@ Settings → Graphics: **Auto** picks a preset from the graphics chip.
 | High | Sharper shadows, four lamps |
 | Ultra | Full resolution, 4096 px shadows, all six lamps, no frame cap |
 
-The game stops drawing when nothing moves, and the Cell Sim engine (about 150 MB of memory) only loads once a culture dish needs it.
+The game stops drawing when nothing moves, and the CellSim engine (about 150 MB of memory) only loads once a culture dish needs it.
 
 ## What's where
 
@@ -70,7 +70,7 @@ The game stops drawing when nothing moves, and the Cell Sim engine (about 150 MB
 | `js/props.js` | Equipment built in code: slides, bottles, beakers, dishes, the pondweed tank, tools |
 | `js/liquids.js` | Volumes, colour mixing and drug dilution |
 | `js/scope.js`, `js/specimens.js`, `js/culture.js` | The view through the eyepiece |
-| `js/engine.js`, `js/engine-worker.js`, `js/lab_engine.py` | The Cell Sim engine, in a background worker |
+| `js/engine.js`, `js/engine-worker.js`, `js/lab_engine.py` | The CellSim engine, in a background worker |
 | `js/tasks.js`, `js/journal.js` | Experiments and the lab journal |
 | `assets/` | Models, textures and lighting (`downloads/` holds the raw Sketchfab files and is not committed) |
 
@@ -81,7 +81,7 @@ The game stops drawing when nothing moves, and the Cell Sim engine (about 150 MB
 
 ## Credits
 
-- **Cell engine:** Cell Sim (MIT), in the browser via Pyodide.
+- **Cell engine:** CellSim (MIT), in the browser via Pyodide.
 - **3D engine:** three.js r160 (MIT).
 - **Poly Haven (CC0):** yellow onion, metal stool, steel shelves, fluorescent lights, drawer cabinet, clipboard, stationery, wall clock, magnifying glass, binder notebook, metal office desk, floor tiles, painted plaster, and the hospital room HDRI.
 - **Sketchfab (CC Attribution 4.0):**

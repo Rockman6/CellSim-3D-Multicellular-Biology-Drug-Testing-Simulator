@@ -1,4 +1,4 @@
-"""The lab's bridge to the Cell Sim engine.
+"""The lab's bridge to the CellSim engine.
 
 Runs `cellsim.cell.dish.run_dish_stream` for one culture dish: the cell line,
 the drugs dropped into it and when, and how long it has been incubated. The

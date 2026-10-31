@@ -53,7 +53,7 @@ export const EXPERIMENTS = {
     ],
   },
   culture: {
-    title: "Living cancer cells", tag: "Simulated by Cell Sim", blurb: "Treat a dish of A549 lung cancer cells with a drug, incubate it, and compare it with an untreated control.",
+    title: "Living cancer cells", tag: "Simulated by CellSim", blurb: "Treat a dish of A549 lung cancer cells with a drug, incubate it, and compare it with an untreated control.",
     steps: [
       ["goggles", "Put on the safety goggles"],
       ["hands", "Wash your hands"],
