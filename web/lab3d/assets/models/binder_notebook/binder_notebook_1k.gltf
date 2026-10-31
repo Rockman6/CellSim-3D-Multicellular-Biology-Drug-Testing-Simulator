@@ -1,0 +1,241 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v5.1.19",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0,
+        1
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "binder_notebook"
+    },
+    {
+      "mesh": 1,
+      "name": "binder_notebook_closed",
+      "translation": [
+        0.2673295736312866,
+        0,
+        0
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "binder_notebook",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Cube.003",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "Cube.005",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "binder_notebook_nor_gl",
+      "uri": "textures/binder_notebook_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "binder_notebook_diff",
+      "uri": "textures/binder_notebook_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "binder_notebook_metal-binder_notebook_rough",
+      "uri": "textures/binder_notebook_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 6581,
+      "max": [
+        0.20842695236206055,
+        0.015760298818349838,
+        0.10034427791833878
+      ],
+      "min": [
+        -0.15681171417236328,
+        -0.0020946459844708443,
+        -0.09961403161287308
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 6581,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 6581,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 27063,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 6451,
+      "max": [
+        0.15988755226135254,
+        0.023194780573248863,
+        0.10034429281949997
+      ],
+      "min": [
+        -0.010758023709058762,
+        -0.0020946459844708443,
+        -0.09961403161287308
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 6451,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 6451,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 27168,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 78972,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 78972,
+      "byteOffset": 78972,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 52648,
+      "byteOffset": 157944,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 54126,
+      "byteOffset": 210592,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 77412,
+      "byteOffset": 264720,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 77412,
+      "byteOffset": 342132,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 51608,
+      "byteOffset": 419544,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 54336,
+      "byteOffset": 471152,
+      "target": 34963
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 525488,
+      "uri": "binder_notebook.bin"
+    }
+  ]
+}

@@ -4,6 +4,19 @@
 simulator in Python. Open source, Apple-silicon and Linux, no GPU
 required.**
 
+[![The 3D lab: a microscope bench and an incubator, with daylight through the windows](web/lab3d/screenshot.jpg)](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab3d/)
+
+**[Walk into the lab →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab3d/)**
+— a biology lab you explore in first person, in your browser. Prepare
+slides of onion skin, your own cheek cells or a pondweed leaf and focus
+the microscope on them. Or treat living lung cancer cells with
+paclitaxel, doxorubicin or cisplatin, incubate them and compare them
+with an untreated dish. Those cells are simulated by this engine, on
+your own machine. Use a computer with a keyboard and mouse: WASD to
+walk, left-click to take, right-click to use. Graphics presets run from
+older laptops to fast graphics cards. Source and controls:
+[`web/lab3d/`](web/lab3d/).
+
 **[Run an experiment in your browser →](https://rockman6.github.io/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/lab/)**
 — pick cells, a drug and a schedule, press Run. The real engine runs on
 your own machine; nothing to install.
@@ -195,6 +208,7 @@ benchmarks/  every input needed to reproduce a number in docs/VALIDATION.md
 tests/       one folder per src/ module; each file is a standalone gate
 scripts/     the `cellsim` CLI dispatcher, fetchers, benchmark runners, doctor
 docs/        plan, validation, docking tutorial, archive of the 2026 campaign docs
+web/         the site: lab3d/ (the 3D lab), lab/ (the Lab and Inside a cell), viewer/ and demo/
 OLD/         frozen 2026 C++/Metal prototype, its 6 headless validators and scripts (see OLD/README.md)
 ```
 

@@ -1,0 +1,264 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v1.6.16",
+    "version": "2.0"
+  },
+  "extensionsUsed": [
+    "KHR_materials_transmission"
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "magnifying_glass_01"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "magnifying_glass_01",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicFactor": 0,
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    },
+    {
+      "alphaMode": "BLEND",
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 1
+        }
+      },
+      "name": "magnifying_glass_01_lense",
+      "normalTexture": {
+        "index": 3
+      },
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7164804339408875,
+          0.8000000715255737,
+          0.7935186624526978,
+          1
+        ],
+        "metallicFactor": 0,
+        "metallicRoughnessTexture": {
+          "index": 4
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Sphere.002",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        },
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 1
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    },
+    {
+      "sampler": 0,
+      "source": 3
+    },
+    {
+      "sampler": 0,
+      "source": 4
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "magnifying_glass_01_nor_gl",
+      "uri": "textures/magnifying_glass_01_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "magnifying_glass_01_diff",
+      "uri": "textures/magnifying_glass_01_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "magnifying_glass_01_rough",
+      "uri": "textures/magnifying_glass_01_rough_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "magnifying_glass_01_nor_gl.png",
+      "uri": "textures/magnifying_glass_01_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "magnifying_glass_01_rough.png",
+      "uri": "textures/magnifying_glass_01_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2917,
+      "max": [
+        0.06607866287231445,
+        0.2715718150138855,
+        0.013359002768993378
+      ],
+      "min": [
+        -0.06605884432792664,
+        -2.2023700918527567e-10,
+        -0.013358986005187035
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 2917,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2917,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 14040,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 1414,
+      "max": [
+        0.06516657769680023,
+        0.27067962288856506,
+        0.01181679405272007
+      ],
+      "min": [
+        -0.06516657769680023,
+        0.14034637808799744,
+        -0.011816756799817085
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 1414,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 1414,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 7680,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 35004,
+      "byteOffset": 0
+    },
+    {
+      "buffer": 0,
+      "byteLength": 35004,
+      "byteOffset": 35004
+    },
+    {
+      "buffer": 0,
+      "byteLength": 23336,
+      "byteOffset": 70008
+    },
+    {
+      "buffer": 0,
+      "byteLength": 28080,
+      "byteOffset": 93344
+    },
+    {
+      "buffer": 0,
+      "byteLength": 16968,
+      "byteOffset": 121424
+    },
+    {
+      "buffer": 0,
+      "byteLength": 16968,
+      "byteOffset": 138392
+    },
+    {
+      "buffer": 0,
+      "byteLength": 11312,
+      "byteOffset": 155360
+    },
+    {
+      "buffer": 0,
+      "byteLength": 15360,
+      "byteOffset": 166672
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 182032,
+      "uri": "magnifying_glass_01.bin"
+    }
+  ]
+}

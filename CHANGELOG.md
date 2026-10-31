@@ -1,5 +1,16 @@
 # CellSim — Changelog
 
+## Unreleased — a lab you walk into
+
+**The 3D lab** (`web/lab3d/`, on the site at `/lab3d/`): a biology lab
+in first person, with Minecraft-style controls and a hotbar. Onion,
+cheek and pondweed slides are prepared step by step and focused at 4×,
+10× and 40×; their cells are drawn at measured sizes, not simulated.
+The culture dishes are simulated: `run_dish_stream` runs in a Pyodide
+worker from the wheel the Lab installs, and the drops added in the lab
+set the dose (two 50 µL drops of 10 µM paclitaxel in 5.1 mL give
+0.196 µM). Graphics presets from Low (older laptops, 30 fps) to Ultra.
+
 ## 1.7.0 — a CDK4/6 inhibitor, and Rb as the mechanism
 
 **Palbociclib** (`mechanism = "cdk46"`): blocks cyclin D–CDK4/6, so Rb
