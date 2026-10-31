@@ -1,0 +1,159 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v5.1.20",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "clipboard"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "clipboard",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "clipboard_a",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "clipboard_nor_gl",
+      "uri": "textures/clipboard_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "clipboard_diff",
+      "uri": "textures/clipboard_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "clipboard_metal-clipboard_rough",
+      "uri": "textures/clipboard_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 4608,
+      "max": [
+        0.11430007219314575,
+        0.03945033997297287,
+        0.15875010192394257
+      ],
+      "min": [
+        -0.11430007219314575,
+        -0.002540001878514886,
+        -0.1777999997138977
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 4608,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 4608,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 18528,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 55296,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 55296,
+      "byteOffset": 55296,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 36864,
+      "byteOffset": 110592,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 37056,
+      "byteOffset": 147456,
+      "target": 34963
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 184512,
+      "uri": "clipboard.bin"
+    }
+  ]
+}

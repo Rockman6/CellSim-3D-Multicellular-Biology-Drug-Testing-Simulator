@@ -77,3 +77,11 @@ data/bioagents/uncertainty/
 # script's docstring for the download line).
 data/depmap/
 data/gdsc/
+
+# 3D lab: raw model downloads are sorted into web/lab3d/assets/models; never commit the originals
+web/lab3d/assets/downloads/
+# 3D lab: the earlier block-built version, kept locally only
+web/lab3d/voxel/
+# 3D lab: its textures are images, which the rules above would otherwise exclude
+!web/lab3d/**/*.jpg
+!web/lab3d/**/*.png

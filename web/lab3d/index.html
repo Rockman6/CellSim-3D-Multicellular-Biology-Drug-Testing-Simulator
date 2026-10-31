@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="CellSim Lab: a biology lab you can walk into. Prepare slides, use a microscope, and grow living cancer cells simulated by the Cell Sim engine.">
+<title>CellSim Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="css/game.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body data-screen="loading">
+
+<canvas id="view" aria-label="The lab, in first person"></canvas>
+
+<!-- In-game HUD -->
+<div id="hud" class="hud" hidden>
+  <div class="crosshair" aria-hidden="true"></div>
+  <div id="holdRing" class="hold-ring" hidden><i></i></div>
+  <div id="prompt" class="prompt" aria-live="polite"></div>
+  <aside id="tasks" class="tasks"></aside>
+  <div id="engineChip" class="engine-chip" hidden></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="itemName" class="item-name"></div>
+  <div id="heldInfo" class="held-info"></div>
+  <div id="hotbar" class="hotbar" role="list"></div>
+  <div id="goggleFrame" class="goggle-frame" hidden></div>
+  <pre id="debug" class="debug" hidden></pre>
+</div>
+
+<!-- Title screen -->
+<section id="title" class="screen title" hidden>
+  <div class="title-inner">
+    <p class="kicker">Cell Sim</p>
+    <h1>CellSim Lab</h1>
+    <p class="lede">A biology lab you can walk into. Prepare slides, focus a real-feeling microscope, and grow living cancer cells that the Cell Sim engine simulates as you watch.</p>
+    <div id="mainMenu" class="menu">
+      <button class="mbtn primary" data-menu="experiments">Start an experiment</button>
+      <button class="mbtn" data-menu="free">Free roam</button>
+      <button class="mbtn" data-menu="settings">Settings</button>
+      <button class="mbtn" data-menu="controls">Controls</button>
+      <button class="mbtn" data-menu="credits">Credits</button>
+    </div>
+    <div id="experimentMenu" class="experiments" hidden></div>
+  </div>
+</section>
+
+<!-- Loading -->
+<section id="loading" class="screen loading">
+  <div class="loading-inner">
+    <h1>CellSim Lab</h1>
+    <div class="bar"><i id="loadBar"></i></div>
+    <p id="loadText" class="load-text">Loading the lab…</p>
+    <p id="loadTip" class="load-tip"></p>
+  </div>
+</section>
+
+<!-- Pause -->
+<section id="pause" class="screen dim" hidden>
+  <div class="panel narrow">
+    <h2>Paused</h2>
+    <div class="menu">
+      <button class="mbtn primary" data-pause="resume">Back to the lab</button>
+      <button class="mbtn" data-pause="journal">Lab journal</button>
+      <button class="mbtn" data-pause="settings">Settings</button>
+      <button class="mbtn" data-pause="controls">Controls</button>
+      <button class="mbtn" data-pause="title">Leave the lab</button>
+    </div>
+  </div>
+</section>
+
+<!-- Settings -->
+<section id="settings" class="screen dim" hidden>
+  <div class="panel">
+    <h2>Settings</h2>
+    <div class="set-grid">
+      <label for="setQuality">Graphics</label>
+      <select id="setQuality">
+        <option value="auto">Auto (pick for this computer)</option>
+        <option value="low">Low: older Macs, laptops on battery</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="ultra">Ultra: fast graphics card</option>
+      </select>
+      <label for="setFps">Frame rate limit</label>
+      <select id="setFps">
+        <option value="preset">Same as graphics</option>
+        <option value="30">30 fps (saves battery)</option>
+        <option value="60">60 fps</option>
+        <option value="0">No limit</option>
+      </select>
+      <label for="setSens">Mouse sensitivity</label>
+      <input id="setSens" type="range" min="0.2" max="3" step="0.05">
+      <label for="setFov">Field of view</label>
+      <input id="setFov" type="range" min="55" max="100" step="1">
+      <label for="setInvert">Invert mouse Y</label>
+      <input id="setInvert" type="checkbox">
+      <label for="setBob">Head bob when walking</label>
+      <input id="setBob" type="checkbox">
+    </div>
+    <p id="qualityNote" class="note"></p>
+    <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
+  </div>
+</section>
+
+<!-- Controls -->
+<section id="controls" class="screen dim" hidden>
+  <div class="panel">
+    <h2>Controls</h2>
+    <dl class="keys">
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk</dd>
+      <dt>Mouse</dt><dd>Look around</dd>
+      <dt><kbd>Left click</kbd></dt><dd>Take the thing you look at into your pocket</dd>
+      <dt><kbd>Right click</kbd></dt><dd>Use or open the thing you look at. With an item in your hand, use it on what you look at, or put it down</dd>
+      <dt><kbd>1</kbd>–<kbd>9</kbd> · scroll</dt><dd>Pick a hotbar slot</dd>
+      <dt><kbd>Q</kbd></dt><dd>Put down the item in your hand</dd>
+      <dt><kbd>E</kbd></dt><dd>Open your inventory</dd>
+      <dt><kbd>J</kbd></dt><dd>Lab journal</dd>
+      <dt><kbd>Space</kbd> · <kbd>Shift</kbd> · <kbd>Ctrl</kbd></dt><dd>Jump · sneak · sprint</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Pause</dd>
+      <dt><kbd>F3</kbd></dt><dd>Show frame rate and memory</dd>
+    </dl>
+    <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
+  </div>
+</section>
+
+<!-- Credits -->
+<section id="credits" class="screen dim" hidden>
+  <div class="panel">
+    <h2>Credits</h2>
+    <div id="creditsBody" class="credits"></div>
+    <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
+  </div>
+</section>
+
+<!-- Inventory -->
+<section id="inventory" class="screen dim" hidden>
+  <div class="panel">
+    <h2>Inventory</h2>
+    <p class="note">Click an item, then click another slot to move it. The bottom row is your hotbar.</p>
+    <div id="invGrid" class="inv-grid"></div>
+    <p class="glabel">Hotbar</p>
+    <div id="invHotbar" class="inv-grid hot"></div>
+    <div id="wearing" class="note"></div>
+    <div class="menu row"><button class="mbtn primary" data-back>Close</button></div>
+  </div>
+</section>
+
+<!-- Journal -->
+<section id="journal" class="screen dim" hidden>
+  <div class="panel wide">
+    <div class="panel-head"><h2>Lab journal</h2><button class="mbtn small" data-back>Close</button></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
+      <button role="tab" data-tab="obs" aria-selected="false">Observations</button>
+      <button role="tab" data-tab="culture" aria-selected="false">Cell culture</button>
+    </div>
+    <div id="journalBody" class="journal-body"></div>
+  </div>
+</section>
+
+<!-- Reading the method sheet -->
+<section id="reader" class="screen dim" hidden>
+  <div class="panel paper">
+    <div id="readerBody"></div>
+    <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
+  </div>
+</section>
+
+<!-- Incubator -->
+<section id="incubatorPanel" class="screen dim" hidden>
+  <div class="panel narrow">
+    <h2>Incubator · 37 °C · 5% CO₂</h2>
+    <div id="incubatorBody"></div>
+    <div class="menu row"><button class="mbtn" data-back>Close</button></div>
+  </div>
+</section>
+
+<!-- Microscope -->
+<section id="scope" class="screen scope" hidden>
+  <div class="scope-main">
+    <div class="scope-stage">
+      <div id="eyepiece" class="eyepiece">
+        <canvas id="field"></canvas>
+        <div id="measureLine" class="measure-line" hidden></div>
+        <p id="epMsg" class="ep-msg" hidden>Nothing here. Drag to move the slide.</p>
+      </div>
+      <p class="scope-hint">Drag to move the slide · scroll to focus (hold Shift for coarse) · click a cell to inspect it</p>
+    </div>
+    <aside class="panel scope-panel">
+      <div class="panel-head">
+        <div><p class="kicker">Microscope</p><h2 id="scopeTitle">Slide</h2></div>
+        <button class="mbtn small" id="scopeExit">Stand up</button>
+      </div>
+      <p class="readout"><b id="magTotal">40×</b> total · field of view <b id="fovText">4.5 mm</b><span id="cultureTime"></span></p>
+      <p class="glabel">Objective lens</p>
+      <div class="seg">
+        <button data-obj="4" aria-pressed="true"><i class="band" style="--c:#d9453a"></i>4×</button>
+        <button data-obj="10" aria-pressed="false"><i class="band" style="--c:#e9c02b"></i>10×</button>
+        <button data-obj="40" aria-pressed="false"><i class="band" style="--c:#5bb6e6"></i>40×</button>
+      </div>
+      <p class="glabel">Focus knobs <span class="muted">(hold to keep turning)</span></p>
+      <div class="knobs">
+        <span>Coarse</span><button class="knob" data-focus="coarse:-1" aria-label="Coarse focus down">−</button><button class="knob" data-focus="coarse:1" aria-label="Coarse focus up">+</button>
+        <span>Fine</span><button class="knob fine" data-focus="fine:-1" aria-label="Fine focus down">−</button><button class="knob fine" data-focus="fine:1" aria-label="Fine focus up">+</button>
+      </div>
+      <div class="sliders">
+        <label for="light">Light</label><input type="range" id="light" min="10" max="100" value="70">
+        <label for="diaphragm">Diaphragm</label><input type="range" id="diaphragm" min="0" max="100" value="35">
+      </div>
+      <p class="glabel">At the microscope</p>
+      <ul id="scopeTasks" class="checklist"></ul>
+      <div class="menu row">
+        <button id="measureBtn" class="mbtn small">Measure cells</button>
+      </div>
+      <div id="measurePanel" class="measure" hidden>
+        <p>The red line runs across the whole view: <b id="mFov">4500 µm</b>.</p>
+        <form id="measureForm">
+          <label id="mAsk" for="mCount">About how many cells fit end to end along it?</label>
+          <div class="row"><input id="mCount" type="number" min="0.5" max="500" step="0.5" inputmode="decimal" placeholder="e.g. 2"><button class="mbtn small primary" type="submit">Work it out</button></div>
+        </form>
+        <p id="mResult" class="result" aria-live="polite"></p>
+      </div>
+      <div id="cellCard" class="cell-card" hidden></div>
+    </aside>
+  </div>
+</section>
+
+<div id="noGL" class="screen dim" hidden><div class="panel narrow"><h2>3D isn't available</h2><p>This browser can't start WebGL. Try a recent Chrome, Edge, Firefox or Safari.</p></div></div>
+<div id="fileWarn" class="screen dim" hidden><div class="panel narrow"><h2>Open it through a web server</h2><p>Browsers block 3D models and the Cell Sim engine on pages opened straight from a file. In a terminal, run:</p><pre>cd "Cell Sim/web" &amp;&amp; python3 -m http.server 8000</pre><p>then open <b>http://localhost:8000/lab3d/</b></p></div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

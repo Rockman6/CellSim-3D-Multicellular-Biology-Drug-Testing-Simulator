@@ -29,6 +29,14 @@
     .demo:hover { border-color: var(--accent); }
     .demo b { display: block; font-weight: 600; margin-bottom: 1px; }
     .demo span { color: var(--muted); font-size: 13px; }
+    .hero {
+      display: block; margin: 24px 0 8px; border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--panel); text-decoration: none; color: var(--ink); overflow: hidden;
+    }
+    .hero:hover { border-color: var(--accent); }
+    .hero img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); }
+    .hero b { display: block; font-size: 18px; font-weight: 600; margin: 12px 14px 3px; }
+    .hero span { display: block; color: var(--muted); font-size: 13.5px; margin: 0 14px 14px; }
     .note {
       border-left: 3px solid var(--accent); padding: 2px 0 2px 12px;
       color: var(--muted); font-size: 13.5px; margin: 0 0 12px;
@@ -45,6 +53,15 @@
     response and the intrinsic apoptotic cascade, driven by the drug concentration
     inside it. Run them well-mixed and a dose-response curve is one simulation; run
     them on a lattice and a spheroid grows a hypoxic rim and a necrotic core.</p>
+
+    <a class="hero" href="lab3d/">
+      <img src="lab3d/screenshot.jpg" alt="The 3D lab: a microscope bench and an incubator, with daylight through the windows" width="1400" height="860">
+      <b>Walk into the lab →</b>
+      <span>A biology lab you explore in first person. Prepare onion, cheek and
+      pondweed slides and focus the microscope on them, or treat living cancer cells
+      with a drug, incubate them and compare them with an untreated dish. Those cells
+      are simulated by this engine, in your browser. Use a computer with a keyboard and
+      mouse; the first culture dish takes about half a minute to start the engine.</span></a>
 
     <h2>Run an experiment in your browser</h2>
     <p><a class="demo" href="lab/" style="display:block;max-width:560px">
