@@ -149,7 +149,7 @@ export function createScope({ onFocus, onExit, toast, observe, resolution = 720 
       <dl><dt>Cell-cycle phase</dt><dd>${s.field.phaseName(c.phase)}</dd><dt>p53</dt><dd>${c.p53.toFixed(3)}</dd>
       <dt>Caspase-3</dt><dd>${c.c3.toFixed(3)}</dd><dt>DNA damage</dt><dd>${c.dmg.toFixed(3)}</dd>
       <dt>Oxygen</dt><dd>${c.o2.toFixed(0)} mmHg</dd><dt>Growth signal</dt><dd>${c.gs.toFixed(2)}</dd><dt>Lineage</dt><dd>#${c.lin}</dd></dl>
-      <p class="note">Values from the Cell Sim engine for this cell at ${s.spec.time} h. <a href="../lab/cell.html" target="_blank" rel="noopener">Watch inside one cell →</a></p>`;
+      <p class="note">Values from the CellSim engine for this cell at ${s.spec.time} h. <a href="../lab/cell.html" target="_blank" rel="noopener">Watch inside one cell →</a></p>`;
     card.hidden = false;
   }
 

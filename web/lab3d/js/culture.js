@@ -1,4 +1,4 @@
-// Living cells under the microscope, drawn from a Cell Sim dish snapshot
+// Living cells under the microscope, drawn from a CellSim dish snapshot
 // (schema cellsim.dish.stream/v1). Positions, phases and states are the
 // engine's; only the cell outlines are drawn here, in a phase-contrast style.
 const PHASES = ["G1", "S", "G2", "M"];

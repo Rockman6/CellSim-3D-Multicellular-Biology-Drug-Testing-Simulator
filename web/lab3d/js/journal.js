@@ -1,5 +1,5 @@
 // The lab journal: tasks, what you observed on each slide, and the growth
-// curves the Cell Sim engine produced for each culture dish.
+// curves the CellSim engine produced for each culture dish.
 import { SPECIMENS } from "./specimens.js";
 
 const KEY = "cellsim-lab:journal:v1";
@@ -46,7 +46,7 @@ export class Journal {
     }
     // Culture: live cell count over time for each dish, straight from the engine.
     const withData = dishes.filter((d) => d.state.series.length);
-    if (!withData.length) return `<p class="note">No culture data yet. Look at a dish under the microscope, or incubate one, and the Cell Sim engine's counts appear here.</p>`;
+    if (!withData.length) return `<p class="note">No culture data yet. Look at a dish under the microscope, or incubate one, and the CellSim engine's counts appear here.</p>`;
     return chart(withData) + withData.map((d) => {
       const last = d.state.series[d.state.series.length - 1];
       const drugs = d.state.events.length ? d.state.events.map((e) => `${e.t} h: ${Object.entries(e.conc).map(([k, v]) => `${k} ${v.toFixed(2)} µM`).join(", ")}`).join(" · ") : "no drug";

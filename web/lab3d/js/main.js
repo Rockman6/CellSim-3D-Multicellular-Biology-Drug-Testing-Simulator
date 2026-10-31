@@ -1,4 +1,4 @@
-// CellSim Lab: starts the renderer, loads the lab, and runs the game.
+// CellSim: starts the renderer, loads the lab, and runs the game.
 import * as THREE from "three";
 import { loadAssets } from "./assets.js";
 import { buildRoom } from "./room.js";
@@ -18,7 +18,7 @@ const TIPS = [
   "Left-click takes things into your pocket. Right-click uses them.",
   "Lower a cover slip slowly by holding right-click: a flat drop traps air bubbles.",
   "Start every slide with the 4× lens, then go up one lens at a time.",
-  "The living cells in the incubator are simulated by the Cell Sim engine, cell by cell.",
+  "The living cells in the incubator are simulated by the CellSim engine, cell by cell.",
   "Dish B is your control: treat Dish A, keep B untreated, and compare.",
   "Low graphics saves battery: no shadows, 30 frames a second, and no drawing when nothing moves.",
 ];
@@ -139,7 +139,7 @@ class Game {
     $("hud").hidden = true;
     $("title").hidden = false;
     if (matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches && !$("touchNote"))
-      $("mainMenu").insertAdjacentHTML("afterbegin", `<p id="touchNote" class="note">CellSim Lab needs a keyboard and mouse. On this device you can look around, but not play.</p>`);
+      $("mainMenu").insertAdjacentHTML("afterbegin", `<p id="touchNote" class="note">CellSim needs a keyboard and mouse. On this device you can look around, but not play.</p>`);
     $("mainMenu").hidden = false;
     $("experimentMenu").hidden = true;
     document.exitPointerLock?.();
@@ -526,7 +526,7 @@ class Game {
       return;
     }
     // A living culture: show what the engine says the dish looks like now.
-    this.scope.open({ kind: "wait", title: it.name, text: this.engine.version ? "Simulating the cells…" : "Starting the Cell Sim engine (the first time downloads Python, about 30 s)…" });
+    this.scope.open({ kind: "wait", title: it.name, text: this.engine.version ? "Simulating the cells…" : "Starting the CellSim engine (the first time downloads Python, about 30 s)…" });
     try {
       await this.simulate(it);
       if (this.screen === "scope" && this.stageItem === it) this.scope.open(this.cultureSpec(it));
@@ -587,7 +587,7 @@ class Game {
     $("incubatorBody").innerHTML = (ds.length ? ds.map((d) => `<div class="dish-row"><b>${d.name}</b><span class="note">${d.state.t} h in culture · ${d.state.events.length ? "treated" : "no drug"}</span>
         <div class="btns"><button class="mbtn small" data-inc="take" data-id="${d.id}">Take it out</button></div></div>`).join("") : `<p class="note">The incubator is empty.</p>`) +
       (ds.length ? `<p class="glabel">Let time pass for every dish inside</p><div class="btns" style="display:flex;gap:6px">${[6, 12, 24].map((h) => `<button class="mbtn small primary" data-inc="wait" data-h="${h}">Wait ${h} h</button>`).join("")}</div>` : "") +
-      `<p class="note">${this.engine.version ? `Cell Sim ${this.engine.version} simulates each dish.` : "The Cell Sim engine starts the first time you incubate or look at a dish."}</p>`;
+      `<p class="note">${this.engine.version ? `CellSim ${this.engine.version} simulates each dish.` : "The CellSim engine starts the first time you incubate or look at a dish."}</p>`;
   }
   async incubate(h) {
     const ds = [...this.incubator.dishes];
@@ -710,7 +710,7 @@ const SPARES = [
 ];
 
 const CREDITS = `
-<p><b>Cell engine:</b> <a href="https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator" target="_blank" rel="noopener">Cell Sim</a> (MIT), running in your browser with <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a>.</p>
+<p><b>Cell engine:</b> <a href="https://github.com/Rockman6/CellSim" target="_blank" rel="noopener">CellSim</a> (MIT), running in your browser with <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a>.</p>
 <p><b>3D engine:</b> <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> r160 (MIT).</p>
 <p><b>Models, textures and lighting from Poly Haven (CC0):</b> yellow onion, metal stool, steel shelves, fluorescent lights, drawer cabinet, clipboard, stationery, wall clock, magnifying glass, binder notebook, metal office desk, floor tiles, painted plaster, hospital room HDRI.</p>
 <p><b>Models from Sketchfab (CC Attribution 4.0):</b>

@@ -40,8 +40,8 @@ dependencies = ["numpy>=1.24", "scipy>=1.10"]
 plots = ["matplotlib>=3.7"]       # cellsim.cell.viewer only
 
 [project.urls]
-Homepage = "https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator"
-Changelog = "https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Rockman6/CellSim"
+Changelog = "https://github.com/Rockman6/CellSim/blob/main/CHANGELOG.md"
 
 [project.scripts]
 cellsim = "cellsim.cli:main"

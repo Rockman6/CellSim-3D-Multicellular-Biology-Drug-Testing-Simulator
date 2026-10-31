@@ -1,4 +1,4 @@
-/* Runs the Cell Sim engine off the main thread, so the lab keeps moving.
+/* Runs the CellSim engine off the main thread, so the lab keeps moving.
    Pyodide loads CPython with NumPy and SciPy, then micropip installs the
    cellsim wheel built from this repository (the same one ../lab/ uses). */
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";

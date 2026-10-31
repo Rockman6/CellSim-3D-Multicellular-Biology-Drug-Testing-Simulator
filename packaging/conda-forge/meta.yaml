@@ -65,7 +65,7 @@ test:
     - python {{ python_min }}
 
 about:
-  home: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator
+  home: https://github.com/Rockman6/CellSim
   summary: Mechanistic simulator of cultured cells under drug, with measured errors
   description: |
     CellSim simulates cultured cancer cells responding to a drug, from the
@@ -82,8 +82,8 @@ about:
   license: MIT
   license_family: MIT
   license_file: LICENSE
-  doc_url: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator/blob/main/docs/VALIDATION.md
-  dev_url: https://github.com/Rockman6/CellSim-3D-Multicellular-Biology-Drug-Testing-Simulator
+  doc_url: https://github.com/Rockman6/CellSim/blob/main/docs/VALIDATION.md
+  dev_url: https://github.com/Rockman6/CellSim
 
 extra:
   recipe-maintainers:

@@ -11,6 +11,10 @@ worker from the wheel the Lab installs, and the drops added in the lab
 set the dose (two 50 µL drops of 10 µM paclitaxel in 5.1 mL give
 0.196 µM). Graphics presets from Low (older laptops, 30 fps) to Ultra.
 
+**The repository is now `Rockman6/CellSim`**, and the site moved with it
+to <https://rockman6.github.io/CellSim/>. GitHub forwards links to the
+old repository name; links to the old site address no longer work.
+
 ## 1.7.0 — a CDK4/6 inhibitor, and Rb as the mechanism
 
 **Palbociclib** (`mechanism = "cdk46"`): blocks cyclin D–CDK4/6, so Rb
