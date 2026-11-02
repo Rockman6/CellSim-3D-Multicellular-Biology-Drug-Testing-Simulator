@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="CellSim Lab: a biology lab you can walk into. Prepare slides, use a microscope, and grow living cancer cells simulated by the Cell Sim engine.">
-<title>CellSim Lab</title>
+<meta name="description" content="CellSim: a biology lab you can walk into. Prepare slides, use a microscope, and grow living cancer cells simulated by the CellSim engine.">
+<title>CellSim</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -29,15 +29,17 @@
   <div id="heldInfo" class="held-info"></div>
   <div id="hotbar" class="hotbar" role="list"></div>
   <div id="goggleFrame" class="goggle-frame" hidden></div>
+  <div id="trackMarker" class="track-marker" hidden><i class="arrow" aria-hidden="true"></i><b id="trackName"></b><span id="trackDist"></span></div>
+  <div id="findHint" class="find-hint"><kbd>F</kbd> Find anything</div>
   <pre id="debug" class="debug" hidden></pre>
 </div>
 
 <!-- Title screen -->
 <section id="title" class="screen title" hidden>
   <div class="title-inner">
-    <p class="kicker">Cell Sim</p>
-    <h1>CellSim Lab</h1>
-    <p class="lede">A biology lab you can walk into. Prepare slides, focus a real-feeling microscope, and grow living cancer cells that the Cell Sim engine simulates as you watch.</p>
+    <p class="kicker">Virtual biology lab</p>
+    <h1>CellSim</h1>
+    <p class="lede">A biology lab you can walk into. Prepare slides, focus a real-feeling microscope, and grow living cancer cells that the CellSim engine simulates as you watch.</p>
     <div id="mainMenu" class="menu">
       <button class="mbtn primary" data-menu="experiments">Start an experiment</button>
       <button class="mbtn" data-menu="free">Free roam</button>
@@ -52,7 +54,7 @@
 <!-- Loading -->
 <section id="loading" class="screen loading">
   <div class="loading-inner">
-    <h1>CellSim Lab</h1>
+    <h1>CellSim</h1>
     <div class="bar"><i id="loadBar"></i></div>
     <p id="loadText" class="load-text">Loading the lab…</p>
     <p id="loadTip" class="load-tip"></p>
@@ -65,6 +67,7 @@
     <h2>Paused</h2>
     <div class="menu">
       <button class="mbtn primary" data-pause="resume">Back to the lab</button>
+      <button class="mbtn" data-pause="finder">Find something</button>
       <button class="mbtn" data-pause="journal">Lab journal</button>
       <button class="mbtn" data-pause="settings">Settings</button>
       <button class="mbtn" data-pause="controls">Controls</button>
@@ -101,6 +104,8 @@
       <input id="setInvert" type="checkbox">
       <label for="setBob">Head bob when walking</label>
       <input id="setBob" type="checkbox">
+      <label for="setSound">Sound effects</label>
+      <input id="setSound" type="checkbox">
     </div>
     <p id="qualityNote" class="note"></p>
     <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
@@ -120,6 +125,8 @@
       <dt><kbd>Q</kbd></dt><dd>Put down the item in your hand</dd>
       <dt><kbd>E</kbd></dt><dd>Open your inventory</dd>
       <dt><kbd>J</kbd></dt><dd>Lab journal</dd>
+      <dt><kbd>F</kbd></dt><dd>Find anything: type its name (typos are fine) and follow the marker</dd>
+      <dt><kbd>R</kbd></dt><dd>With the micropipette in your hand: set its volume</dd>
       <dt><kbd>Space</kbd> · <kbd>Shift</kbd> · <kbd>Ctrl</kbd></dt><dd>Jump · sneak · sprint</dd>
       <dt><kbd>Esc</kbd></dt><dd>Pause</dd>
       <dt><kbd>F3</kbd></dt><dd>Show frame rate and memory</dd>
@@ -180,6 +187,32 @@
   </div>
 </section>
 
+<!-- Find anything -->
+<section id="finder" class="screen finder" hidden>
+  <div class="panel narrow find-panel">
+    <label class="kicker" for="findInput">Find in the lab</label>
+    <input id="findInput" class="find-input" type="text" autocomplete="off" spellcheck="false" placeholder="microscope, iodine, goggles…" aria-controls="findResults">
+    <ul id="findResults" class="find-results" role="listbox" aria-label="Results"></ul>
+    <p class="note">Typos are fine. <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>Enter</kbd> to follow it, <kbd>Esc</kbd> to close.</p>
+  </div>
+</section>
+
+<!-- Micropipette volume -->
+<section id="pipettePanel" class="screen dim" hidden>
+  <div class="panel narrow">
+    <p class="kicker">Micropipette · 2–200 µL</p>
+    <div class="pip-readout"><output id="pipVol">20</output> µL</div>
+    <input id="pipRange" type="range" min="2" max="200" step="1" aria-label="Volume in microlitres">
+    <div class="pip-steps">
+      <button class="mbtn small" data-pip="-10">−10</button><button class="mbtn small" data-pip="-1">−1</button>
+      <button class="mbtn small" data-pip="1">+1</button><button class="mbtn small" data-pip="10">+10</button>
+    </div>
+    <div class="pip-steps"><button class="mbtn small" data-pipset="2">2</button><button class="mbtn small" data-pipset="5">5</button><button class="mbtn small" data-pipset="10">10</button><button class="mbtn small" data-pipset="20">20</button><button class="mbtn small" data-pipset="50">50</button><button class="mbtn small" data-pipset="100">100</button><button class="mbtn small" data-pipset="200">200</button></div>
+    <p class="note">Turn the plunger to set the volume. Draw up and dispense with right-click. A fresh tip for every solution.</p>
+    <div class="menu row"><button class="mbtn primary" data-back>Done</button></div>
+  </div>
+</section>
+
 <!-- Microscope -->
 <section id="scope" class="screen scope" hidden>
   <div class="scope-main">
@@ -189,7 +222,7 @@
         <div id="measureLine" class="measure-line" hidden></div>
         <p id="epMsg" class="ep-msg" hidden>Nothing here. Drag to move the slide.</p>
       </div>
-      <p class="scope-hint">Drag to move the slide · scroll to focus (hold Shift for coarse) · click a cell to inspect it</p>
+      <p class="scope-hint">Drag to move the slide · scroll to focus (hold Shift for coarse) · click a cell to pick it</p>
     </div>
     <aside class="panel scope-panel">
       <div class="panel-head">
@@ -197,6 +230,8 @@
         <button class="mbtn small" id="scopeExit">Stand up</button>
       </div>
       <p class="readout"><b id="magTotal">40×</b> total · field of view <b id="fovText">4.5 mm</b><span id="cultureTime"></span></p>
+      <div id="wellPick" class="seg wells" hidden></div>
+      <p id="osmoReadout" class="readout osmo" hidden></p>
       <p class="glabel">Objective lens</p>
       <div class="seg">
         <button data-obj="4" aria-pressed="true"><i class="band" style="--c:#d9453a"></i>4×</button>
@@ -226,12 +261,24 @@
         <p id="mResult" class="result" aria-live="polite"></p>
       </div>
       <div id="cellCard" class="cell-card" hidden></div>
+      <div id="classifyPanel" class="measure" hidden>
+        <p class="glabel">Stage of mitosis</p>
+        <div id="clsButtons" class="stage-btns"></div>
+        <p id="clsResult" class="result" aria-live="polite"></p>
+        <p id="clsTally" class="note"></p>
+      </div>
+      <div id="countPanel" class="measure" hidden>
+        <p>Click each cell inside the four large corner squares. Count cells touching the top and left lines, not the bottom and right.</p>
+        <table id="countTable" class="count-t"></table>
+        <div class="menu row"><button class="mbtn small primary" id="countCalc">Work it out</button></div>
+        <p id="countResult" class="result" aria-live="polite"></p>
+      </div>
     </aside>
   </div>
 </section>
 
 <div id="noGL" class="screen dim" hidden><div class="panel narrow"><h2>3D isn't available</h2><p>This browser can't start WebGL. Try a recent Chrome, Edge, Firefox or Safari.</p></div></div>
-<div id="fileWarn" class="screen dim" hidden><div class="panel narrow"><h2>Open it through a web server</h2><p>Browsers block 3D models and the Cell Sim engine on pages opened straight from a file. In a terminal, run:</p><pre>cd "Cell Sim/web" &amp;&amp; python3 -m http.server 8000</pre><p>then open <b>http://localhost:8000/lab3d/</b></p></div></div>
+<div id="fileWarn" class="screen dim" hidden><div class="panel narrow"><h2>Open it through a web server</h2><p>Browsers block 3D models and the CellSim engine on pages opened straight from a file. In a terminal, run:</p><pre>cd CellSim/web &amp;&amp; python3 -m http.server 8000</pre><p>then open <b>http://localhost:8000/lab3d/</b></p></div></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

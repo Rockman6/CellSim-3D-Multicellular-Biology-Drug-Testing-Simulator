@@ -1,4 +1,4 @@
-// The Cell Sim engine, loaded only when a culture dish needs it, so the lab
+// The CellSim engine, loaded only when a culture dish needs it, so the lab
 // stays light (about 150 MB less memory) until then.
 export class Engine {
   constructor(onStatus) {
@@ -11,13 +11,13 @@ export class Engine {
   }
   start() {
     if (this.ready) return this.ready;
-    this.onStatus("busy", "Starting the Cell Sim engine…");
+    this.onStatus("busy", "Starting the CellSim engine…");
     this.worker = new Worker(new URL("./engine-worker.js", import.meta.url));
     this.ready = new Promise((resolve, reject) => {
       this.worker.onmessage = (ev) => {
         const m = ev.data;
         if (m.type === "status") this.onStatus("busy", m.text);
-        else if (m.type === "ready") { this.version = m.version; this.onStatus("ready", `Cell Sim ${m.version} ready`); resolve(); }
+        else if (m.type === "ready") { this.version = m.version; this.onStatus("ready", `CellSim ${m.version} ready`); resolve(); }
         else if (m.type === "fatal") { this.onStatus("error", `Engine failed: ${m.message}`); reject(new Error(m.message)); }
         else if (m.type === "result" || m.type === "error") {
           const p = this.pending.get(m.id);
@@ -38,7 +38,7 @@ export class Engine {
       this.pending.set(id, { resolve, reject });
       this.worker.postMessage({ id, cmd: "dish", cfg });
     });
-    this.onStatus("ready", `Cell Sim ${this.version} ready`);
+    this.onStatus("ready", `CellSim ${this.version} ready`);
     return out;
   }
 }

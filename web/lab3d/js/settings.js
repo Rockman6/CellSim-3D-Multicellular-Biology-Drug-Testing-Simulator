@@ -11,7 +11,7 @@ export const PRESETS = {
   ultra:  { label: "Ultra",  pixelRatio: 2,    shadows: true,  shadowSize: 4096, env: true,  lamps: 6, fps: 0,  maxAniso: 16 },
 };
 
-const DEFAULTS = { quality: "auto", fps: "preset", sensitivity: 1, fov: 72, invertY: false, bob: true };
+const DEFAULTS = { quality: "auto", fps: "preset", sensitivity: 1, fov: 72, invertY: false, bob: true, sound: true };
 
 export const settings = (() => {
   try { return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY)) || {}) }; } catch (e) { return { ...DEFAULTS }; }

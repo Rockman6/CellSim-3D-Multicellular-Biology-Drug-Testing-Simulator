@@ -13,7 +13,7 @@ export const HUD = {
     const el = $("prompt");
     if (!actions || (!actions.left && !actions.right)) { el.innerHTML = ""; return; }
     let h = actions.target ? `<span class="target">${esc(actions.target)}</span>` : "";
-    if (actions.right) h += `<span class="p"><span class="mouse">Right</span>${esc(actions.right.label)}</span>`;
+    if (actions.right) h += `<span class="p${actions.right.blocked ? " blocked" : ""}"><span class="mouse">Right</span>${esc(actions.right.label)}</span>`;
     if (actions.left) h += `<span class="p"><span class="mouse">Left</span>${esc(actions.left.label)}</span>`;
     el.innerHTML = h;
   },
